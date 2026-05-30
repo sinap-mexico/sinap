@@ -18,6 +18,14 @@ import { cn } from '@/lib/utils'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { SinapLogo } from '@/components/sinap/sinap-logo'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { motion, AnimatePresence } from 'framer-motion'
 
 const navItems: {
   module: SinapModule
@@ -37,7 +45,7 @@ const navItems: {
   { module: 'hub', label: 'Sinap Hub', icon: Building2, requiresClinic: true },
 ]
 
-const configItem = { module: 'config' as SinapModule, label: 'Configuración', icon: Settings }
+const configItem = { module: 'config' as SinapModule, label: 'Configuracion', icon: Settings }
 
 export function SinapSidebar() {
   const { activeModule, setActiveModule, sidebarCollapsed, toggleSidebar, plan, clinicMode } = useSinapStore()
@@ -49,125 +57,212 @@ export function SinapSidebar() {
   }
 
   return (
-    <aside
-      className={cn(
-        'flex flex-col h-screen bg-[#0F2D26] text-white transition-all duration-300 ease-in-out relative',
-        sidebarCollapsed ? 'w-[72px]' : 'w-[250px]'
-      )}
-    >
-      {/* Logo area */}
-      <div className={cn('flex items-center gap-3 px-4 pt-5 pb-4', sidebarCollapsed && 'justify-center px-2')}>
-        {/* Neural network logo mark */}
-        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" className="shrink-0">
-          {/* Central node - Orchestrator */}
-          <circle cx="18" cy="18" r="5" fill="#534AB7" />
-          {/* Secondary nodes - Agents */}
-          <circle cx="18" cy="5" r="3.5" fill="#1D9E75" />
-          <circle cx="30" cy="14" r="3.5" fill="#1D9E75" />
-          <circle cx="30" cy="26" r="3.5" fill="#1D9E75" />
-          <circle cx="18" cy="31" r="3.5" fill="#1D9E75" />
-          <circle cx="6" cy="26" r="3.5" fill="#1D9E75" />
-          <circle cx="6" cy="14" r="3.5" fill="#1D9E75" />
-          {/* Connections - Center to secondaries */}
-          <line x1="18" y1="13" x2="18" y2="8.5" stroke="#5DCAA5" strokeWidth="1.2" opacity="0.7" />
-          <line x1="22.5" y1="15.5" x2="26.5" y2="14" stroke="#5DCAA5" strokeWidth="1.2" opacity="0.7" />
-          <line x1="22.5" y1="20.5" x2="26.5" y2="26" stroke="#5DCAA5" strokeWidth="1.2" opacity="0.7" />
-          <line x1="18" y1="23" x2="18" y2="27.5" stroke="#5DCAA5" strokeWidth="1.2" opacity="0.7" />
-          <line x1="13.5" y1="20.5" x2="9.5" y2="26" stroke="#5DCAA5" strokeWidth="1.2" opacity="0.7" />
-          <line x1="13.5" y1="15.5" x2="9.5" y2="14" stroke="#5DCAA5" strokeWidth="1.2" opacity="0.7" />
-          {/* Tertiary nodes - External */}
-          <circle cx="18" cy="1" r="1.5" fill="#5DCAA5" opacity="0.6" />
-          <circle cx="34" cy="11" r="1.5" fill="#5DCAA5" opacity="0.6" />
-          <circle cx="34" cy="29" r="1.5" fill="#5DCAA5" opacity="0.6" />
-          <circle cx="2" cy="29" r="1.5" fill="#5DCAA5" opacity="0.6" />
-          <circle cx="2" cy="11" r="1.5" fill="#5DCAA5" opacity="0.6" />
-          {/* Tertiary connections */}
-          <line x1="18" y1="1.5" x2="18" y2="3.5" stroke="#5DCAA5" strokeWidth="0.8" opacity="0.4" />
-          <line x1="33" y1="12.5" x2="30.5" y2="13.5" stroke="#5DCAA5" strokeWidth="0.8" opacity="0.4" />
-          <line x1="33" y1="27.5" x2="30.5" y2="26.5" stroke="#5DCAA5" strokeWidth="0.8" opacity="0.4" />
-          <line x1="3" y1="27.5" x2="5.5" y2="26.5" stroke="#5DCAA5" strokeWidth="0.8" opacity="0.4" />
-          <line x1="3" y1="12.5" x2="5.5" y2="13.5" stroke="#5DCAA5" strokeWidth="0.8" opacity="0.4" />
-        </svg>
-        {!sidebarCollapsed && (
-          <span className="text-lg font-medium tracking-[-0.03em] text-white">Sinap</span>
-        )}
-      </div>
-
-      <Separator className="bg-white/10 mx-3" />
-
-      {/* Navigation */}
-      <ScrollArea className="flex-1 py-3">
-        <nav className="flex flex-col gap-1 px-3">
-          {navItems.filter(isVisible).map((item) => {
-            const Icon = item.icon
-            const isActive = activeModule === item.module
-            return (
-              <button
-                key={item.module}
-                onClick={() => setActiveModule(item.module)}
-                className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 relative',
-                  sidebarCollapsed && 'justify-center px-2',
-                  isActive
-                    ? 'bg-[#534AB7] text-white shadow-md'
-                    : 'text-white/60 hover:text-white hover:bg-[#1D9E75]/20'
-                )}
-              >
-                <Icon className="h-5 w-5 shrink-0" />
-                {!sidebarCollapsed && (
-                  <>
-                    <span className="font-medium">{item.label}</span>
-                    {item.badge && item.badge > 0 && (
-                      <Badge className="ml-auto bg-[#534AB7] text-white text-[10px] h-5 min-w-[20px] flex items-center justify-center border-0">
-                        {item.badge}
-                      </Badge>
-                    )}
-                  </>
-                )}
-                {sidebarCollapsed && item.badge && item.badge > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-[#534AB7] text-white text-[10px] h-4 min-w-[16px] rounded-full flex items-center justify-center">
-                    {item.badge}
-                  </span>
-                )}
-              </button>
-            )
-          })}
-
-          <Separator className="bg-white/10 my-2" />
-
-          <button
-            onClick={() => setActiveModule(configItem.module)}
-            className={cn(
-              'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200',
-              sidebarCollapsed && 'justify-center px-2',
-              activeModule === configItem.module
-                ? 'bg-[#534AB7] text-white shadow-md'
-                : 'text-white/60 hover:text-white hover:bg-[#1D9E75]/20'
-            )}
-          >
-            <configItem.icon className="h-5 w-5 shrink-0" />
-            {!sidebarCollapsed && <span className="font-medium">{configItem.label}</span>}
-          </button>
-        </nav>
-      </ScrollArea>
-
-      {/* Tagline at bottom */}
-      {!sidebarCollapsed && (
-        <div className="px-5 py-4 border-t border-white/10">
-          <p className="text-[11px] text-white/30 italic tracking-wide">
-            La sinapsis de tu negocio de salud
-          </p>
-        </div>
-      )}
-
-      {/* Collapse toggle */}
-      <button
-        onClick={toggleSidebar}
-        className="absolute -right-3 top-7 bg-[#0F2D26] border border-white/10 rounded-full p-1 text-white/60 hover:text-white hover:bg-[#534AB7] transition-colors shadow-md z-10"
-        aria-label={sidebarCollapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
+    <TooltipProvider delayDuration={200}>
+      <motion.aside
+        className="flex flex-col h-screen bg-[#0F2D26] text-white relative overflow-hidden"
+        animate={{ width: sidebarCollapsed ? 72 : 250 }}
+        transition={{ duration: 0.3, ease: 'easeInOut' }}
       >
-        {sidebarCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
-      </button>
-    </aside>
+        {/* Logo area */}
+        <div className={cn('flex items-center gap-2.5 px-4 pt-5 pb-4', sidebarCollapsed && 'justify-center px-2')}>
+          <SinapLogo size={36} variant="dark" />
+          <AnimatePresence>
+            {!sidebarCollapsed && (
+              <motion.div
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                transition={{ duration: 0.2 }}
+                className="flex flex-col"
+              >
+                <span className="text-lg font-medium tracking-[-0.03em] text-white whitespace-nowrap leading-tight">
+                  Sinap
+                </span>
+                <span className="text-[9px] text-white/40 tracking-wide whitespace-nowrap">
+                  Inteligencia que conecta
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <Separator className="bg-white/10 mx-3" />
+
+        {/* Navigation */}
+        <ScrollArea className="flex-1 py-3">
+          <nav className="flex flex-col gap-1 px-3">
+            {navItems.filter(isVisible).map((item) => {
+              const Icon = item.icon
+              const isActive = activeModule === item.module
+
+              const navButton = (
+                <motion.button
+                  key={item.module}
+                  onClick={() => setActiveModule(item.module)}
+                  className={cn(
+                    'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 relative w-full',
+                    sidebarCollapsed && 'justify-center px-2',
+                    isActive
+                      ? 'bg-[#534AB7] text-white shadow-md'
+                      : 'text-white/60 hover:text-white hover:bg-[#1D9E75]/20'
+                  )}
+                  whileHover={{ x: isActive ? 0 : 3 }}
+                  whileTap={{ scale: 0.97 }}
+                >
+                  {/* Active indicator - left border */}
+                  {isActive && (
+                    <motion.div
+                      className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-white rounded-r-full"
+                      layoutId="activeIndicator"
+                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                    />
+                  )}
+
+                  <motion.div
+                    whileHover={{ scale: 1.1 }}
+                    transition={{ type: 'spring', stiffness: 300 }}
+                  >
+                    <Icon className="h-5 w-5 shrink-0" />
+                  </motion.div>
+
+                  <AnimatePresence>
+                    {!sidebarCollapsed && (
+                      <motion.div
+                        className="flex items-center flex-1 min-w-0"
+                        initial={{ opacity: 0, x: -5 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -5 }}
+                        transition={{ duration: 0.15 }}
+                      >
+                        <span className="font-medium truncate">{item.label}</span>
+                        {item.badge && item.badge > 0 && (
+                          <motion.div
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            transition={{ type: 'spring', stiffness: 400, delay: 0.2 }}
+                          >
+                            <Badge className="ml-auto bg-[#534AB7] text-white text-[10px] h-5 min-w-[20px] flex items-center justify-center border-0">
+                              {item.badge}
+                            </Badge>
+                          </motion.div>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {sidebarCollapsed && item.badge && item.badge > 0 && (
+                    <motion.span
+                      className="absolute -top-1 -right-1 bg-[#534AB7] text-white text-[10px] h-4 min-w-[16px] rounded-full flex items-center justify-center"
+                      animate={{ scale: [1, 1.1, 1] }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                    >
+                      {item.badge}
+                    </motion.span>
+                  )}
+                </motion.button>
+              )
+
+              // If collapsed, wrap with tooltip
+              if (sidebarCollapsed) {
+                return (
+                  <Tooltip key={item.module}>
+                    <TooltipTrigger asChild>
+                      {navButton}
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="bg-[#2C2C2A] text-white text-xs border-0">
+                      {item.label}
+                      {item.badge ? ` (${item.badge})` : ''}
+                    </TooltipContent>
+                  </Tooltip>
+                )
+              }
+
+              return navButton
+            })}
+
+            <Separator className="bg-white/10 my-2" />
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <motion.button
+                  onClick={() => setActiveModule(configItem.module)}
+                  className={cn(
+                    'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 w-full',
+                    sidebarCollapsed && 'justify-center px-2',
+                    activeModule === configItem.module
+                      ? 'bg-[#534AB7] text-white shadow-md'
+                      : 'text-white/60 hover:text-white hover:bg-[#1D9E75]/20'
+                  )}
+                  whileHover={{ x: activeModule === configItem.module ? 0 : 3 }}
+                  whileTap={{ scale: 0.97 }}
+                >
+                  {activeModule === configItem.module && (
+                    <motion.div
+                      className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-white rounded-r-full"
+                      layoutId="activeIndicator"
+                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                    />
+                  )}
+                  <motion.div whileHover={{ scale: 1.1 }} transition={{ type: 'spring', stiffness: 300 }}>
+                    <configItem.icon className="h-5 w-5 shrink-0" />
+                  </motion.div>
+                  <AnimatePresence>
+                    {!sidebarCollapsed && (
+                      <motion.span
+                        className="font-medium"
+                        initial={{ opacity: 0, x: -5 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -5 }}
+                        transition={{ duration: 0.15 }}
+                      >
+                        {configItem.label}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </motion.button>
+              </TooltipTrigger>
+              {sidebarCollapsed && (
+                <TooltipContent side="right" className="bg-[#2C2C2A] text-white text-xs border-0">
+                  {configItem.label}
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </nav>
+        </ScrollArea>
+
+        {/* Tagline at bottom */}
+        <AnimatePresence>
+          {!sidebarCollapsed && (
+            <motion.div
+              className="px-5 py-4 border-t border-white/10"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <p className="text-[11px] text-white/30 italic tracking-wide">
+                Inteligencia que conecta
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Collapse toggle */}
+        <motion.button
+          onClick={toggleSidebar}
+          className="absolute -right-3 top-7 bg-[#0F2D26] border border-white/10 rounded-full p-1 text-white/60 hover:text-white hover:bg-[#534AB7] transition-colors shadow-md z-10"
+          aria-label={sidebarCollapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+        >
+          <motion.div
+            animate={{ rotate: sidebarCollapsed ? 180 : 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </motion.div>
+        </motion.button>
+      </motion.aside>
+    </TooltipProvider>
   )
 }

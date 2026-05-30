@@ -27,6 +27,7 @@ import {
   ChevronRight,
   AlertCircle,
 } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 
 function FeatureFlagPill({ state, onStateChange }: { state: FeatureFlagState; onStateChange: (s: FeatureFlagState) => void }) {
   return (
@@ -58,6 +59,13 @@ interface PreConsultaQuestion {
 }
 
 type FlowTab = 'preconsulta' | 'soap'
+
+const soapSections = [
+  { key: 'subjective', label: 'Subjetivo', badge: 'S', color: '#1D9E75', bgColor: '#E1F5EE', borderColor: 'border-l-[#1D9E75]' },
+  { key: 'objective', label: 'Objetivo', badge: 'O', color: '#1D9E75', bgColor: '#E1F5EE', borderColor: 'border-l-[#1D9E75]' },
+  { key: 'assessment', label: 'Assessment', badge: 'A', color: '#534AB7', bgColor: '#EEEDFE', borderColor: 'border-l-[#534AB7]' },
+  { key: 'plan', label: 'Plan', badge: 'P', color: '#534AB7', bgColor: '#EEEDFE', borderColor: 'border-l-[#534AB7]' },
+] as const
 
 export function FlowClinical() {
   const { featureFlags, setFeatureFlag, soapNotes, addSoapNote, updateSoapNote, doctorProfile } = useSinapStore()
@@ -117,7 +125,6 @@ export function FlowClinical() {
         setPreConsultaQuestions(questions)
       }
     } catch {
-      // Fallback questions
       setPreConsultaQuestions([
         { question: 'Cual es el motivo principal de su consulta?', answer: '' },
         { question: 'Desde cuando presenta estos sintomas?', answer: '' },
@@ -182,7 +189,6 @@ export function FlowClinical() {
         setSelectedSoapNote(newNote)
         setActiveTab('soap')
 
-        // Emit event
         eventBus.emit('demo', 'soap_borrador_listo', 'flow', 'os',
           JSON.stringify({ patientName: selectedPatient?.patientName, noteId: newNote.id })
         )
@@ -218,8 +224,18 @@ export function FlowClinical() {
     setEditValue('')
   }
 
+  // Progress calculation for pre-consulta
+  const preConsultaProgress = preConsultaQuestions.length > 0
+    ? (preConsultaQuestions.filter(q => q.answer).length / preConsultaQuestions.length) * 100
+    : 0
+
   return (
-    <div className="space-y-6">
+    <motion.div
+      className="space-y-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+    >
       {/* Feature flags indicator */}
       <div className="flex items-center gap-4 flex-wrap">
         <div className="flex items-center gap-2">
@@ -245,7 +261,7 @@ export function FlowClinical() {
       <div className="flex gap-2">
         <Button
           variant={activeTab === 'preconsulta' ? 'default' : 'outline'}
-          className={`text-xs h-8 ${activeTab === 'preconsulta' ? 'bg-[#1D9E75] hover:bg-[#1D9E75]/90 text-white' : 'border-[#E1F5EE] text-[#888780]'}`}
+          className={`text-xs h-8 transition-all ${activeTab === 'preconsulta' ? 'bg-[#1D9E75] hover:bg-[#1D9E75]/90 text-white' : 'border-[#E1F5EE] text-[#888780]'}`}
           onClick={() => setActiveTab('preconsulta')}
         >
           <Stethoscope className="h-3.5 w-3.5 mr-1" />
@@ -253,7 +269,7 @@ export function FlowClinical() {
         </Button>
         <Button
           variant={activeTab === 'soap' ? 'default' : 'outline'}
-          className={`text-xs h-8 ${activeTab === 'soap' ? 'bg-[#534AB7] hover:bg-[#534AB7]/90 text-white' : 'border-[#E1F5EE] text-[#888780]'}`}
+          className={`text-xs h-8 transition-all ${activeTab === 'soap' ? 'bg-[#534AB7] hover:bg-[#534AB7]/90 text-white' : 'border-[#E1F5EE] text-[#888780]'}`}
           onClick={() => setActiveTab('soap')}
         >
           <FileText className="h-3.5 w-3.5 mr-1" />
@@ -261,429 +277,445 @@ export function FlowClinical() {
         </Button>
       </div>
 
-      {activeTab === 'preconsulta' && (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Pre-consulta queue */}
-          <Card className="border-[#E1F5EE] bg-white">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium tracking-[-0.03em]">
-                Cola de pre-consulta
-              </CardTitle>
-            </CardHeader>
-            <Separator className="bg-[#E1F5EE]" />
-            <ScrollArea className="max-h-96">
-              <div className="p-3 space-y-2">
-                {pendingPreconsultas.map((apt) => (
-                  <button
-                    key={apt.id}
-                    onClick={() => {
-                      setSelectedPatient(apt)
-                      setPreConsultaQuestions([])
-                      setPreConsultaComplete(false)
-                      setCurrentQuestionIndex(0)
-                    }}
-                    className={`w-full text-left p-3 rounded-lg transition-colors ${
-                      selectedPatient?.id === apt.id
-                        ? 'bg-[#E1F5EE] border border-[#1D9E75]/30'
-                        : 'hover:bg-[#F1EFE8]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-[#2C2C2A]">
-                        {apt.patientName}
-                      </span>
-                      <span className="text-[10px] text-[#888780]">{apt.time}</span>
-                    </div>
-                    <p className="text-xs text-[#888780] mt-0.5">{apt.type}</p>
-                    <Badge
-                      className={`mt-1.5 text-[9px] border-0 ${
-                        apt.status === 'confirmed'
-                          ? 'bg-[#E1F5EE] text-[#1D9E75]'
-                          : 'bg-[#FEF3C7] text-[#D97706]'
+      <AnimatePresence mode="wait">
+        {activeTab === 'preconsulta' && (
+          <motion.div
+            key="preconsulta"
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 10 }}
+            transition={{ duration: 0.2 }}
+            className="grid grid-cols-1 lg:grid-cols-4 gap-6"
+          >
+            {/* Pre-consulta queue */}
+            <Card className="border-[#E1F5EE] bg-white">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium tracking-[-0.03em]">
+                  Cola de pre-consulta
+                </CardTitle>
+              </CardHeader>
+              <Separator className="bg-[#E1F5EE]" />
+              <ScrollArea className="max-h-96">
+                <div className="p-3 space-y-2">
+                  {pendingPreconsultas.map((apt, i) => (
+                    <motion.button
+                      key={apt.id}
+                      onClick={() => {
+                        setSelectedPatient(apt)
+                        setPreConsultaQuestions([])
+                        setPreConsultaComplete(false)
+                        setCurrentQuestionIndex(0)
+                      }}
+                      className={`w-full text-left p-3 rounded-lg transition-all duration-200 ${
+                        selectedPatient?.id === apt.id
+                          ? 'bg-[#E1F5EE] border border-[#1D9E75]/30'
+                          : 'hover:bg-[#F1EFE8]'
                       }`}
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.05 }}
+                      whileHover={{ x: 2 }}
                     >
-                      {apt.status === 'confirmed' ? 'Confirmada' : 'Pendiente'}
-                    </Badge>
-                  </button>
-                ))}
-              </div>
-            </ScrollArea>
-            <div className="p-3 border-t border-[#E1F5EE]">
-              <Button
-                className="w-full bg-[#1D9E75] hover:bg-[#1D9E75]/90 text-white text-xs h-8"
-                onClick={handleStartPreConsulta}
-                disabled={isGeneratingQuestions || !selectedPatient}
-              >
-                {isGeneratingQuestions ? (
-                  <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Generando preguntas...</>
-                ) : (
-                  <><Stethoscope className="h-3.5 w-3.5 mr-1" />Iniciar pre-consulta</>
-                )}
-              </Button>
-            </div>
-          </Card>
-
-          {/* Pre-consulta chat interface */}
-          <Card className="border-[#E1F5EE] bg-white lg:col-span-3">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-sm font-medium tracking-[-0.03em]">
-                    Pre-consulta IA
-                  </CardTitle>
-                  <p className="text-xs text-[#888780] mt-0.5">
-                    {selectedPatient?.patientName || 'Seleccionar paciente'} - {selectedPatient?.type || ''}
-                  </p>
-                </div>
-                <Badge className="bg-[#EEEDFE] text-[#534AB7] border-0 text-[10px]">
-                  <Sparkles className="h-3 w-3 mr-1" />
-                  {doctorProfile.specialty}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {preConsultaQuestions.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <div className="h-16 w-16 rounded-full bg-[#EEEDFE] flex items-center justify-center mb-4">
-                    <Stethoscope className="h-8 w-8 text-[#534AB7]" />
-                  </div>
-                  <p className="text-sm font-medium text-[#2C2C2A]">
-                    Seleccione un paciente e inicie la pre-consulta
-                  </p>
-                  <p className="text-xs text-[#888780] mt-1 max-w-sm">
-                    La IA generara preguntas personalizadas basadas en la especialidad y tipo de cita.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {/* Questions and answers */}
-                  <ScrollArea className="max-h-[400px] pr-2">
-                    <div className="space-y-3">
-                      {preConsultaQuestions.map((q, i) => (
-                        <div key={i}>
-                          {/* Question bubble (AI) */}
-                          <div className="flex justify-start mb-2">
-                            <div className="bg-[#534AB7] text-white rounded-xl px-4 py-2.5 max-w-[85%]">
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <Badge className="text-[9px] border-0 py-0 px-1.5 bg-white/20 text-white">
-                                  Sinap Flow
-                                </Badge>
-                                <Badge className="text-[8px] border-0 py-0 px-1 bg-white/20 text-white">
-                                  IA
-                                </Badge>
-                              </div>
-                              <p className="text-sm">{q.question}</p>
-                            </div>
-                          </div>
-                          {/* Answer (if provided) */}
-                          {q.answer && (
-                            <div className="flex justify-end mb-2">
-                              <div className="bg-[#E1F5EE] text-[#2C2C2A] rounded-xl px-4 py-2.5 max-w-[85%]">
-                                <p className="text-sm">{q.answer}</p>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-
-                  {/* Input area */}
-                  {!preConsultaComplete && preConsultaQuestions.length > 0 && (
-                    <div className="flex items-center gap-2 pt-2 border-t border-[#E1F5EE]">
-                      <div className="flex-1">
-                        <p className="text-[10px] text-[#534AB7] mb-1 font-medium">
-                          Pregunta {currentQuestionIndex + 1} de {preConsultaQuestions.length}
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            placeholder="Escriba la respuesta del paciente..."
-                            className="flex-1 h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE]"
-                            value={currentAnswer}
-                            onChange={(e) => setCurrentAnswer(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault()
-                                handleAnswerQuestion()
-                              }
-                            }}
-                          />
-                          <Button
-                            size="icon"
-                            className="bg-[#534AB7] hover:bg-[#534AB7]/90 h-9 w-9"
-                            onClick={handleAnswerQuestion}
-                            disabled={!currentAnswer.trim()}
-                          >
-                            <Send className="h-4 w-4" />
-                          </Button>
-                        </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-[#2C2C2A]">
+                          {apt.patientName}
+                        </span>
+                        <span className="text-[10px] text-[#888780]">{apt.time}</span>
                       </div>
-                    </div>
-                  )}
-
-                  {/* Generate SOAP button */}
-                  {preConsultaComplete && (
-                    <div className="pt-3 border-t border-[#E1F5EE]">
-                      <div className="p-3 rounded-lg bg-[#E1F5EE] mb-3">
-                        <p className="text-xs text-[#1D9E75] font-medium flex items-center gap-1">
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          Pre-consulta completada
-                        </p>
-                        <p className="text-[10px] text-[#888780] mt-0.5">
-                          {preConsultaQuestions.filter(q => q.answer).length} respuestas recopiladas
-                        </p>
-                      </div>
-                      <Button
-                        className="w-full bg-[#534AB7] hover:bg-[#534AB7]/90 text-white h-9"
-                        onClick={handleGenerateSOAP}
-                        disabled={isGeneratingSOAP}
-                      >
-                        {isGeneratingSOAP ? (
-                          <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Generando nota SOAP...</>
-                        ) : (
-                          <><Sparkles className="h-4 w-4 mr-1.5" />Generar nota SOAP con IA</>
-                        )}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {activeTab === 'soap' && (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* SOAP notes list */}
-          <Card className="border-[#E1F5EE] bg-white">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium tracking-[-0.03em]">
-                Notas SOAP
-              </CardTitle>
-            </CardHeader>
-            <Separator className="bg-[#E1F5EE]" />
-            <ScrollArea className="max-h-96">
-              <div className="p-3 space-y-2">
-                {soapNotes.map((note) => (
-                  <button
-                    key={note.id}
-                    onClick={() => setSelectedSoapNote(note)}
-                    className={`w-full text-left p-3 rounded-lg transition-colors ${
-                      selectedSoapNote?.id === note.id
-                        ? 'bg-[#EEEDFE] border border-[#534AB7]/20'
-                        : 'hover:bg-[#F1EFE8]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-[#2C2C2A] truncate">
-                        {note.patientName}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-[#888780] mt-0.5">
-                      {new Date(note.createdAt).toLocaleDateString('es-MX')}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <p className="text-xs text-[#888780] mt-0.5">{apt.type}</p>
                       <Badge
-                        className={`text-[9px] border-0 ${
-                          note.status === 'approved'
+                        className={`mt-1.5 text-[9px] border-0 ${
+                          apt.status === 'confirmed'
                             ? 'bg-[#E1F5EE] text-[#1D9E75]'
-                            : note.status === 'signed'
-                            ? 'bg-[#534AB7] text-white'
                             : 'bg-[#FEF3C7] text-[#D97706]'
                         }`}
                       >
-                        {note.status === 'approved' ? 'Aprobada' : note.status === 'signed' ? 'Firmada' : 'Borrador'}
+                        {apt.status === 'confirmed' ? 'Confirmada' : 'Pendiente'}
                       </Badge>
-                      {note.aiGenerated && (
-                        <Badge className="text-[9px] border-0 bg-[#EEEDFE] text-[#534AB7]">
-                          <Sparkles className="h-2.5 w-2.5 mr-0.5" />
-                          IA
-                        </Badge>
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </ScrollArea>
-          </Card>
-
-          {/* SOAP Note Detail */}
-          <Card className="border-[#E1F5EE] bg-white lg:col-span-3">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-sm font-medium tracking-[-0.03em]">
-                    Nota SOAP
-                  </CardTitle>
-                  <p className="text-xs text-[#888780] mt-0.5">
-                    {selectedSoapNote?.patientName || 'Seleccionar nota'} - {selectedSoapNote ? new Date(selectedSoapNote.createdAt).toLocaleDateString('es-MX') : ''}
-                  </p>
+                    </motion.button>
+                  ))}
                 </div>
-                <div className="flex items-center gap-2">
-                  {selectedSoapNote?.status && (
-                    <Badge className={`text-[10px] border-0 ${
-                      selectedSoapNote.status === 'approved'
-                        ? 'bg-[#E1F5EE] text-[#1D9E75]'
-                        : selectedSoapNote.status === 'signed'
-                        ? 'bg-[#534AB7] text-white'
-                        : 'bg-[#FEF3C7] text-[#D97706]'
-                    }`}>
-                      {selectedSoapNote.status === 'approved' ? 'Aprobada' : selectedSoapNote.status === 'signed' ? 'Firmada' : 'Borrador'}
-                    </Badge>
-                  )}
-                  <Badge className="bg-[#EEEDFE] text-[#534AB7] border-0 text-[10px]">
-                    <Sparkles className="h-3 w-3 mr-1" />
-                    {soapFlag?.state === 'on' ? 'AUTO' : 'IA Assist'}
-                  </Badge>
-                </div>
+              </ScrollArea>
+              <div className="p-3 border-t border-[#E1F5EE]">
+                <motion.div whileTap={{ scale: 0.97 }}>
+                  <Button
+                    className="w-full bg-[#1D9E75] hover:bg-[#1D9E75]/90 text-white text-xs h-8"
+                    onClick={handleStartPreConsulta}
+                    disabled={isGeneratingQuestions || !selectedPatient}
+                  >
+                    {isGeneratingQuestions ? (
+                      <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Generando preguntas...</>
+                    ) : (
+                      <><Stethoscope className="h-3.5 w-3.5 mr-1" />Iniciar pre-consulta</>
+                    )}
+                  </Button>
+                </motion.div>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {selectedSoapNote ? (
-                <>
-                  {/* Subjetivo */}
-                  <div className="rounded-lg bg-[#E1F5EE] p-4 relative">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <Badge className="bg-[#1D9E75] text-white border-0 text-[10px]">S</Badge>
-                        <span className="text-sm font-medium text-[#2C2C2A]">Subjetivo</span>
-                        {selectedSoapNote.aiGenerated && (
-                          <Badge className="bg-white text-[#1D9E75] border border-[#1D9E75]/20 text-[9px]">
-                            <Sparkles className="h-2.5 w-2.5 mr-0.5" />
-                            Generado por IA
-                          </Badge>
-                        )}
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs text-[#888780]"
-                        onClick={() => handleEditField(selectedSoapNote.id, 'subjective', selectedSoapNote.subjective)}
-                      >
-                        <Edit3 className="h-3 w-3 mr-1" />
-                        Editar
-                      </Button>
-                    </div>
-                    <p className="text-sm text-[#2C2C2A] leading-relaxed">{selectedSoapNote.subjective}</p>
-                  </div>
+            </Card>
 
-                  {/* Objetivo */}
-                  <div className="rounded-lg bg-[#E1F5EE] p-4 relative">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <Badge className="bg-[#1D9E75] text-white border-0 text-[10px]">O</Badge>
-                        <span className="text-sm font-medium text-[#2C2C2A]">Objetivo</span>
-                        {selectedSoapNote.aiGenerated && (
-                          <Badge className="bg-white text-[#1D9E75] border border-[#1D9E75]/20 text-[9px]">
-                            <Sparkles className="h-2.5 w-2.5 mr-0.5" />
-                            Generado por IA
-                          </Badge>
-                        )}
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs text-[#888780]"
-                        onClick={() => handleEditField(selectedSoapNote.id, 'objective', selectedSoapNote.objective)}
-                      >
-                        <Edit3 className="h-3 w-3 mr-1" />
-                        Editar
-                      </Button>
-                    </div>
-                    <p className="text-sm text-[#2C2C2A] leading-relaxed">{selectedSoapNote.objective}</p>
-                  </div>
-
-                  {/* Assessment */}
-                  <div className="rounded-lg bg-[#EEEDFE] p-4 relative">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <Badge className="bg-[#534AB7] text-white border-0 text-[10px]">A</Badge>
-                        <span className="text-sm font-medium text-[#2C2C2A]">Assessment</span>
-                        <Badge className="bg-white text-[#534AB7] border border-[#534AB7]/20 text-[9px]">
-                          <Sparkles className="h-2.5 w-2.5 mr-0.5" />
-                          Sugerido por IA
-                        </Badge>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs text-[#888780]"
-                        onClick={() => handleEditField(selectedSoapNote.id, 'assessment', selectedSoapNote.assessment)}
-                      >
-                        <Edit3 className="h-3 w-3 mr-1" />
-                        Editar
-                      </Button>
-                    </div>
-                    <p className="text-sm text-[#2C2C2A] leading-relaxed">{selectedSoapNote.assessment}</p>
-                  </div>
-
-                  {/* Plan */}
-                  <div className="rounded-lg bg-[#EEEDFE] p-4 relative">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <Badge className="bg-[#534AB7] text-white border-0 text-[10px]">P</Badge>
-                        <span className="text-sm font-medium text-[#2C2C2A]">Plan</span>
-                        <Badge className="bg-white text-[#534AB7] border border-[#534AB7]/20 text-[9px]">
-                          <Sparkles className="h-2.5 w-2.5 mr-0.5" />
-                          Sugerido por IA
-                        </Badge>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs text-[#888780]"
-                        onClick={() => handleEditField(selectedSoapNote.id, 'plan', selectedSoapNote.plan)}
-                      >
-                        <Edit3 className="h-3 w-3 mr-1" />
-                        Editar
-                      </Button>
-                    </div>
-                    <p className="text-sm text-[#2C2C2A] leading-relaxed whitespace-pre-line">
-                      {selectedSoapNote.plan}
+            {/* Pre-consulta chat interface */}
+            <Card className="border-[#E1F5EE] bg-white lg:col-span-3">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-sm font-medium tracking-[-0.03em]">
+                      Pre-consulta IA
+                    </CardTitle>
+                    <p className="text-xs text-[#888780] mt-0.5">
+                      {selectedPatient?.patientName || 'Seleccionar paciente'} - {selectedPatient?.type || ''}
                     </p>
                   </div>
+                  <Badge className="bg-[#EEEDFE] text-[#534AB7] border-0 text-[10px]">
+                    <Sparkles className="h-3 w-3 mr-1" />
+                    {doctorProfile.specialty}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {preConsultaQuestions.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <motion.div
+                      className="h-16 w-16 rounded-full bg-[#EEEDFE] flex items-center justify-center mb-4"
+                      animate={{ scale: [1, 1.05, 1] }}
+                      transition={{ duration: 3, repeat: Infinity }}
+                    >
+                      <Stethoscope className="h-8 w-8 text-[#534AB7]" />
+                    </motion.div>
+                    <p className="text-sm font-medium text-[#2C2C2A]">
+                      Seleccione un paciente e inicie la pre-consulta
+                    </p>
+                    <p className="text-xs text-[#888780] mt-1 max-w-sm">
+                      La IA generara preguntas personalizadas basadas en la especialidad y tipo de cita.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Progress bar */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-[#888780]">Progreso</span>
+                        <span className="text-[10px] text-[#534AB7] font-medium">{Math.round(preConsultaProgress)}%</span>
+                      </div>
+                      <div className="h-1.5 bg-[#F1EFE8] rounded-full overflow-hidden">
+                        <motion.div
+                          className="h-full bg-[#1D9E75] rounded-full"
+                          animate={{ width: `${preConsultaProgress}%` }}
+                          transition={{ duration: 0.5, ease: 'easeOut' }}
+                        />
+                      </div>
+                    </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-3 pt-2">
-                    {selectedSoapNote.status !== 'approved' && (
-                      <Button
-                        className="bg-[#1D9E75] hover:bg-[#1D9E75]/90 text-white h-9"
-                        onClick={() => handleApproveNote(selectedSoapNote.id)}
-                      >
-                        <CheckCircle2 className="h-4 w-4 mr-1.5" />
-                        Aprobar nota
-                      </Button>
+                    {/* Questions and answers */}
+                    <ScrollArea className="max-h-[350px] pr-2">
+                      <div className="space-y-3">
+                        {preConsultaQuestions.map((q, i) => (
+                          <motion.div
+                            key={i}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.05 }}
+                          >
+                            {/* Question bubble (AI) */}
+                            <div className="flex justify-start mb-2">
+                              <div className="bg-[#534AB7] text-white rounded-2xl rounded-bl-sm px-4 py-2.5 max-w-[85%]">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <Badge className="text-[9px] border-0 py-0 px-1.5 bg-white/20 text-white">
+                                    Sinap Flow
+                                  </Badge>
+                                  <Badge className="text-[8px] border-0 py-0 px-1 bg-white/20 text-white">
+                                    IA
+                                  </Badge>
+                                </div>
+                                <p className="text-sm">{q.question}</p>
+                              </div>
+                            </div>
+                            {/* Answer (if provided) */}
+                            {q.answer && (
+                              <motion.div
+                                className="flex justify-end mb-2"
+                                initial={{ opacity: 0, x: 10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                              >
+                                <div className="bg-[#E1F5EE] text-[#2C2C2A] rounded-2xl rounded-br-sm px-4 py-2.5 max-w-[85%]">
+                                  <p className="text-sm">{q.answer}</p>
+                                </div>
+                              </motion.div>
+                            )}
+                          </motion.div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+
+                    {/* Input area */}
+                    {!preConsultaComplete && preConsultaQuestions.length > 0 && (
+                      <div className="flex items-center gap-2 pt-2 border-t border-[#E1F5EE]">
+                        <div className="flex-1">
+                          <p className="text-[10px] text-[#534AB7] mb-1 font-medium">
+                            Pregunta {currentQuestionIndex + 1} de {preConsultaQuestions.length}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              placeholder="Escriba la respuesta del paciente..."
+                              className="flex-1 h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7] focus:ring-[#534AB7]/20 transition-colors"
+                              value={currentAnswer}
+                              onChange={(e) => setCurrentAnswer(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault()
+                                  handleAnswerQuestion()
+                                }
+                              }}
+                            />
+                            <motion.div whileTap={{ scale: 0.9 }}>
+                              <Button
+                                size="icon"
+                                className="bg-[#534AB7] hover:bg-[#534AB7]/90 h-9 w-9"
+                                onClick={handleAnswerQuestion}
+                                disabled={!currentAnswer.trim()}
+                              >
+                                <Send className="h-4 w-4" />
+                              </Button>
+                            </motion.div>
+                          </div>
+                        </div>
+                      </div>
                     )}
-                    {selectedSoapNote.status === 'approved' && (
-                      <Badge className="bg-[#E1F5EE] text-[#1D9E75] border-0 text-xs py-1 px-3">
-                        <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-                        Nota aprobada por el medico
+
+                    {/* Generate SOAP button */}
+                    {preConsultaComplete && (
+                      <motion.div
+                        className="pt-3 border-t border-[#E1F5EE]"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                      >
+                        <div className="p-3 rounded-lg bg-[#E1F5EE] mb-3">
+                          <p className="text-xs text-[#1D9E75] font-medium flex items-center gap-1">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            Pre-consulta completada
+                          </p>
+                          <p className="text-[10px] text-[#888780] mt-0.5">
+                            {preConsultaQuestions.filter(q => q.answer).length} respuestas recopiladas
+                          </p>
+                        </div>
+                        <motion.div whileTap={{ scale: 0.98 }}>
+                          <Button
+                            className="w-full bg-[#534AB7] hover:bg-[#534AB7]/90 text-white h-9"
+                            onClick={handleGenerateSOAP}
+                            disabled={isGeneratingSOAP}
+                          >
+                            {isGeneratingSOAP ? (
+                              <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Generando nota SOAP...</>
+                            ) : (
+                              <><Sparkles className="h-4 w-4 mr-1.5" />Generar nota SOAP con IA</>
+                            )}
+                          </Button>
+                        </motion.div>
+                      </motion.div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {activeTab === 'soap' && (
+          <motion.div
+            key="soap"
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -10 }}
+            transition={{ duration: 0.2 }}
+            className="grid grid-cols-1 lg:grid-cols-4 gap-6"
+          >
+            {/* SOAP notes list */}
+            <Card className="border-[#E1F5EE] bg-white">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium tracking-[-0.03em]">
+                  Notas SOAP
+                </CardTitle>
+              </CardHeader>
+              <Separator className="bg-[#E1F5EE]" />
+              <ScrollArea className="max-h-96">
+                <div className="p-3 space-y-2">
+                  {soapNotes.map((note, i) => (
+                    <motion.button
+                      key={note.id}
+                      onClick={() => setSelectedSoapNote(note)}
+                      className={`w-full text-left p-3 rounded-lg transition-all duration-200 ${
+                        selectedSoapNote?.id === note.id
+                          ? 'bg-[#EEEDFE] border border-[#534AB7]/20'
+                          : 'hover:bg-[#F1EFE8]'
+                      }`}
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.05 }}
+                      whileHover={{ x: 2 }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-[#2C2C2A] truncate">
+                          {note.patientName}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-[#888780] mt-0.5">
+                        {new Date(note.createdAt).toLocaleDateString('es-MX')}
+                      </p>
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        <Badge
+                          className={`text-[9px] border-0 ${
+                            note.status === 'approved'
+                              ? 'bg-[#E1F5EE] text-[#1D9E75]'
+                              : note.status === 'signed'
+                              ? 'bg-[#534AB7] text-white'
+                              : 'bg-[#FEF3C7] text-[#D97706]'
+                          }`}
+                        >
+                          {note.status === 'approved' ? 'Aprobada' : note.status === 'signed' ? 'Firmada' : 'Borrador'}
+                        </Badge>
+                        {note.aiGenerated && (
+                          <Badge className="text-[9px] border-0 bg-[#EEEDFE] text-[#534AB7]">
+                            <Sparkles className="h-2.5 w-2.5 mr-0.5" />
+                            IA
+                          </Badge>
+                        )}
+                      </div>
+                    </motion.button>
+                  ))}
+                </div>
+              </ScrollArea>
+            </Card>
+
+            {/* SOAP Note Detail - Timeline style with color-coded borders */}
+            <Card className="border-[#E1F5EE] bg-white lg:col-span-3">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-sm font-medium tracking-[-0.03em]">
+                      Nota SOAP
+                    </CardTitle>
+                    <p className="text-xs text-[#888780] mt-0.5">
+                      {selectedSoapNote?.patientName || 'Seleccionar nota'} - {selectedSoapNote ? new Date(selectedSoapNote.createdAt).toLocaleDateString('es-MX') : ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {selectedSoapNote?.status && (
+                      <Badge className={`text-[10px] border-0 ${
+                        selectedSoapNote.status === 'approved'
+                          ? 'bg-[#E1F5EE] text-[#1D9E75]'
+                          : selectedSoapNote.status === 'signed'
+                          ? 'bg-[#534AB7] text-white'
+                          : 'bg-[#FEF3C7] text-[#D97706]'
+                      }`}>
+                        {selectedSoapNote.status === 'approved' ? 'Aprobada' : selectedSoapNote.status === 'signed' ? 'Firmada' : 'Borrador'}
                       </Badge>
                     )}
-                    <Button variant="outline" className="border-[#E1F5EE] text-[#2C2C2A] h-9">
-                      <FileText className="h-4 w-4 mr-1.5" />
-                      Exportar PDF
-                    </Button>
+                    <Badge className="bg-[#EEEDFE] text-[#534AB7] border-0 text-[10px]">
+                      <Sparkles className="h-3 w-3 mr-1" />
+                      {soapFlag?.state === 'on' ? 'AUTO' : 'IA Assist'}
+                    </Badge>
                   </div>
-                </>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <div className="h-16 w-16 rounded-full bg-[#EEEDFE] flex items-center justify-center mb-4">
-                    <FileText className="h-8 w-8 text-[#534AB7]" />
-                  </div>
-                  <p className="text-sm font-medium text-[#2C2C2A]">
-                    Seleccione una nota SOAP para ver
-                  </p>
-                  <p className="text-xs text-[#888780] mt-1">
-                    O inicie una pre-consulta para generar una nueva nota
-                  </p>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {selectedSoapNote ? (
+                  <>
+                    {/* SOAP sections with color-coded left borders and timeline feel */}
+                    {soapSections.map((section, idx) => {
+                      const content = selectedSoapNote[section.key as keyof SoapNoteItem] as string
+                      const isAI = selectedSoapNote.aiGenerated
+                      const isSuggested = section.key === 'assessment' || section.key === 'plan'
+
+                      return (
+                        <motion.div
+                          key={section.key}
+                          className={`rounded-lg p-4 border-l-4 ${section.borderColor} relative`}
+                          style={{ backgroundColor: section.bgColor }}
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: idx * 0.1 }}
+                        >
+                          {/* Timeline connector */}
+                          {idx < soapSections.length - 1 && (
+                            <div className="absolute left-[-2px] bottom-[-20px] w-[2px] h-5 bg-[#E1F5EE]" />
+                          )}
+
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                className="text-[10px] border-0 text-white"
+                                style={{ backgroundColor: section.color }}
+                              >
+                                {section.badge}
+                              </Badge>
+                              <span className="text-sm font-medium text-[#2C2C2A]">{section.label}</span>
+                              {(isAI || isSuggested) && (
+                                <Badge
+                                  className="bg-white text-[10px] border"
+                                  style={{ color: section.color, borderColor: section.color + '30' }}
+                                >
+                                  <Sparkles className="h-2.5 w-2.5 mr-0.5" />
+                                  {isSuggested ? 'Sugerido por IA' : 'Generado por IA'}
+                                </Badge>
+                              )}
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs text-[#888780] hover:text-[#534AB7]"
+                              onClick={() => handleEditField(selectedSoapNote.id, section.key, content)}
+                            >
+                              <Edit3 className="h-3 w-3 mr-1" />
+                              Editar
+                            </Button>
+                          </div>
+                          <p className="text-sm text-[#2C2C2A] leading-relaxed whitespace-pre-line">{content}</p>
+                        </motion.div>
+                      )
+                    })}
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-3 pt-2">
+                      {selectedSoapNote.status !== 'approved' && (
+                        <motion.div whileTap={{ scale: 0.97 }}>
+                          <Button
+                            className="bg-[#1D9E75] hover:bg-[#1D9E75]/90 text-white h-9"
+                            onClick={() => handleApproveNote(selectedSoapNote.id)}
+                          >
+                            <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                            Aprobar nota
+                          </Button>
+                        </motion.div>
+                      )}
+                      {selectedSoapNote.status === 'approved' && (
+                        <Badge className="bg-[#E1F5EE] text-[#1D9E75] border-0 text-xs py-1 px-3">
+                          <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                          Nota aprobada por el medico
+                        </Badge>
+                      )}
+                      <Button variant="outline" className="border-[#E1F5EE] text-[#2C2C2A] h-9">
+                        <FileText className="h-4 w-4 mr-1.5" />
+                        Exportar PDF
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <div className="h-16 w-16 rounded-full bg-[#EEEDFE] flex items-center justify-center mb-4">
+                      <FileText className="h-8 w-8 text-[#534AB7]" />
+                    </div>
+                    <p className="text-sm font-medium text-[#2C2C2A]">
+                      Seleccione una nota SOAP para ver
+                    </p>
+                    <p className="text-xs text-[#888780] mt-1">
+                      O inicie una pre-consulta para generar una nueva nota
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Edit Field Dialog */}
       <Dialog open={!!editField} onOpenChange={() => { setEditField(null); setEditValue('') }}>
@@ -694,7 +726,7 @@ export function FlowClinical() {
             </DialogTitle>
           </DialogHeader>
           <Textarea
-            className="min-h-[150px] text-sm bg-[#F1EFE8] border-[#E1F5EE]"
+            className="min-h-[150px] text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7] focus:ring-[#534AB7]/20"
             value={editValue}
             onChange={(e) => setEditValue(e.target.value)}
           />
@@ -708,6 +740,6 @@ export function FlowClinical() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </motion.div>
   )
 }

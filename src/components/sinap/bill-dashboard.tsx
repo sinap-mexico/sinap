@@ -19,6 +19,7 @@ import {
 import { invoices, kpiData, patients } from '@/lib/mock-data'
 import { useSinapStore } from '@/lib/sinap-store'
 import { eventBus } from '@/lib/event-bus'
+import { FORMA_PAGO, METODO_PAGO, USO_CFDI, REGIMEN_FISCAL_COMMON, HEALTH_PRODUCT_CODES, UNIT_CODES } from '@/lib/facturama'
 import {
   Receipt,
   DollarSign,
@@ -34,7 +35,16 @@ import {
   X,
   FileText,
   Trash2,
+  TrendingUp,
+  TrendingDown,
+  Download,
+  FileDown,
+  Search,
+  Filter,
+  Eye,
+  Sparkles,
 } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 
 function InvoiceStatusBadge({ status }: { status: string }) {
   const config: Record<string, { color: string; bg: string; icon: React.ReactNode }> = {
@@ -67,6 +77,16 @@ interface CFDIInvoice {
   isSimulated?: boolean
 }
 
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: { staggerChildren: 0.08 } },
+}
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 15 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
+
 export function BillDashboard() {
   const { clinicProfile } = useSinapStore()
   const [invoiceList, setInvoiceList] = useState<CFDIInvoice[]>(invoices.map(i => ({ ...i, isSimulated: true })))
@@ -74,6 +94,7 @@ export function BillDashboard() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<CFDIInvoice | null>(null)
   const [isCancelling, setIsCancelling] = useState(false)
+  const [cfdiStep, setCfdiStep] = useState(0)
 
   // CFDI form state
   const [formPatient, setFormPatient] = useState('')
@@ -83,7 +104,7 @@ export function BillDashboard() {
   const [formMetodoPago, setFormMetodoPago] = useState('PUE')
   const [formUsoCFDI, setFormUsoCFDI] = useState('G01')
 
-  const facturamaConnected = process.env.NODE_ENV === 'development' // Always show as sandbox
+  const facturamaConnected = process.env.NODE_ENV === 'development'
   const facturamaMode = 'sandbox'
 
   const timbradas = invoiceList.filter((i) => i.status === 'timbrada').length
@@ -140,6 +161,7 @@ export function BillDashboard() {
         setInvoiceList([newInvoice, ...invoiceList])
         setShowCFDIDialog(false)
         resetForm()
+        setCfdiStep(0)
       } else {
         const errorInvoice: CFDIInvoice = {
           id: `inv${Date.now()}`,
@@ -153,6 +175,7 @@ export function BillDashboard() {
         }
         setInvoiceList([errorInvoice, ...invoiceList])
         setShowCFDIDialog(false)
+        setCfdiStep(0)
       }
     } catch {
       // Error handling
@@ -198,188 +221,229 @@ export function BillDashboard() {
     setFormUsoCFDI('G01')
   }
 
-  const formaPagoLabels: Record<string, string> = {
-    '01': '01 - Efectivo',
-    '03': '03 - Transferencia',
-    '04': '04 - Tarjeta',
-  }
-
   return (
-    <div className="space-y-6">
+    <motion.div
+      className="space-y-6"
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+    >
       {/* Stats row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="border-[#E1F5EE] bg-white">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-[#888780] font-medium uppercase tracking-wide">
-                  Facturas del mes
-                </p>
-                <p className="text-3xl font-medium text-[#2C2C2A] mt-1 tracking-[-0.03em]">
-                  {invoiceList.length}
-                </p>
+        <motion.div variants={itemVariants}>
+          <Card className="border-[#E1F5EE] bg-white hover:shadow-md transition-shadow">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-[#888780] font-medium uppercase tracking-wide">
+                    Facturas del mes
+                  </p>
+                  <p className="text-3xl font-medium text-[#2C2C2A] mt-1 tracking-[-0.03em]">
+                    {invoiceList.length}
+                  </p>
+                </div>
+                <motion.div
+                  className="h-10 w-10 rounded-lg bg-[#E1F5EE] flex items-center justify-center"
+                  whileHover={{ scale: 1.1, rotate: 5 }}
+                >
+                  <Receipt className="h-5 w-5 text-[#1D9E75]" />
+                </motion.div>
               </div>
-              <div className="h-10 w-10 rounded-lg bg-[#E1F5EE] flex items-center justify-center">
-                <Receipt className="h-5 w-5 text-[#1D9E75]" />
+              <div className="flex items-center gap-2 mt-2">
+                <Badge className="bg-[#E1F5EE] text-[#1D9E75] border-0 text-[10px] flex items-center gap-1">
+                  <TrendingUp className="h-2.5 w-2.5" />
+                  {timbradas} timbradas
+                </Badge>
+                <Badge className="bg-[#FEE2E2] text-[#E53E3E] border-0 text-[10px]">
+                  {errores} error
+                </Badge>
               </div>
-            </div>
-            <div className="flex items-center gap-2 mt-2">
-              <Badge className="bg-[#E1F5EE] text-[#1D9E75] border-0 text-[10px]">
-                {timbradas} timbradas
-              </Badge>
-              <Badge className="bg-[#FEE2E2] text-[#E53E3E] border-0 text-[10px]">
-                {errores} error
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </motion.div>
 
-        <Card className="border-[#E1F5EE] bg-white">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-[#888780] font-medium uppercase tracking-wide">
-                  Total facturado
-                </p>
-                <p className="text-3xl font-medium text-[#2C2C2A] mt-1 tracking-[-0.03em]">
-                  ${totalTimbrado.toLocaleString('es-MX')}
-                </p>
-                <p className="text-[10px] text-[#888780]">MXN timbrado</p>
+        <motion.div variants={itemVariants}>
+          <Card className="border-[#E1F5EE] bg-white hover:shadow-md transition-shadow">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-[#888780] font-medium uppercase tracking-wide">
+                    Total facturado
+                  </p>
+                  <p className="text-3xl font-medium text-[#2C2C2A] mt-1 tracking-[-0.03em]">
+                    ${totalTimbrado.toLocaleString('es-MX')}
+                  </p>
+                  <p className="text-[10px] text-[#888780]">MXN timbrado</p>
+                </div>
+                <motion.div
+                  className="h-10 w-10 rounded-lg bg-[#E1F5EE] flex items-center justify-center"
+                  whileHover={{ scale: 1.1, rotate: 5 }}
+                >
+                  <DollarSign className="h-5 w-5 text-[#1D9E75]" />
+                </motion.div>
               </div>
-              <div className="h-10 w-10 rounded-lg bg-[#E1F5EE] flex items-center justify-center">
-                <DollarSign className="h-5 w-5 text-[#1D9E75]" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+              <p className="text-xs text-[#1D9E75] mt-2 font-medium flex items-center gap-1">
+                <TrendingUp className="h-3 w-3" />
+                +15% vs mes anterior
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
 
-        <Card className="border-[#E1F5EE] bg-white">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-[#888780] font-medium uppercase tracking-wide">
-                  Pendientes de cobro
-                </p>
-                <p className="text-3xl font-medium text-[#2C2C2A] mt-1 tracking-[-0.03em]">
-                  ${totalPendiente.toLocaleString('es-MX')}
-                </p>
-                <p className="text-[10px] text-[#888780]">MXN / {pendientes} facturas</p>
+        <motion.div variants={itemVariants}>
+          <Card className="border-[#E1F5EE] bg-white hover:shadow-md transition-shadow">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-[#888780] font-medium uppercase tracking-wide">
+                    Pendientes de cobro
+                  </p>
+                  <p className="text-3xl font-medium text-[#2C2C2A] mt-1 tracking-[-0.03em]">
+                    ${totalPendiente.toLocaleString('es-MX')}
+                  </p>
+                  <p className="text-[10px] text-[#888780]">MXN / {pendientes} facturas</p>
+                </div>
+                <motion.div
+                  className="h-10 w-10 rounded-lg bg-[#FEF3C7] flex items-center justify-center"
+                  whileHover={{ scale: 1.1, rotate: 5 }}
+                >
+                  <Clock className="h-5 w-5 text-[#D97706]" />
+                </motion.div>
               </div>
-              <div className="h-10 w-10 rounded-lg bg-[#FEF3C7] flex items-center justify-center">
-                <Clock className="h-5 w-5 text-[#D97706]" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+              <p className="text-xs text-[#D97706] mt-2 font-medium flex items-center gap-1">
+                <TrendingDown className="h-3 w-3" />
+                {pendientes} por cobrar
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
 
       {/* Invoices table */}
-      <Card className="border-[#E1F5EE] bg-white">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-medium tracking-[-0.03em]">
-              Facturas recientes
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              {/* Facturama connection status */}
-              <Badge className={`text-[10px] border-0 ${facturamaConnected ? 'bg-amber-100 text-amber-700' : 'bg-[#FEE2E2] text-[#E53E3E]'}`}>
-                {facturamaConnected ? (
-                  <><Database className="h-3 w-3 mr-1" />Facturama {facturamaMode}</>
-                ) : (
-                  <><WifiOff className="h-3 w-3 mr-1" />Desconectado</>
-                )}
-              </Badge>
-              <Button
-                className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white h-8 text-xs"
-                onClick={() => setShowCFDIDialog(true)}
-              >
-                <Plus className="h-3.5 w-3.5 mr-1" />
-                Generar CFDI
-              </Button>
+      <motion.div variants={itemVariants}>
+        <Card className="border-[#E1F5EE] bg-white">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-medium tracking-[-0.03em]">
+                Facturas recientes
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Badge className={`text-[10px] border-0 ${facturamaConnected ? 'bg-amber-100 text-amber-700' : 'bg-[#FEE2E2] text-[#E53E3E]'}`}>
+                  {facturamaConnected ? (
+                    <><Database className="h-3 w-3 mr-1" />Facturama {facturamaMode}</>
+                  ) : (
+                    <><WifiOff className="h-3 w-3 mr-1" />Desconectado</>
+                  )}
+                </Badge>
+                <motion.div whileTap={{ scale: 0.95 }}>
+                  <Button
+                    className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white h-8 text-xs"
+                    onClick={() => { setShowCFDIDialog(true); setCfdiStep(0) }}
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    Generar CFDI
+                  </Button>
+                </motion.div>
+              </div>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <ScrollArea className="max-h-96">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-[#E1F5EE]">
-                    <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
-                      UUID
-                    </th>
-                    <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
-                      Paciente
-                    </th>
-                    <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
-                      Concepto
-                    </th>
-                    <th className="text-right text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
-                      Total
-                    </th>
-                    <th className="text-center text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
-                      Estado
-                    </th>
-                    <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
-                      Fecha
-                    </th>
-                    <th className="text-right text-[10px] text-[#888780] uppercase tracking-wide pb-2 font-medium">
-                      Acciones
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {invoiceList.map((inv) => (
-                    <tr
-                      key={inv.id}
-                      className="border-b border-[#E1F5EE]/50 hover:bg-[#F1EFE8] transition-colors"
-                    >
-                      <td className="py-3 pr-4">
-                        <span className="text-xs font-mono text-[#534AB7]">
-                          {inv.uuid.slice(0, 8)}...
-                        </span>
-                      </td>
-                      <td className="py-3 pr-4">
-                        <span className="text-sm text-[#2C2C2A]">{inv.patientName}</span>
-                      </td>
-                      <td className="py-3 pr-4">
-                        <span className="text-xs text-[#888780]">{inv.concept}</span>
-                      </td>
-                      <td className="py-3 pr-4 text-right">
-                        <span className="text-sm font-medium text-[#2C2C2A]">
-                          ${inv.total.toLocaleString('es-MX')}
-                        </span>
-                      </td>
-                      <td className="py-3 pr-4 text-center">
-                        <InvoiceStatusBadge status={inv.status} />
-                      </td>
-                      <td className="py-3 pr-4">
-                        <span className="text-xs text-[#888780]">{inv.date}</span>
-                      </td>
-                      <td className="py-3 text-right">
-                        {inv.status === 'timbrada' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-xs text-[#E53E3E] hover:text-[#E53E3E] hover:bg-[#FEE2E2]"
-                            onClick={() => setCancelTarget(inv)}
-                          >
-                            <Trash2 className="h-3 w-3 mr-1" />
-                            Cancelar
-                          </Button>
-                        )}
-                      </td>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="max-h-96">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[#E1F5EE]">
+                      <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
+                        UUID
+                      </th>
+                      <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
+                        Paciente
+                      </th>
+                      <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
+                        Concepto
+                      </th>
+                      <th className="text-right text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
+                        Total
+                      </th>
+                      <th className="text-center text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
+                        Estado
+                      </th>
+                      <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
+                        Fecha
+                      </th>
+                      <th className="text-center text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
+                        Descargar
+                      </th>
+                      <th className="text-right text-[10px] text-[#888780] uppercase tracking-wide pb-2 font-medium">
+                        Acciones
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </ScrollArea>
-        </CardContent>
-      </Card>
+                  </thead>
+                  <tbody>
+                    {invoiceList.map((inv) => (
+                      <tr
+                        key={inv.id}
+                        className="border-b border-[#E1F5EE]/50 hover:bg-[#F1EFE8] transition-colors group"
+                      >
+                        <td className="py-3 pr-4">
+                          <span className="text-xs font-mono text-[#534AB7]">
+                            {inv.uuid.slice(0, 8)}...
+                          </span>
+                        </td>
+                        <td className="py-3 pr-4">
+                          <span className="text-sm text-[#2C2C2A]">{inv.patientName}</span>
+                        </td>
+                        <td className="py-3 pr-4">
+                          <span className="text-xs text-[#888780]">{inv.concept}</span>
+                        </td>
+                        <td className="py-3 pr-4 text-right">
+                          <span className="text-sm font-medium text-[#2C2C2A]">
+                            ${inv.total.toLocaleString('es-MX')}
+                          </span>
+                        </td>
+                        <td className="py-3 pr-4 text-center">
+                          <InvoiceStatusBadge status={inv.status} />
+                        </td>
+                        <td className="py-3 pr-4">
+                          <span className="text-xs text-[#888780]">{inv.date}</span>
+                        </td>
+                        <td className="py-3 pr-4 text-center">
+                          {inv.status === 'timbrada' && (
+                            <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-[#534AB7]">
+                                <FileDown className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-[#1D9E75]">
+                                <Download className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 text-right">
+                          {inv.status === 'timbrada' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs text-[#E53E3E] hover:text-[#E53E3E] hover:bg-[#FEE2E2]"
+                              onClick={() => setCancelTarget(inv)}
+                            >
+                              <Trash2 className="h-3 w-3 mr-1" />
+                              Cancelar
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      </motion.div>
 
-      {/* Generate CFDI Dialog */}
-      <Dialog open={showCFDIDialog} onOpenChange={setShowCFDIDialog}>
+      {/* Generate CFDI Dialog - Step-by-step feel */}
+      <Dialog open={showCFDIDialog} onOpenChange={(open) => { setShowCFDIDialog(open); if (!open) setCfdiStep(0) }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-base font-medium tracking-[-0.03em] flex items-center gap-2">
@@ -387,6 +451,28 @@ export function BillDashboard() {
               Generar CFDI 4.0
             </DialogTitle>
           </DialogHeader>
+
+          {/* Step indicators */}
+          <div className="flex items-center gap-2 mb-4">
+            {[
+              { step: 0, label: 'Paciente' },
+              { step: 1, label: 'Concepto' },
+              { step: 2, label: 'Pago' },
+            ].map((s, i) => (
+              <div key={s.step} className="flex items-center gap-2 flex-1">
+                <div className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-medium transition-colors ${
+                  cfdiStep >= s.step ? 'bg-[#534AB7] text-white' : 'bg-[#F1EFE8] text-[#888780]'
+                }`}>
+                  {cfdiStep > s.step ? <CheckCircle2 className="h-3.5 w-3.5" /> : s.step + 1}
+                </div>
+                <span className={`text-[10px] ${cfdiStep >= s.step ? 'text-[#534AB7] font-medium' : 'text-[#888780]'}`}>
+                  {s.label}
+                </span>
+                {i < 2 && <div className="flex-1 h-px bg-[#E1F5EE]" />}
+              </div>
+            ))}
+          </div>
+
           <div className="space-y-4">
             <div className="p-3 rounded-lg bg-[#FEF3C7] flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-[#D97706] shrink-0" />
@@ -395,90 +481,90 @@ export function BillDashboard() {
               </p>
             </div>
 
-            <div className="space-y-2">
-              <Label className="text-xs text-[#888780]">Paciente</Label>
-              <Select value={formPatient} onValueChange={setFormPatient}>
-                <SelectTrigger className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE]">
-                  <SelectValue placeholder="Seleccionar paciente..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {patients.map(p => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs text-[#888780]">Concepto</Label>
-              <Input
-                className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE]"
-                placeholder="Ej: Consulta dermatologica"
-                value={formConcept}
-                onChange={(e) => setFormConcept(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs text-[#888780]">Subtotal (MXN)</Label>
-              <Input
-                type="number"
-                className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE]"
-                placeholder="0.00"
-                value={formSubtotal}
-                onChange={(e) => setFormSubtotal(e.target.value)}
-              />
-              {formSubtotal && (
-                <p className="text-[10px] text-[#888780]">
-                  IVA (16%): ${((parseFloat(formSubtotal) || 0) * 0.16).toFixed(2)} | Total: ${((parseFloat(formSubtotal) || 0) * 1.16).toFixed(2)}
-                </p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
+            {cfdiStep === 0 && (
               <div className="space-y-2">
-                <Label className="text-xs text-[#888780]">Forma de Pago</Label>
-                <Select value={formFormaPago} onValueChange={setFormFormaPago}>
-                  <SelectTrigger className="h-9 text-xs bg-[#F1EFE8] border-[#E1F5EE]">
-                    <SelectValue />
+                <Label className="text-xs text-[#888780]">Paciente</Label>
+                <Select value={formPatient} onValueChange={setFormPatient}>
+                  <SelectTrigger className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7]">
+                    <SelectValue placeholder="Seleccionar paciente..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="01">01 Efectivo</SelectItem>
-                    <SelectItem value="03">03 Transferencia</SelectItem>
-                    <SelectItem value="04">04 Tarjeta</SelectItem>
+                    {patients.map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
+            )}
 
+            {cfdiStep === 1 && (
               <div className="space-y-2">
-                <Label className="text-xs text-[#888780]">Metodo de Pago</Label>
-                <Select value={formMetodoPago} onValueChange={setFormMetodoPago}>
-                  <SelectTrigger className="h-9 text-xs bg-[#F1EFE8] border-[#E1F5EE]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="PUE">PUE</SelectItem>
-                    <SelectItem value="PPD">PPD</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label className="text-xs text-[#888780]">Concepto</Label>
+                <Input
+                  className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7]"
+                  placeholder="Ej: Consulta dermatologica"
+                  value={formConcept}
+                  onChange={(e) => setFormConcept(e.target.value)}
+                />
+                <Label className="text-xs text-[#888780]">Subtotal (MXN)</Label>
+                <Input
+                  type="number"
+                  className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7]"
+                  placeholder="0.00"
+                  value={formSubtotal}
+                  onChange={(e) => setFormSubtotal(e.target.value)}
+                />
+                {formSubtotal && (
+                  <p className="text-[10px] text-[#888780]">
+                    IVA (16%): ${((parseFloat(formSubtotal) || 0) * 0.16).toFixed(2)} | Total: ${((parseFloat(formSubtotal) || 0) * 1.16).toFixed(2)}
+                  </p>
+                )}
               </div>
+            )}
 
-              <div className="space-y-2">
-                <Label className="text-xs text-[#888780]">Uso CFDI</Label>
-                <Select value={formUsoCFDI} onValueChange={setFormUsoCFDI}>
-                  <SelectTrigger className="h-9 text-xs bg-[#F1EFE8] border-[#E1F5EE]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="G01">G01</SelectItem>
-                    <SelectItem value="G02">G02</SelectItem>
-                    <SelectItem value="G03">G03</SelectItem>
-                    <SelectItem value="I01">I01</SelectItem>
-                    <SelectItem value="P01">P01</SelectItem>
-                  </SelectContent>
-                </Select>
+            {cfdiStep === 2 && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <Label className="text-xs text-[#888780]">Forma de Pago (SAT)</Label>
+                  <Select value={formFormaPago} onValueChange={setFormFormaPago}>
+                    <SelectTrigger className="h-9 text-xs bg-[#F1EFE8] border-[#E1F5EE]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      {FORMA_PAGO.map(fp => (
+                        <SelectItem key={fp.code} value={fp.code} className="text-xs">{fp.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs text-[#888780]">Metodo de Pago (SAT)</Label>
+                  <Select value={formMetodoPago} onValueChange={setFormMetodoPago}>
+                    <SelectTrigger className="h-9 text-xs bg-[#F1EFE8] border-[#E1F5EE]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {METODO_PAGO.map(mp => (
+                        <SelectItem key={mp.code} value={mp.code} className="text-xs">{mp.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs text-[#888780]">Uso CFDI (SAT)</Label>
+                  <Select value={formUsoCFDI} onValueChange={setFormUsoCFDI}>
+                    <SelectTrigger className="h-9 text-xs bg-[#F1EFE8] border-[#E1F5EE]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      {USO_CFDI.map(uc => (
+                        <SelectItem key={uc.code} value={uc.code} className="text-xs">{uc.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="p-3 rounded-lg bg-[#F1EFE8] text-xs text-[#888780] space-y-1">
               <p><span className="font-medium text-[#2C2C2A]">Emisor:</span> {clinicProfile.name} | RFC: {clinicProfile.rfc}</p>
@@ -486,24 +572,32 @@ export function BillDashboard() {
             </div>
           </div>
           <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              className="text-sm"
-              onClick={() => { setShowCFDIDialog(false); resetForm() }}
-            >
-              Cancelar
-            </Button>
-            <Button
-              className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white text-sm"
-              onClick={handleGenerateCFDI}
-              disabled={isGenerating || !formPatient || !formConcept || !formSubtotal}
-            >
-              {isGenerating ? (
-                <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Generando...</>
-              ) : (
-                <><Receipt className="h-4 w-4 mr-1" />Generar CFDI</>
-              )}
-            </Button>
+            {cfdiStep > 0 && (
+              <Button variant="outline" className="text-sm" onClick={() => setCfdiStep(cfdiStep - 1)}>
+                Anterior
+              </Button>
+            )}
+            {cfdiStep < 2 ? (
+              <Button
+                className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white text-sm"
+                onClick={() => setCfdiStep(cfdiStep + 1)}
+                disabled={(cfdiStep === 0 && !formPatient) || (cfdiStep === 1 && (!formConcept || !formSubtotal))}
+              >
+                Siguiente
+              </Button>
+            ) : (
+              <Button
+                className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white text-sm"
+                onClick={handleGenerateCFDI}
+                disabled={isGenerating}
+              >
+                {isGenerating ? (
+                  <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Generando...</>
+                ) : (
+                  <><Receipt className="h-4 w-4 mr-1" />Generar CFDI</>
+                )}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -550,6 +644,6 @@ export function BillDashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </motion.div>
   )
 }

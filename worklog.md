@@ -71,3 +71,71 @@ Stage Summary:
 - Event bus connecting agents (cita_agendada → factura_generada, etc.)
 - Pre-consulta with real AI questions + SOAP note generation
 - Multi-agent routing in orchestrator
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Implement Real Authentication with NextAuth.js
+
+Work Log:
+- Added User, Account, Session, VerificationToken models to Prisma schema
+- Added `users User[]` relation to Clinic model
+- Installed bcryptjs, @types/bcryptjs, @next-auth/prisma-adapter
+- Ran prisma generate and db push to sync schema
+- Created /src/lib/auth.ts with NextAuth configuration (CredentialsProvider, JWT strategy, role/clinicId callbacks)
+- Created /src/app/api/auth/[...nextauth]/route.ts (NextAuth handler)
+- Created /src/app/api/auth/register/route.ts (user registration with clinic creation)
+- Created /src/components/providers/session-provider.tsx (AuthProvider wrapper)
+- Updated root layout.tsx to wrap children with AuthProvider
+- Created /src/middleware.ts with withAuth for protected routes
+- Created /src/lib/auth-api.ts with getAuthUser, requireAuth, requireClinicAccess helpers
+- Rewrote login-screen.tsx to use NextAuth signIn and register API (with framer-motion animations, show/hide password, loading states)
+- Updated page.tsx to use useSession from next-auth/react instead of Zustand isLoggedIn
+- Added NEXTAUTH_SECRET and NEXTAUTH_URL to .env
+- Created prisma/seed.ts with demo clinic, doctor, user, and services
+- Ran seed script successfully (demo user: demo@sinap.health / demo1234)
+- Restarted dev server to pick up Prisma client changes
+- Verified register API works (201 response)
+- Verified login flow works (302 redirect on successful credentials)
+- Lint passes clean
+
+Stage Summary:
+- Real authentication replaces fake Zustand boolean login
+- NextAuth.js v4 with CredentialsProvider and JWT sessions
+- Password hashing with bcryptjs (12 salt rounds)
+- User registration creates clinic and auto-signs in
+- Demo user seeded: demo@sinap.health / demo1234
+- Session includes role and clinicId in JWT token
+- Middleware protects /dashboard and API routes
+- Auth helper utilities for server-side access control
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: Rebranding with new logo + "Inteligencia que conecta" tagline + UX/UI improvements
+
+Work Log:
+- Analyzed new logo image via VLM: central purple circle with light purple ring, green circular outline, two green dots connected via horizontal line
+- Updated tagline from "La sinapsis de tu negocio de salud" to "Inteligencia que conecta" across all files
+- Created SinapLogo component (/src/components/sinap/sinap-logo.tsx) matching new logo design with variant support (light/dark/default)
+- Updated sidebar.tsx to use SinapLogo component with "Inteligencia que conecta" below brand name
+- Updated header.tsx mobile drawer to use SinapLogo component with text and tagline
+- Updated login-screen.tsx to use SinapLogo component for both desktop (floating animation) and mobile views
+- Updated favicon in layout.tsx to match new logo design
+- Updated page metadata with new tagline
+- Created comprehensive Facturama CFDI 4.0 service layer (/src/lib/facturama.ts) with:
+  - Full SAT catalogs: FORMA_PAGO (21 items), METODO_PAGO (2), USO_CFDI (27), REGIMEN_FISCAL (22), HEALTH_PRODUCT_CODES (13), UNIT_CODES (6)
+  - Types: CFDIItem, CFDIReceiver, CFDIEmisor, CFDIPayload, CFDIResponse, CFDICancelResponse
+  - generateCFDI() for real Facturama API calls
+  - cancelCFDI() for real cancellations
+  - downloadCFDIPDF() and downloadCFDIXML() for document retrieval
+  - generateSimulatedCFDI() and cancelSimulatedCFDI() for sandbox mode
+- Updated bill-dashboard.tsx to import and use real SAT catalogs from facturama.ts in CFDI generation dialog
+- Build compiles successfully with all changes
+
+Stage Summary:
+- New brand identity: "Inteligencia que conecta" tagline replacing old one everywhere
+- New SinapLogo component matching real logo design (circle + ring + connected nodes)
+- CFDI 4.0 service layer with complete SAT catalogs for Mexican tax compliance
+- Bill Dashboard using real SAT catalog dropdowns for Forma de Pago, Metodo de Pago, Uso CFDI
+- All builds clean, no regressions
