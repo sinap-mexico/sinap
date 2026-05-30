@@ -1,16 +1,226 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { signIn } from 'next-auth/react'
 import { useSinapStore } from '@/lib/sinap-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent } from '@/components/ui/card'
-import { Mail, Lock, User, ArrowRight, ArrowLeft, Loader2, Eye, EyeOff, Building2, KeyRound } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Mail, Lock, User, ArrowRight, ArrowLeft, Loader2,
+  Eye, EyeOff, Building2, KeyRound, Brain, Shield, BarChart3,
+  Monitor, ShieldCheck
+} from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { SinapLogo } from '@/components/sinap/sinap-logo'
 
+/* ------------------------------------------------------------------ */
+/*  Animated network constellation background                          */
+/* ------------------------------------------------------------------ */
+function NetworkBackground() {
+  // Generate deterministic nodes
+  const nodes = [
+    { x: 12, y: 15, r: 2.5, o: 0.7 },
+    { x: 30, y: 8, r: 2, o: 0.5 },
+    { x: 55, y: 12, r: 3, o: 0.6 },
+    { x: 78, y: 10, r: 2, o: 0.4 },
+    { x: 90, y: 20, r: 2.5, o: 0.5 },
+    { x: 8, y: 45, r: 2, o: 0.4 },
+    { x: 25, y: 40, r: 3, o: 0.6 },
+    { x: 50, y: 38, r: 2.5, o: 0.5 },
+    { x: 72, y: 42, r: 2, o: 0.3 },
+    { x: 88, y: 50, r: 3, o: 0.6 },
+    { x: 15, y: 70, r: 2.5, o: 0.5 },
+    { x: 40, y: 68, r: 2, o: 0.4 },
+    { x: 62, y: 72, r: 3, o: 0.6 },
+    { x: 85, y: 65, r: 2, o: 0.4 },
+    { x: 35, y: 88, r: 2.5, o: 0.5 },
+    { x: 60, y: 90, r: 2, o: 0.3 },
+    { x: 80, y: 85, r: 2.5, o: 0.5 },
+    { x: 48, y: 55, r: 1.5, o: 0.25 },
+    { x: 18, y: 58, r: 1.5, o: 0.2 },
+    { x: 68, y: 28, r: 1.5, o: 0.2 },
+  ]
+
+  const connections = [
+    [0, 1], [1, 2], [2, 3], [3, 4],
+    [0, 5], [5, 6], [6, 7], [7, 8], [8, 9],
+    [5, 10], [6, 11], [7, 12], [8, 13],
+    [10, 11], [11, 12], [12, 13],
+    [10, 14], [11, 15], [13, 16],
+    [14, 15], [15, 16],
+    [6, 17], [7, 17], [5, 18], [17, 18],
+    [2, 19], [7, 19], [8, 19],
+  ]
+
+  return (
+    <svg
+      className="absolute inset-0 w-full h-full"
+      viewBox="0 0 100 100"
+      preserveAspectRatio="xMidYMid slice"
+      fill="none"
+    >
+      {/* Radial gradient glow */}
+      <defs>
+        <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#1D9E75" stopOpacity="0.08" />
+          <stop offset="100%" stopColor="#1D9E75" stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id="dotGlow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#5DCAA5" stopOpacity="1" />
+          <stop offset="100%" stopColor="#5DCAA5" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <rect width="100" height="100" fill="url(#centerGlow)" />
+
+      {/* Circular grid lines */}
+      <circle cx="50" cy="50" r="20" stroke="#5DCAA5" strokeWidth="0.15" opacity="0.15" />
+      <circle cx="50" cy="50" r="35" stroke="#5DCAA5" strokeWidth="0.12" opacity="0.1" />
+      <circle cx="50" cy="50" r="48" stroke="#5DCAA5" strokeWidth="0.1" opacity="0.06" />
+
+      {/* Connection lines */}
+      {connections.map(([a, b], i) => (
+        <line
+          key={`line-${i}`}
+          x1={nodes[a].x}
+          y1={nodes[a].y}
+          x2={nodes[b].x}
+          y2={nodes[b].y}
+          stroke="#5DCAA5"
+          strokeWidth="0.15"
+          opacity="0.12"
+        />
+      ))}
+
+      {/* Glowing nodes */}
+      {nodes.map((node, i) => (
+        <g key={`node-${i}`}>
+          <circle cx={node.x} cy={node.y} r={node.r * 2.5} fill="url(#dotGlow)" opacity="0.15" />
+          <circle cx={node.x} cy={node.y} r={node.r} fill="#5DCAA5" opacity={node.o} />
+        </g>
+      ))}
+    </svg>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Animated floating particles                                        */
+/* ------------------------------------------------------------------ */
+function FloatingParticles() {
+  const particles = Array.from({ length: 12 }, (_, i) => ({
+    id: i,
+    x: Math.random() * 100,
+    y: Math.random() * 100,
+    size: 1 + Math.random() * 2,
+    duration: 15 + Math.random() * 20,
+    delay: Math.random() * 5,
+  }))
+
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      {particles.map((p) => (
+        <motion.div
+          key={p.id}
+          className="absolute rounded-full bg-[#5DCAA5]"
+          style={{
+            left: `${p.x}%`,
+            top: `${p.y}%`,
+            width: p.size,
+            height: p.size,
+            opacity: 0.15,
+          }}
+          animate={{
+            y: [0, -30, 0],
+            opacity: [0.15, 0.3, 0.15],
+          }}
+          transition={{
+            duration: p.duration,
+            delay: p.delay,
+            repeat: Infinity,
+            ease: 'easeInOut',
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Feature pill component                                             */
+/* ------------------------------------------------------------------ */
+function FeaturePill({ icon: Icon, label }: { icon: React.ElementType; label: string }) {
+  return (
+    <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-white/8 backdrop-blur-sm border border-white/10">
+      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-[#5DCAA5]/15">
+        <Icon className="w-4 h-4 text-[#5DCAA5]" />
+      </div>
+      <span className="text-sm text-white/70 font-normal">{label}</span>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Form input with icon                                               */
+/* ------------------------------------------------------------------ */
+function FormInput({
+  label,
+  icon: Icon,
+  type = 'text',
+  placeholder,
+  value,
+  onChange,
+  onKeyDown,
+  hasError,
+  errorHint,
+  rightElement,
+}: {
+  label: string
+  icon: React.ElementType
+  type?: string
+  placeholder: string
+  value: string
+  onChange: (v: string) => void
+  onKeyDown?: (e: React.KeyboardEvent) => void
+  hasError?: boolean
+  errorHint?: string
+  rightElement?: React.ReactNode
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-[13px] font-normal text-[#2C2C2A]/70">{label}</Label>
+      <div className="relative group">
+        <Icon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-[#1D9E75]/60 group-focus-within:text-[#1D9E75] transition-colors" />
+        <Input
+          type={type}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          className={`pl-11 h-12 text-sm bg-white border-[1.5px] rounded-lg transition-all duration-200 placeholder:text-[#888780]/50 ${
+            hasError
+              ? 'border-red-300 focus:border-red-400 focus:ring-red-100'
+              : 'border-[#E8E6DF] focus:border-[#534AB7] focus:ring-[#534AB7]/10 hover:border-[#888780]/40'
+          } focus:ring-2 focus:ring-offset-0`}
+        />
+        {errorHint && hasError && (
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-red-500 font-medium">
+            {errorHint}
+          </span>
+        )}
+        {rightElement && !hasError && (
+          <div className="absolute right-3.5 top-1/2 -translate-y-1/2">
+            {rightElement}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Main Login Screen                                                  */
+/* ------------------------------------------------------------------ */
 const formVariants = {
   hidden: { opacity: 0, x: 20 },
   visible: { opacity: 1, x: 0 },
@@ -20,6 +230,20 @@ const formVariants = {
 const shakeAnimation = {
   x: [0, -8, 8, -6, 6, -3, 3, 0],
   transition: { duration: 0.4 },
+}
+
+// Staggered entry container
+const staggerContainer = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.06, delayChildren: 0.1 },
+  },
+}
+
+const staggerItem = {
+  hidden: { opacity: 0, y: 12 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
 }
 
 export function LoginScreen() {
@@ -34,16 +258,17 @@ export function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [shakeError, setShakeError] = useState(false)
+  const [rememberMe, setRememberMe] = useState(true)
 
   // Real-time validation
   const emailValid = email ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) : true
   const passwordValid = password ? password.length >= 8 : true
   const passwordsMatch = confirmPassword ? password === confirmPassword : true
 
-  const triggerShake = () => {
+  const triggerShake = useCallback(() => {
     setShakeError(true)
     setTimeout(() => setShakeError(false), 500)
-  }
+  }, [])
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -52,7 +277,7 @@ export function LoginScreen() {
       return
     }
     if (!emailValid) {
-      setError('Ingresa un correo electronico valido')
+      setError('Ingresa un correo electrónico válido')
       triggerShake()
       return
     }
@@ -67,11 +292,11 @@ export function LoginScreen() {
       })
 
       if (result?.error) {
-        setError('Correo o contrasena incorrectos')
+        setError('Correo o contraseña incorrectos')
         triggerShake()
       }
     } catch {
-      setError('Error de conexion. Intenta de nuevo.')
+      setError('Error de conexión. Intenta de nuevo.')
       triggerShake()
     } finally {
       setIsLoading(false)
@@ -85,17 +310,17 @@ export function LoginScreen() {
       return
     }
     if (!emailValid) {
-      setError('Ingresa un correo electronico valido')
+      setError('Ingresa un correo electrónico válido')
       triggerShake()
       return
     }
     if (!passwordValid) {
-      setError('La contrasena debe tener al menos 8 caracteres')
+      setError('La contraseña debe tener al menos 8 caracteres')
       triggerShake()
       return
     }
     if (password !== confirmPassword) {
-      setError('Las contrasenas no coinciden')
+      setError('Las contraseñas no coinciden')
       triggerShake()
       return
     }
@@ -130,7 +355,7 @@ export function LoginScreen() {
         redirect: false,
       })
     } catch {
-      setError('Error de conexion. Intenta de nuevo.')
+      setError('Error de conexión. Intenta de nuevo.')
       triggerShake()
     } finally {
       setIsLoading(false)
@@ -161,343 +386,354 @@ export function LoginScreen() {
   }
 
   return (
-    <div className="flex h-screen w-full">
-      {/* Left side - Brand */}
-      <div className="hidden lg:flex lg:w-1/2 bg-[#0F2D26] flex-col items-center justify-center p-12 relative overflow-hidden">
-        {/* Background decoration */}
-        <div className="absolute inset-0 opacity-10">
-          <svg width="100%" height="100%" viewBox="0 0 800 800" fill="none">
-            <circle cx="400" cy="400" r="200" stroke="#5DCAA5" strokeWidth="0.5" opacity="0.3" />
-            <circle cx="400" cy="400" r="300" stroke="#5DCAA5" strokeWidth="0.5" opacity="0.2" />
-            <circle cx="400" cy="400" r="400" stroke="#5DCAA5" strokeWidth="0.5" opacity="0.1" />
-            <circle cx="200" cy="200" r="4" fill="#1D9E75" opacity="0.3" />
-            <circle cx="600" cy="200" r="4" fill="#1D9E75" opacity="0.3" />
-            <circle cx="200" cy="600" r="4" fill="#1D9E75" opacity="0.3" />
-            <circle cx="600" cy="600" r="4" fill="#1D9E75" opacity="0.3" />
-            <line x1="200" y1="200" x2="400" y2="400" stroke="#5DCAA5" strokeWidth="0.5" opacity="0.15" />
-            <line x1="600" y1="200" x2="400" y2="400" stroke="#5DCAA5" strokeWidth="0.5" opacity="0.15" />
-            <line x1="200" y1="600" x2="400" y2="400" stroke="#5DCAA5" strokeWidth="0.5" opacity="0.15" />
-            <line x1="600" y1="600" x2="400" y2="400" stroke="#5DCAA5" strokeWidth="0.5" opacity="0.15" />
-          </svg>
-        </div>
+    <div className="flex h-screen w-full overflow-hidden">
+      {/* ============================================================ */}
+      {/* LEFT PANEL — Dark brand panel with network background        */}
+      {/* ============================================================ */}
+      <div className="hidden lg:flex lg:w-[58%] bg-[#0A1929] flex-col items-center justify-center p-12 relative overflow-hidden">
+        {/* Animated network background */}
+        <NetworkBackground />
+        <FloatingParticles />
 
-        <motion.div
-          className="relative z-10 flex flex-col items-center text-center"
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, ease: 'easeOut' }}
-        >
-          {/* Logo with floating animation */}
+        {/* Content layer */}
+        <div className="relative z-10 flex flex-col items-center text-center max-w-md">
+          {/* Logo with subtle pulse */}
           <motion.div
-            animate={{ y: [0, -8, 0] }}
-            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.8, ease: 'easeOut' }}
           >
-            <SinapLogo size={80} animate={false} variant="dark" />
+            <motion.div
+              animate={{ y: [0, -6, 0] }}
+              transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+            >
+              <SinapLogo size={80} animate={false} variant="dark" />
+            </motion.div>
           </motion.div>
 
+          {/* Brand name */}
           <motion.h1
-            className="text-4xl font-medium tracking-[-0.03em] text-white mb-4"
-            initial={{ opacity: 0, y: 10 }}
+            className="text-[3rem] font-medium tracking-[-0.04em] text-white mt-6 mb-2"
+            initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2, duration: 0.5 }}
+            transition={{ delay: 0.2, duration: 0.6 }}
           >
             Sinap
           </motion.h1>
+
+          {/* Tagline */}
           <motion.p
-            className="text-lg text-[#5DCAA5] mb-2"
+            className="text-lg text-[#5DCAA5] font-normal mb-3"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3, duration: 0.5 }}
+            transition={{ delay: 0.35, duration: 0.5 }}
           >
             Inteligencia que conecta
           </motion.p>
+
+          {/* Description */}
           <motion.p
-            className="text-sm text-white/50 max-w-sm"
+            className="text-[15px] text-white/50 leading-relaxed max-w-sm mb-10"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4, duration: 0.5 }}
+            transition={{ delay: 0.5, duration: 0.5 }}
           >
-            Plataforma multi-agente con inteligencia artificial para clinicas y consultorios en Mexico.
+            La plataforma multi-agente para clínicas y consultorios que quieren operar con más inteligencia.
           </motion.p>
-        </motion.div>
+
+          {/* Feature pills */}
+          <motion.div
+            className="flex flex-col gap-3 w-full items-center"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.65, duration: 0.6 }}
+          >
+            <FeaturePill icon={Brain} label="Inteligencia artificial" />
+            <FeaturePill icon={Shield} label="Seguridad y cumplimiento" />
+            <FeaturePill icon={BarChart3} label="Decisiones basadas en datos" />
+          </motion.div>
+
+          {/* Security badge */}
+          <motion.div
+            className="mt-10 flex items-center gap-2 text-white/30 text-xs"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.9, duration: 0.5 }}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-[#5DCAA5]/50" />
+            Segura, confiable y diseñada para la salud
+          </motion.div>
+        </div>
       </div>
 
-      {/* Right side - Form */}
-      <div className="flex-1 flex items-center justify-center bg-[#F1EFE8] p-6 sm:p-8">
+      {/* ============================================================ */}
+      {/* RIGHT PANEL — Login form                                     */}
+      {/* ============================================================ */}
+      <div className="flex-1 flex flex-col items-center justify-center bg-white px-6 sm:px-8 py-8 relative overflow-y-auto">
+        {/* Mobile logo (only visible on small screens) */}
+        <motion.div
+          className="lg:hidden flex flex-col items-center mb-8"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.1 }}
+        >
+          <SinapLogo size={44} variant="light" showText showTagline />
+        </motion.div>
+
+        {/* Form container */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: 'easeOut' }}
-          className="w-full max-w-md"
+          className="w-full max-w-[380px]"
         >
-          <Card className="border-0 shadow-lg bg-white">
-            <CardContent className="p-8">
-              {/* Mobile logo */}
+          {/* Header */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="mb-7"
+          >
+            <h2 className="text-[1.65rem] font-medium tracking-[-0.03em] text-[#2C2C2A] leading-tight">
+              {isRegister ? 'Crear cuenta' : 'Iniciar sesión'}
+            </h2>
+            <p className="text-sm text-[#888780] mt-1.5">
+              {isRegister ? 'Registra tu consultorio en Sinap' : 'Accede a tu plataforma Sinap'}
+            </p>
+          </motion.div>
+
+          {/* Error message */}
+          <AnimatePresence mode="wait">
+            {error && (
               <motion.div
-                className="lg:hidden flex flex-col items-center mb-8"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.1 }}
+                initial={{ opacity: 0, height: 0, x: 0 }}
+                animate={{ opacity: 1, height: 'auto', ...(shakeError ? shakeAnimation : {}) }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mb-5 p-3.5 rounded-lg bg-red-50 border border-red-200/80 text-red-700 text-sm flex items-start gap-2"
               >
-                <SinapLogo size={48} variant="light" showText />
+                <div className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 shrink-0" />
+                {error}
               </motion.div>
+            )}
+          </AnimatePresence>
 
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15 }}
-              >
-                <h2 className="text-xl font-medium tracking-[-0.03em] text-[#2C2C2A] mb-1">
-                  {isRegister ? 'Crear cuenta' : 'Iniciar sesion'}
-                </h2>
-                <p className="text-sm text-[#888780] mb-6">
-                  {isRegister ? 'Registra tu consultorio en Sinap' : 'Accede a tu plataforma Sinap'}
-                </p>
-              </motion.div>
-
-              <AnimatePresence mode="wait">
-                {error && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0, x: 0 }}
-                    animate={{ opacity: 1, height: 'auto', ...(shakeError ? shakeAnimation : {}) }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm"
-                  >
-                    {error}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <div className="space-y-4">
-                <AnimatePresence mode="wait">
-                  {isRegister && (
-                    <motion.div
-                      key="register-fields"
-                      variants={formVariants}
-                      initial="hidden"
-                      animate="visible"
-                      exit="exit"
-                      transition={{ duration: 0.25 }}
-                      className="space-y-4 overflow-hidden"
-                    >
-                      <div className="space-y-2">
-                        <Label className="text-xs text-[#888780]">Nombre completo</Label>
-                        <div className="relative">
-                          <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#888780]" />
-                          <Input
-                            placeholder="Dr. Nombre Apellido"
-                            className="pl-10 h-10 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7] focus:ring-[#534AB7]/20 transition-colors"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label className="text-xs text-[#888780]">Nombre de la clinica</Label>
-                        <div className="relative">
-                          <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#888780]" />
-                          <Input
-                            placeholder="Clinica San Angel"
-                            className="pl-10 h-10 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7] focus:ring-[#534AB7]/20 transition-colors"
-                            value={clinicName}
-                            onChange={(e) => setClinicName(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
+          {/* Form fields with staggered animation */}
+          <motion.div
+            className="space-y-4"
+            variants={staggerContainer}
+            initial="hidden"
+            animate="visible"
+            key={isRegister ? 'register' : 'login'}
+          >
+            {/* Register-only fields */}
+            <AnimatePresence mode="wait">
+              {isRegister && (
                 <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 }}
-                  className="space-y-2"
+                  key="register-fields"
+                  variants={formVariants}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                  transition={{ duration: 0.25 }}
+                  className="space-y-4 overflow-hidden"
                 >
-                  <Label className="text-xs text-[#888780]">Correo electronico</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#888780]" />
-                    <Input
-                      type="email"
-                      placeholder="tu@correo.com"
-                      className={`pl-10 h-10 text-sm bg-[#F1EFE8] focus:ring-[#534AB7]/20 transition-colors ${
-                        !emailValid ? 'border-red-300 focus:border-red-400' : 'border-[#E1F5EE] focus:border-[#534AB7]'
-                      }`}
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                  <motion.div variants={staggerItem}>
+                    <FormInput
+                      label="Nombre completo"
+                      icon={User}
+                      placeholder="Dr. Nombre Apellido"
+                      value={name}
+                      onChange={setName}
                     />
-                    {email && !emailValid && (
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-red-500">Invalido</span>
-                    )}
-                  </div>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.25 }}
-                  className="space-y-2"
-                >
-                  <Label className="text-xs text-[#888780]">Contrasena</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#888780]" />
-                    <Input
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder="********"
-                      className={`pl-10 pr-10 h-10 text-sm bg-[#F1EFE8] focus:ring-[#534AB7]/20 transition-colors ${
-                        !passwordValid ? 'border-red-300 focus:border-red-400' : 'border-[#E1F5EE] focus:border-[#534AB7]'
-                      }`}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !isRegister) handleLogin()
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888780] hover:text-[#2C2C2A] transition-colors"
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                  {password && !passwordValid && (
-                    <p className="text-[10px] text-red-500 mt-1">Minimo 8 caracteres</p>
-                  )}
-                </motion.div>
-
-                <AnimatePresence mode="wait">
-                  {isRegister && (
-                    <motion.div
-                      key="confirm-password"
-                      variants={formVariants}
-                      initial="hidden"
-                      animate="visible"
-                      exit="exit"
-                      transition={{ duration: 0.25 }}
-                      className="space-y-2 overflow-hidden"
-                    >
-                      <Label className="text-xs text-[#888780]">Confirmar contrasena</Label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#888780]" />
-                        <Input
-                          type="password"
-                          placeholder="********"
-                          className={`pl-10 h-10 text-sm bg-[#F1EFE8] focus:ring-[#534AB7]/20 transition-colors ${
-                            !passwordsMatch ? 'border-red-300 focus:border-red-400' : 'border-[#E1F5EE] focus:border-[#534AB7]'
-                          }`}
-                          value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleRegister()
-                          }}
-                        />
-                        {confirmPassword && !passwordsMatch && (
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-red-500">No coincide</span>
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3 }}
-                >
-                  <Button
-                    className="w-full h-10 bg-[#534AB7] hover:bg-[#534AB7]/90 text-white text-sm font-medium transition-all active:scale-[0.98]"
-                    onClick={isRegister ? handleRegister : handleLogin}
-                    disabled={isLoading}
-                    whileTap={{ scale: 0.98 }}
-                  >
-                    {isLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        {isRegister ? 'Crear cuenta' : 'Iniciar sesion'}
-                        <ArrowRight className="h-4 w-4 ml-2" />
-                      </>
-                    )}
-                  </Button>
-                </motion.div>
-
-                {/* Forgot password link */}
-                {!isRegister && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.35 }}
-                    className="text-center"
-                  >
-                    <button className="text-xs text-[#888780] hover:text-[#534AB7] transition-colors inline-flex items-center gap-1">
-                      <KeyRound className="h-3 w-3" />
-                      Olvide mi contrasena
-                    </button>
                   </motion.div>
-                )}
-
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.35 }}
-                  className="relative my-6"
-                >
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-[#E1F5EE]" />
-                  </div>
-                  <div className="relative flex justify-center text-xs">
-                    <span className="px-3 bg-white text-[#888780]">o</span>
-                  </div>
+                  <motion.div variants={staggerItem}>
+                    <FormInput
+                      label="Nombre de la clínica (opcional)"
+                      icon={Building2}
+                      placeholder="Clínica San Ángel"
+                      value={clinicName}
+                      onChange={setClinicName}
+                    />
+                  </motion.div>
                 </motion.div>
+              )}
+            </AnimatePresence>
 
+            {/* Email field */}
+            <motion.div variants={staggerItem}>
+              <FormInput
+                label="Correo electrónico"
+                icon={Mail}
+                type="email"
+                placeholder="tu@correo.com"
+                value={email}
+                onChange={setEmail}
+                hasError={!!(email && !emailValid)}
+                errorHint="Inválido"
+              />
+            </motion.div>
+
+            {/* Password field */}
+            <motion.div variants={staggerItem}>
+              <FormInput
+                label="Contraseña"
+                icon={Lock}
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Ingresa tu contraseña"
+                value={password}
+                onChange={setPassword}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !isRegister) handleLogin()
+                }}
+                hasError={!!(password && !passwordValid)}
+                errorHint="Mín. 8"
+                rightElement={
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="text-[#888780]/60 hover:text-[#1D9E75] transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
+                  </button>
+                }
+              />
+            </motion.div>
+
+            {/* Confirm password (register only) */}
+            <AnimatePresence mode="wait">
+              {isRegister && (
                 <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4 }}
+                  key="confirm-password"
+                  variants={formVariants}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                  transition={{ duration: 0.25 }}
+                  className="overflow-hidden"
                 >
-                  <Button
-                    variant="outline"
-                    className="w-full h-10 border-[#1D9E75] text-[#1D9E75] hover:bg-[#1D9E75]/10 text-sm font-medium transition-all active:scale-[0.98]"
-                    onClick={() => {
-                      setIsRegister(!isRegister)
-                      setError('')
+                  <FormInput
+                    label="Confirmar contraseña"
+                    icon={Lock}
+                    type="password"
+                    placeholder="Confirma tu contraseña"
+                    value={confirmPassword}
+                    onChange={setConfirmPassword}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleRegister()
                     }}
-                    disabled={isLoading}
-                    whileTap={{ scale: 0.98 }}
-                  >
-                    {isRegister ? (
-                      <>
-                        <ArrowLeft className="h-4 w-4 mr-2" />
-                        Ya tengo cuenta
-                      </>
-                    ) : (
-                      <>
-                        <User className="h-4 w-4 mr-2" />
-                        Crear cuenta nueva
-                      </>
-                    )}
-                  </Button>
+                    hasError={!!(confirmPassword && !passwordsMatch)}
+                    errorHint="No coincide"
+                  />
                 </motion.div>
+              )}
+            </AnimatePresence>
 
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.45 }}
-                >
-                  <Button
-                    variant="ghost"
-                    className="w-full h-9 text-[#888780] hover:text-[#534AB7] text-xs transition-colors"
-                    onClick={handleDemoLogin}
-                    disabled={isLoading}
+            {/* Remember me + Forgot password row */}
+            {!isRegister && (
+              <motion.div variants={staggerItem} className="flex items-center justify-between pt-1">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="remember"
+                    checked={rememberMe}
+                    onCheckedChange={(v) => setRememberMe(v === true)}
+                    className="h-4 w-4 rounded border-[#888780]/30 data-[state=checked]:bg-[#1D9E75] data-[state=checked]:border-[#1D9E75] data-[state=checked]:text-white"
+                  />
+                  <label
+                    htmlFor="remember"
+                    className="text-[13px] text-[#888780] cursor-pointer select-none"
                   >
-                    {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Entrar en modo demo'}
-                  </Button>
-                </motion.div>
+                    Recordarme en este dispositivo
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  className="text-[13px] text-[#534AB7] hover:text-[#534AB7]/80 transition-colors inline-flex items-center gap-1 font-medium"
+                >
+                  <KeyRound className="h-3 w-3" />
+                  Olvidé mi contraseña
+                </button>
+              </motion.div>
+            )}
+
+            {/* Primary action button */}
+            <motion.div variants={staggerItem} className="pt-1">
+              <Button
+                className="w-full h-12 bg-[#534AB7] hover:bg-[#4A42A5] text-white text-[15px] font-medium rounded-lg transition-all duration-200 active:scale-[0.98] shadow-lg shadow-[#534AB7]/20 hover:shadow-[#534AB7]/30"
+                onClick={isRegister ? handleRegister : handleLogin}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <span className="flex items-center gap-2">
+                    {isRegister ? 'Crear cuenta' : 'Iniciar sesión'}
+                    <ArrowRight className="h-[18px] w-[18px]" />
+                  </span>
+                )}
+              </Button>
+            </motion.div>
+
+            {/* Divider */}
+            <motion.div variants={staggerItem} className="relative my-2">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-[#E8E6DF]" />
               </div>
-            </CardContent>
-          </Card>
+              <div className="relative flex justify-center">
+                <span className="px-3 bg-white text-[12px] text-[#888780]/60">o</span>
+              </div>
+            </motion.div>
+
+            {/* Secondary buttons */}
+            <motion.div variants={staggerItem} className="space-y-2.5">
+              <Button
+                variant="outline"
+                className="w-full h-11 border-[#1D9E75]/40 text-[#1D9E75] hover:bg-[#1D9E75]/8 hover:border-[#1D9E75]/60 text-sm font-medium rounded-lg transition-all duration-200 active:scale-[0.98]"
+                onClick={() => {
+                  setIsRegister(!isRegister)
+                  setError('')
+                }}
+                disabled={isLoading}
+              >
+                {isRegister ? (
+                  <span className="flex items-center gap-2">
+                    <ArrowLeft className="h-4 w-4" />
+                    Ya tengo cuenta
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <User className="h-4 w-4" />
+                    Crear cuenta nueva
+                  </span>
+                )}
+              </Button>
+
+              <Button
+                variant="outline"
+                className="w-full h-11 border-[#E8E6DF] text-[#888780] hover:bg-[#F1EFE8] hover:text-[#2C2C2A] text-sm font-normal rounded-lg transition-all duration-200 active:scale-[0.98]"
+                onClick={handleDemoLogin}
+                disabled={isLoading}
+              >
+                <span className="flex items-center gap-2">
+                  <Monitor className="h-4 w-4" />
+                  Entrar en modo demo
+                </span>
+              </Button>
+            </motion.div>
+          </motion.div>
+        </motion.div>
+
+        {/* Footer security message */}
+        <motion.div
+          className="absolute bottom-6 left-0 right-0 flex justify-center"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.8, duration: 0.5 }}
+        >
+          <div className="flex items-center gap-1.5 text-[11px] text-[#888780]/50">
+            <ShieldCheck className="h-3 w-3 text-[#1D9E75]/40" />
+            Tus datos están protegidos con los más altos estándares de seguridad
+          </div>
         </motion.div>
       </div>
     </div>
