@@ -24,6 +24,11 @@ import {
   Circle,
   Zap,
   Clock,
+  CalendarCheck,
+  Stethoscope,
+  AlertTriangle,
+  CheckCircle,
+  Bell,
 } from 'lucide-react'
 
 function getGreeting() {
@@ -255,14 +260,35 @@ export function OsOverview() {
           <CardContent>
             <ScrollArea className="h-48">
               <div className="space-y-3">
-                {activityFeed.slice(0, 6).map((activity) => (
-                  <div key={activity.id} className="flex items-start gap-2.5">
-                    <span className="text-sm shrink-0">{activity.icon}</span>
-                    <p className="text-xs text-[#2C2C2A] leading-relaxed">
-                      {activity.text}
-                    </p>
-                  </div>
-                ))}
+                {activityFeed.slice(0, 6).map((activity) => {
+                  const IconMap: Record<string, React.ElementType> = {
+                    CalendarCheck,
+                    Receipt,
+                    MessageSquare,
+                    Stethoscope,
+                    BarChart3,
+                    AlertTriangle,
+                    CheckCircle,
+                    Bell,
+                  }
+                  const Icon = IconMap[activity.icon] || Circle
+                  const typeColors: Record<string, string> = {
+                    appointment: '#1D9E75',
+                    invoice: '#1D9E75',
+                    conversation: '#5DCAA5',
+                    clinical: '#534AB7',
+                    analytics: '#534AB7',
+                    alert: '#D97706',
+                  }
+                  return (
+                    <div key={activity.id} className="flex items-start gap-2.5">
+                      <Icon className="h-3.5 w-3.5 shrink-0 mt-0.5" style={{ color: typeColors[activity.type] || '#888780' }} />
+                      <p className="text-xs text-[#2C2C2A] leading-relaxed">
+                        {activity.text}
+                      </p>
+                    </div>
+                  )
+                })}
               </div>
             </ScrollArea>
           </CardContent>

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useSinapStore, type SinapModule } from '@/lib/sinap-store'
-import { Bell, Menu } from 'lucide-react'
+import { Bell, Menu, Calendar } from 'lucide-react'
 import { clinic } from '@/lib/mock-data'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -27,6 +27,7 @@ import {
 
 const moduleLabels: Record<SinapModule, string> = {
   os: 'Sinap OS',
+  agenda: 'Agenda',
   desk: 'Sinap Desk',
   flow: 'Sinap Flow',
   bill: 'Sinap Bill',
@@ -38,6 +39,7 @@ const moduleLabels: Record<SinapModule, string> = {
 
 const moduleDescriptions: Record<SinapModule, string> = {
   os: 'Panel principal',
+  agenda: 'Calendario de citas',
   desk: 'Agente de recepción',
   flow: 'Agente clínico',
   bill: 'Agente de facturación',
@@ -56,6 +58,7 @@ const navItems: {
   requiresClinic?: boolean
 }[] = [
   { module: 'os', label: 'Sinap OS', icon: LayoutDashboard },
+  { module: 'agenda', label: 'Agenda', icon: Calendar },
   { module: 'desk', label: 'Sinap Desk', icon: MessageSquare, badge: 3 },
   { module: 'flow', label: 'Sinap Flow', icon: Activity },
   { module: 'bill', label: 'Sinap Bill', icon: Receipt },

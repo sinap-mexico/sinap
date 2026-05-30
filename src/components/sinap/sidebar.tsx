@@ -3,6 +3,7 @@
 import { useSinapStore, type SinapModule } from '@/lib/sinap-store'
 import {
   LayoutDashboard,
+  Calendar,
   MessageSquare,
   Activity,
   Receipt,
@@ -27,6 +28,7 @@ const navItems: {
   requiresClinic?: boolean
 }[] = [
   { module: 'os', label: 'Sinap OS', icon: LayoutDashboard },
+  { module: 'agenda', label: 'Agenda', icon: Calendar },
   { module: 'desk', label: 'Sinap Desk', icon: MessageSquare, badge: 3 },
   { module: 'flow', label: 'Sinap Flow', icon: Activity },
   { module: 'bill', label: 'Sinap Bill', icon: Receipt },

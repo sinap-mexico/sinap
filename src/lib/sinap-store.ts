@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type SinapModule = 'os' | 'desk' | 'flow' | 'bill' | 'grow' | 'sight' | 'hub' | 'config'
+export type SinapModule = 'os' | 'agenda' | 'desk' | 'flow' | 'bill' | 'grow' | 'sight' | 'hub' | 'config'
 
 export type FeatureFlagState = 'on' | 'assist' | 'off'
 
@@ -10,6 +10,40 @@ interface FeatureFlag {
   name: string
   description: string
   state: FeatureFlagState
+}
+
+interface DoctorProfile {
+  name: string
+  specialty: string
+  license: string
+  email: string
+  phone: string
+}
+
+interface ClinicProfile {
+  name: string
+  rfc: string
+  address: string
+  city: string
+  state: string
+  phone: string
+  email: string
+}
+
+interface ServiceItem {
+  id: string
+  name: string
+  duration: number
+  price: number
+  category: string
+  isActive: boolean
+}
+
+interface ScheduleConfig {
+  workDays: string
+  workStart: string
+  workEnd: string
+  slotMinutes: number
 }
 
 interface SinapStore {
@@ -24,6 +58,21 @@ interface SinapStore {
   plan: 'starter' | 'pro' | 'enterprise'
   featureFlags: FeatureFlag[]
   setFeatureFlag: (id: string, state: FeatureFlagState) => void
+  // Auth
+  isLoggedIn: boolean
+  setIsLoggedIn: (v: boolean) => void
+  // Onboarding
+  onboardingComplete: boolean
+  setOnboardingComplete: (v: boolean) => void
+  // Profile data
+  doctorProfile: DoctorProfile
+  setDoctorProfile: (p: Partial<DoctorProfile>) => void
+  clinicProfile: ClinicProfile
+  setClinicProfile: (p: Partial<ClinicProfile>) => void
+  services: ServiceItem[]
+  setServices: (s: ServiceItem[]) => void
+  schedule: ScheduleConfig
+  setSchedule: (s: Partial<ScheduleConfig>) => void
 }
 
 const defaultFeatureFlags: FeatureFlag[] = [
@@ -56,4 +105,45 @@ export const useSinapStore = create<SinapStore>((set) => ({
     set((s) => ({
       featureFlags: s.featureFlags.map((f) => (f.id === id ? { ...f, state } : f)),
     })),
+  // Auth
+  isLoggedIn: false,
+  setIsLoggedIn: (v) => set({ isLoggedIn: v }),
+  // Onboarding
+  onboardingComplete: false,
+  setOnboardingComplete: (v) => set({ onboardingComplete: v }),
+  // Profile data
+  doctorProfile: {
+    name: 'Dr. Alejandro Ruiz',
+    specialty: 'Dermatología',
+    license: '12345678',
+    email: 'aruiz@clinicasanangel.mx',
+    phone: '+52 55 1234 5678',
+  },
+  setDoctorProfile: (p) => set((s) => ({ doctorProfile: { ...s.doctorProfile, ...p } })),
+  clinicProfile: {
+    name: 'Clínica San Ángel',
+    rfc: 'CSA230515ABC',
+    address: 'Av. Insurgentes Sur 1234, Col. San Ángel',
+    city: 'Ciudad de México',
+    state: 'CDMX',
+    phone: '+52 55 1234 5678',
+    email: 'contacto@clinicasanangel.mx',
+  },
+  setClinicProfile: (p) => set((s) => ({ clinicProfile: { ...s.clinicProfile, ...p } })),
+  services: [
+    { id: 'svc1', name: 'Consulta general', duration: 30, price: 1200, category: 'Consulta', isActive: true },
+    { id: 'svc2', name: 'Revisión dermatológica', duration: 45, price: 1500, category: 'Consulta', isActive: true },
+    { id: 'svc3', name: 'Tratamiento láser', duration: 45, price: 2800, category: 'Procedimiento', isActive: true },
+    { id: 'svc4', name: 'Crioterapia', duration: 30, price: 1800, category: 'Procedimiento', isActive: true },
+    { id: 'svc5', name: 'Biopsia', duration: 60, price: 3500, category: 'Procedimiento', isActive: true },
+    { id: 'svc6', name: 'Consulta estética', duration: 30, price: 2000, category: 'Estética', isActive: true },
+  ],
+  setServices: (s) => set({ services: s }),
+  schedule: {
+    workDays: '1,2,3,4,5',
+    workStart: '09:00',
+    workEnd: '18:00',
+    slotMinutes: 30,
+  },
+  setSchedule: (s) => set((prev) => ({ schedule: { ...prev.schedule, ...s } })),
 }))

@@ -210,7 +210,7 @@ export function SightAnalytics() {
                 <p className="text-xs text-[#2C2C2A] leading-relaxed mb-1">
                   {alert.description}
                 </p>
-                <p className="text-[10px] text-[#888780]">💡 {alert.action}</p>
+                <p className="text-[10px] text-[#888780]">{alert.action}</p>
               </div>
             ))}
           </div>

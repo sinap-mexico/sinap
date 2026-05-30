@@ -1,13 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { conversations, type Conversation } from '@/lib/mock-data'
+import { conversations as initialConversations, type Conversation, type ConversationMessage } from '@/lib/mock-data'
 import {
   MessageSquare,
   Search,
@@ -21,6 +21,8 @@ import {
   Heart,
   AlertTriangle,
   ChevronRight,
+  Bot,
+  Loader2,
 } from 'lucide-react'
 
 function ChannelIcon({ channel }: { channel: string }) {
@@ -62,14 +64,121 @@ function SentimentBadge({ sentiment }: { sentiment: string }) {
   )
 }
 
+function TypingIndicator() {
+  return (
+    <div className="flex justify-end">
+      <div className="bg-[#534AB7] text-white rounded-xl px-4 py-2.5 max-w-[75%]">
+        <div className="flex items-center gap-2">
+          <Bot className="h-3.5 w-3.5 text-white/70" />
+          <div className="flex gap-1">
+            <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '0ms' }} />
+            <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '150ms' }} />
+            <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function DeskInbox() {
-  const [selectedConversation, setSelectedConversation] = useState<Conversation>(conversations[0])
+  const [convList, setConvList] = useState<Conversation[]>(initialConversations)
+  const [selectedConversation, setSelectedConversation] = useState<Conversation>(convList[0])
   const [messageInput, setMessageInput] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [isTyping, setIsTyping] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const filteredConversations = conversations.filter((c) =>
+  const filteredConversations = convList.filter((c) =>
     c.patientName.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [selectedConversation, isTyping])
+
+  const handleSendMessage = async () => {
+    if (!messageInput.trim() || isTyping) return
+
+    const userMsg: ConversationMessage = {
+      id: `m${Date.now()}`,
+      direction: 'inbound',
+      text: messageInput.trim(),
+      time: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+    }
+
+    // Add user message to conversation
+    const updatedConv = {
+      ...selectedConversation,
+      messages: [...selectedConversation.messages, userMsg],
+      lastMessage: userMsg.text,
+      lastTime: userMsg.time,
+    }
+
+    setConvList(prev => prev.map(c => c.id === updatedConv.id ? updatedConv : c))
+    setSelectedConversation(updatedConv)
+    setMessageInput('')
+    setIsTyping(true)
+
+    try {
+      const response = await fetch('/api/orchestrator', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: userMsg.text,
+          clinicId: 'demo',
+          patientId: selectedConversation.patientId,
+          conversationHistory: selectedConversation.messages.map(m => ({
+            direction: m.direction,
+            text: m.text,
+          })),
+        }),
+      })
+
+      const data = await response.json()
+
+      const aiMsg: ConversationMessage = {
+        id: `m${Date.now() + 1}`,
+        direction: 'outbound',
+        text: data.response || 'Disculpe, no pude procesar su mensaje. Un miembro del personal le atenderá pronto.',
+        time: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+        agent: data.agent || 'Sinap Desk',
+        isAI: true,
+      }
+
+      const finalConv = {
+        ...updatedConv,
+        messages: [...updatedConv.messages, aiMsg],
+        lastMessage: aiMsg.text,
+        lastTime: aiMsg.time,
+      }
+
+      setConvList(prev => prev.map(c => c.id === finalConv.id ? finalConv : c))
+      setSelectedConversation(finalConv)
+    } catch {
+      // Fallback if API fails
+      const errorMsg: ConversationMessage = {
+        id: `m${Date.now() + 1}`,
+        direction: 'outbound',
+        text: 'Disculpe, hay un problema temporal de conexión. Por favor intente de nuevo en un momento.',
+        time: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+        agent: 'Sinap Desk',
+        isAI: true,
+      }
+
+      const finalConv = {
+        ...updatedConv,
+        messages: [...updatedConv.messages, errorMsg],
+        lastMessage: errorMsg.text,
+        lastTime: errorMsg.time,
+      }
+
+      setConvList(prev => prev.map(c => c.id === finalConv.id ? finalConv : c))
+      setSelectedConversation(finalConv)
+    } finally {
+      setIsTyping(false)
+    }
+  }
 
   return (
     <div className="flex gap-4 h-[calc(100vh-8rem)]">
@@ -81,7 +190,7 @@ export function DeskInbox() {
               Conversaciones
             </CardTitle>
             <Badge className="bg-[#EEEDFE] text-[#534AB7] border-0 text-[10px]">
-              {conversations.length} activas
+              {convList.length} activas
             </Badge>
           </div>
           <div className="relative mt-2">
@@ -164,7 +273,7 @@ export function DeskInbox() {
           </div>
           <Badge className="bg-amber-100 text-amber-700 border-0 text-[10px]">
             <AlertTriangle className="h-3 w-3 mr-1" />
-            Simulación
+            Simulacion
           </Badge>
         </div>
 
@@ -186,14 +295,18 @@ export function DeskInbox() {
                   }`}
                 >
                   {msg.direction === 'outbound' && msg.agent && (
-                    <div className="flex items-center gap-1 mb-1">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      {msg.isAI && <Bot className="h-3 w-3 text-white/70" />}
                       <Badge
-                        className={`text-[9px] border-0 py-0 px-1.5 ${
-                          msg.isAI ? 'bg-white/20 text-white' : 'bg-white/20 text-white'
-                        }`}
+                        className="text-[9px] border-0 py-0 px-1.5 bg-white/20 text-white"
                       >
                         {msg.agent}
                       </Badge>
+                      {msg.isAI && (
+                        <Badge className="text-[8px] border-0 py-0 px-1 bg-white/20 text-white">
+                          IA
+                        </Badge>
+                      )}
                     </div>
                   )}
                   <p className="text-sm leading-relaxed">{msg.text}</p>
@@ -207,6 +320,8 @@ export function DeskInbox() {
                 </div>
               </div>
             ))}
+            {isTyping && <TypingIndicator />}
+            <div ref={messagesEndRef} />
           </div>
         </ScrollArea>
 
@@ -218,9 +333,21 @@ export function DeskInbox() {
               className="flex-1 h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE]"
               value={messageInput}
               onChange={(e) => setMessageInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSendMessage()
+                }
+              }}
+              disabled={isTyping}
             />
-            <Button size="icon" className="bg-[#534AB7] hover:bg-[#534AB7]/90 h-9 w-9">
-              <Send className="h-4 w-4" />
+            <Button
+              size="icon"
+              className="bg-[#534AB7] hover:bg-[#534AB7]/90 h-9 w-9"
+              onClick={handleSendMessage}
+              disabled={isTyping || !messageInput.trim()}
+            >
+              {isTyping ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </div>
         </div>
@@ -254,7 +381,7 @@ export function DeskInbox() {
               <div className="flex items-center gap-2 mb-2">
                 <Tag className="h-4 w-4 text-[#888780]" />
                 <span className="text-xs font-medium text-[#888780] uppercase tracking-wide">
-                  Intención
+                  Intencion
                 </span>
               </div>
               <Badge className="bg-[#EEEDFE] text-[#534AB7] border-0 text-xs">
@@ -298,7 +425,7 @@ export function DeskInbox() {
               <div className="flex items-center gap-2 mb-2">
                 <Clock className="h-4 w-4 text-[#888780]" />
                 <span className="text-xs font-medium text-[#888780] uppercase tracking-wide">
-                  Última actividad
+                  Ultima actividad
                 </span>
               </div>
               <p className="text-sm text-[#2C2C2A]">{selectedConversation?.lastTime}</p>
@@ -315,10 +442,10 @@ export function DeskInbox() {
                 {selectedConversation?.intent === 'Cotización'
                   ? 'El paciente pregunta por precio. Sugiere agendar primera cita con enlace de pago.'
                   : selectedConversation?.intent === 'Reactivación'
-                  ? 'Paciente inactiva. Ofrece horario flexible o promoción de reactivación.'
+                  ? 'Paciente inactiva. Ofrece horario flexible o promocion de reactivacion.'
                   : selectedConversation?.intent === 'Confirmación de cita'
-                  ? 'Confirma la cita y envía recordatorio con ubicación de la clínica.'
-                  : 'Responde de forma empática y ofrece soluciones concretas.'}
+                  ? 'Confirma la cita y envia recordatorio con ubicacion de la clinica.'
+                  : 'Responde de forma empatica y ofrece soluciones concretas.'}
               </p>
               <Button
                 size="sm"

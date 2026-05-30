@@ -4,13 +4,16 @@ import { useSinapStore, type SinapModule } from '@/lib/sinap-store'
 import { SinapSidebar } from '@/components/sinap/sidebar'
 import { SinapHeader } from '@/components/sinap/header'
 import { OsOverview } from '@/components/sinap/os-overview'
+import { AgendaCalendar } from '@/components/sinap/agenda-calendar'
 import { DeskInbox } from '@/components/sinap/desk-inbox'
 import { BillDashboard } from '@/components/sinap/bill-dashboard'
 import { FlowClinical } from '@/components/sinap/flow-clinical'
 import { GrowMarketing } from '@/components/sinap/grow-marketing'
 import { SightAnalytics } from '@/components/sinap/sight-analytics'
 import { HubOperations } from '@/components/sinap/hub-operations'
-import { ConfigPage } from '@/components/sinap/config-page'
+import { SettingsPages } from '@/components/sinap/settings-pages'
+import { LoginScreen } from '@/components/sinap/login-screen'
+import { OnboardingFlow } from '@/components/sinap/onboarding-flow'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useState, useEffect } from 'react'
 
@@ -18,6 +21,8 @@ function ModuleContent({ module }: { module: string }) {
   switch (module) {
     case 'os':
       return <OsOverview />
+    case 'agenda':
+      return <AgendaCalendar />
     case 'desk':
       return <DeskInbox />
     case 'flow':
@@ -31,14 +36,14 @@ function ModuleContent({ module }: { module: string }) {
     case 'hub':
       return <HubOperations />
     case 'config':
-      return <ConfigPage />
+      return <SettingsPages />
     default:
       return <OsOverview />
   }
 }
 
 export default function SinapDashboard() {
-  const { activeModule } = useSinapStore()
+  const { activeModule, isLoggedIn, onboardingComplete } = useSinapStore()
   const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
@@ -48,6 +53,17 @@ export default function SinapDashboard() {
     return () => window.removeEventListener('resize', check)
   }, [])
 
+  // Show login screen if not logged in
+  if (!isLoggedIn) {
+    return <LoginScreen />
+  }
+
+  // Show onboarding if not complete
+  if (!onboardingComplete) {
+    return <OnboardingFlow />
+  }
+
+  // Show dashboard
   return (
     <div className="flex h-screen overflow-hidden bg-[#F1EFE8]">
       {/* Desktop sidebar */}

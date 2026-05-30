@@ -85,7 +85,7 @@ export const conversations: Conversation[] = [
     sentiment: 'neutral',
     messages: [
       { id: 'm1', direction: 'inbound', text: 'Buenos días, quería confirmar mi cita de mañana a las 9', time: '09:10' },
-      { id: 'm2', direction: 'outbound', text: '¡Buenos días María! 🩺 Su cita está confirmada para mañana a las 9:00 AM. ¿Necesita algo más?', time: '09:11', agent: 'Sinap Desk', isAI: true },
+      { id: 'm2', direction: 'outbound', text: 'Buenos días María. Su cita está confirmada para mañana a las 9:00 AM. ¿Necesita algo más?', time: '09:11', agent: 'Sinap Desk', isAI: true },
       { id: 'm3', direction: 'inbound', text: '¿Me puede confirmar mi cita de mañana?', time: '09:15' },
     ],
   },
@@ -100,7 +100,7 @@ export const conversations: Conversation[] = [
     intent: 'Agendamiento',
     sentiment: 'positive',
     messages: [
-      { id: 'm4', direction: 'outbound', text: 'Estimado Roberto, le recordamos su cita el día de hoy a las 10:00 AM. 📅', time: '08:00', agent: 'Sinap Flow', isAI: true },
+      { id: 'm4', direction: 'outbound', text: 'Estimado Roberto, le recordamos su cita el día de hoy a las 10:00 AM.', time: '08:00', agent: 'Sinap Flow', isAI: true },
       { id: 'm5', direction: 'inbound', text: 'Gracias doctor, ahí estaré puntual', time: '08:45' },
     ],
   },
@@ -116,7 +116,7 @@ export const conversations: Conversation[] = [
     sentiment: 'neutral',
     messages: [
       { id: 'm6', direction: 'inbound', text: 'Hola, vi su página en Instagram. ¿Cuál es el costo de la primera consulta?', time: '08:25' },
-      { id: 'm7', direction: 'outbound', text: '¡Hola Fernando! 👋 La primera consulta tiene un costo de $1,200 MXN. Incluye valoración completa y plan de tratamiento. ¿Le gustaría agendar?', time: '08:26', agent: 'Sinap Desk', isAI: true },
+      { id: 'm7', direction: 'outbound', text: 'Hola Fernando. La primera consulta tiene un costo de $1,200 MXN. Incluye valoración completa y plan de tratamiento. ¿Le gustaría agendar?', time: '08:26', agent: 'Sinap Desk', isAI: true },
       { id: 'm8', direction: 'inbound', text: '¿Cuál es el costo de la primera consulta?', time: '08:30' },
     ],
   },
@@ -125,15 +125,15 @@ export const conversations: Conversation[] = [
     patientId: 'p5',
     patientName: 'Laura Patricia Morales',
     channel: 'instagram',
-    lastMessage: 'No he podido ir, tengo mucho trabajo 😔',
+    lastMessage: 'No he podido ir, tengo mucho trabajo',
     lastTime: 'Ayer',
     unread: 3,
     intent: 'Reactivación',
     sentiment: 'negative',
     messages: [
-      { id: 'm9', direction: 'outbound', text: 'Hola Laura 👋 Notamos que no ha visitado la clínica últimamente. ¿Le gustaría reagendar su cita? Tenemos horarios disponibles esta semana.', time: '10:00', agent: 'Sinap Grow', isAI: true },
-      { id: 'm10', direction: 'inbound', text: 'No he podido ir, tengo mucho trabajo 😔', time: '14:20' },
-      { id: 'm11', direction: 'outbound', text: 'Entendemos perfectamente, Laura 💚 Podemos ofrecerle un horario sabatino si le queda más cómodo. ¿Le interesa?', time: '14:21', agent: 'Sinap Grow', isAI: true },
+      { id: 'm9', direction: 'outbound', text: 'Hola Laura. Notamos que no ha visitado la clínica últimamente. ¿Le gustaría reagendar su cita? Tenemos horarios disponibles esta semana.', time: '10:00', agent: 'Sinap Grow', isAI: true },
+      { id: 'm10', direction: 'inbound', text: 'No he podido ir, tengo mucho trabajo', time: '14:20' },
+      { id: 'm11', direction: 'outbound', text: 'Entendemos perfectamente, Laura. Podemos ofrecerle un horario sabatino si le queda más cómodo. ¿Le interesa?', time: '14:21', agent: 'Sinap Grow', isAI: true },
     ],
   },
   {
@@ -148,7 +148,7 @@ export const conversations: Conversation[] = [
     sentiment: 'neutral',
     messages: [
       { id: 'm12', direction: 'inbound', text: 'Buenos días, ¿a qué hora me toca hoy?', time: '07:50' },
-      { id: 'm13', direction: 'outbound', text: '¡Buenos días Isabel! Su cita es hoy a las 13:30. Revisión de lunar. 🕐', time: '07:51', agent: 'Sinap Desk', isAI: true },
+      { id: 'm13', direction: 'outbound', text: 'Buenos días Isabel. Su cita es hoy a las 13:30. Revisión de lunar.', time: '07:51', agent: 'Sinap Desk', isAI: true },
     ],
   },
   {
@@ -163,7 +163,7 @@ export const conversations: Conversation[] = [
     sentiment: 'neutral',
     messages: [
       { id: 'm14', direction: 'inbound', text: 'Hola doctor, ¿el tratamiento láser duele mucho?', time: '16:00' },
-      { id: 'm15', direction: 'outbound', text: 'Hola Ana 😊 El tratamiento láser puede causar una ligera molestia, pero aplicamos anestesia tópica para minimizar cualquier incomodidad. La mayoría de pacientes lo toleran muy bien.', time: '16:01', agent: 'Sinap Desk', isAI: true },
+      { id: 'm15', direction: 'outbound', text: 'Hola Ana. El tratamiento láser puede causar una ligera molestia, pero aplicamos anestesia tópica para minimizar cualquier incomodidad. La mayoría de pacientes lo toleran muy bien.', time: '16:01', agent: 'Sinap Desk', isAI: true },
       { id: 'm16', direction: 'inbound', text: '¿El tratamiento láser duele mucho?', time: '16:15' },
     ],
   },
@@ -199,14 +199,14 @@ export const conversations: Conversation[] = [
 ]
 
 export const activityFeed = [
-  { id: 'act1', icon: '📋', text: 'Cita agendada — María García López — hace 5min', type: 'appointment' },
-  { id: 'act2', icon: '💰', text: 'Factura generada — $1,500 MXN — hace 12min', type: 'invoice' },
-  { id: 'act3', icon: '💬', text: 'Conversación reactivada — Laura Morales — hace 18min', type: 'conversation' },
-  { id: 'act4', icon: '🩺', text: 'Pre-consulta completada — Fernando Díaz — hace 25min', type: 'clinical' },
-  { id: 'act5', icon: '📊', text: 'Reporte semanal generado — hace 1hr', type: 'analytics' },
-  { id: 'act6', icon: '⚠️', text: 'Factura con error PAC — Fernando Díaz — hace 2hr', type: 'alert' },
-  { id: 'act7', icon: '✅', text: 'Nota SOAP aprobada — Roberto Jiménez — hace 2hr', type: 'clinical' },
-  { id: 'act8', icon: '📩', text: 'Recordatorio enviado — 3 pacientes — hace 3hr', type: 'conversation' },
+  { id: 'act1', icon: 'CalendarCheck', text: 'Cita agendada — María García López — hace 5min', type: 'appointment' },
+  { id: 'act2', icon: 'Receipt', text: 'Factura generada — $1,500 MXN — hace 12min', type: 'invoice' },
+  { id: 'act3', icon: 'MessageSquare', text: 'Conversación reactivada — Laura Morales — hace 18min', type: 'conversation' },
+  { id: 'act4', icon: 'Stethoscope', text: 'Pre-consulta completada — Fernando Díaz — hace 25min', type: 'clinical' },
+  { id: 'act5', icon: 'BarChart3', text: 'Reporte semanal generado — hace 1hr', type: 'analytics' },
+  { id: 'act6', icon: 'AlertTriangle', text: 'Factura con error PAC — Fernando Díaz — hace 2hr', type: 'alert' },
+  { id: 'act7', icon: 'CheckCircle', text: 'Nota SOAP aprobada — Roberto Jiménez — hace 2hr', type: 'clinical' },
+  { id: 'act8', icon: 'Bell', text: 'Recordatorio enviado — 3 pacientes — hace 3hr', type: 'conversation' },
 ]
 
 export const agentStatuses = [
@@ -289,4 +289,62 @@ export const kpiData = {
   totalFacturado: 21700,
   pacientesNuevos: 6,
   ocupacion: 78,
+}
+
+// Default services for onboarding
+export const defaultServicesBySpecialty: Record<string, { name: string; duration: number; price: number; category: string }[]> = {
+  'Dermatología': [
+    { name: 'Consulta general', duration: 30, price: 1200, category: 'Consulta' },
+    { name: 'Revisión dermatológica', duration: 45, price: 1500, category: 'Consulta' },
+    { name: 'Tratamiento láser', duration: 45, price: 2800, category: 'Procedimiento' },
+    { name: 'Crioterapia', duration: 30, price: 1800, category: 'Procedimiento' },
+    { name: 'Biopsia', duration: 60, price: 3500, category: 'Procedimiento' },
+    { name: 'Consulta estética', duration: 30, price: 2000, category: 'Estética' },
+  ],
+  'Odontología': [
+    { name: 'Consulta general', duration: 30, price: 800, category: 'Consulta' },
+    { name: 'Limpieza dental', duration: 45, price: 1200, category: 'Procedimiento' },
+    { name: 'Blanqueamiento', duration: 60, price: 3500, category: 'Estética' },
+    { name: 'Extracción', duration: 45, price: 1500, category: 'Procedimiento' },
+  ],
+  'Medicina General': [
+    { name: 'Consulta general', duration: 30, price: 600, category: 'Consulta' },
+    { name: 'Consulta seguimiento', duration: 20, price: 400, category: 'Consulta' },
+    { name: 'Certificado médico', duration: 15, price: 300, category: 'Documento' },
+  ],
+  'Psicología': [
+    { name: 'Sesión individual', duration: 50, price: 1200, category: 'Terapia' },
+    { name: 'Sesión de pareja', duration: 60, price: 1800, category: 'Terapia' },
+    { name: 'Evaluación inicial', duration: 60, price: 1500, category: 'Evaluación' },
+  ],
+  'Nutrición': [
+    { name: 'Consulta inicial', duration: 45, price: 800, category: 'Consulta' },
+    { name: 'Seguimiento nutricional', duration: 30, price: 500, category: 'Consulta' },
+    { name: 'Plan alimenticio', duration: 30, price: 1000, category: 'Plan' },
+  ],
+  'Oftalmología': [
+    { name: 'Consulta general', duration: 30, price: 1000, category: 'Consulta' },
+    { name: 'Examen de la vista', duration: 30, price: 600, category: 'Estudio' },
+    { name: 'Adaptación de lentes', duration: 30, price: 400, category: 'Procedimiento' },
+  ],
+  'Cardiología': [
+    { name: 'Consulta general', duration: 30, price: 1500, category: 'Consulta' },
+    { name: 'Electrocardiograma', duration: 20, price: 800, category: 'Estudio' },
+    { name: 'Ecocardiograma', duration: 30, price: 2500, category: 'Estudio' },
+  ],
+}
+
+export const defaultSchedule = {
+  workDays: '1,2,3,4,5',
+  workStart: '09:00',
+  workEnd: '18:00',
+  slotMinutes: 30,
+}
+
+export const defaultDoctorProfile = {
+  name: 'Dr. Alejandro Ruiz',
+  specialty: 'Dermatología',
+  license: '12345678',
+  email: 'aruiz@clinicasanangel.mx',
+  phone: '+52 55 1234 5678',
 }
