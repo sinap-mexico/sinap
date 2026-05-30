@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 
 export async function GET(req: NextRequest) {
   try {
+    if (!db) return NextResponse.json({ error: "Base de datos no disponible" }, { status: 503 })
     const { searchParams } = new URL(req.url)
     const clinicId = searchParams.get('clinicId')
     const date = searchParams.get('date')
@@ -40,6 +41,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    if (!db) return NextResponse.json({ error: "Base de datos no disponible" }, { status: 503 })
     const body = await req.json()
     const { clinicId, patientId, doctorId, serviceId, date, startTime, endTime, notes, channel } = body
 

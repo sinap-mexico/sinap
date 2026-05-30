@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 // POST — Emit event
 export async function POST(req: NextRequest) {
   try {
+    if (!db) return NextResponse.json({ error: "Base de datos no disponible" }, { status: 503 })
     const { clinicId, eventType, sourceAgent, targetAgent, payload } = await req.json()
 
     if (!clinicId || !eventType || !sourceAgent) {
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
 // GET — Get pending events for an agent
 export async function GET(req: NextRequest) {
   try {
+    if (!db) return NextResponse.json({ error: "Base de datos no disponible" }, { status: 503 })
     const { searchParams } = new URL(req.url)
     const clinicId = searchParams.get('clinicId')
     const agent = searchParams.get('agent')
@@ -92,6 +94,7 @@ export async function GET(req: NextRequest) {
 // PATCH — Mark event as processed
 export async function PATCH(req: NextRequest) {
   try {
+    if (!db) return NextResponse.json({ error: "Base de datos no disponible" }, { status: 503 })
     const { eventId, status } = await req.json()
 
     if (!eventId || !status) {

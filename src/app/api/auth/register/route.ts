@@ -4,6 +4,13 @@ import bcrypt from "bcryptjs"
 
 export async function POST(req: Request) {
   try {
+    if (!db) {
+      return NextResponse.json(
+        { error: "Base de datos no disponible. Intenta el modo demo." },
+        { status: 503 }
+      )
+    }
+
     const { name, email, password, clinicName, mode } = await req.json()
 
     if (!name || !email || !password) {
@@ -16,7 +23,7 @@ export async function POST(req: Request) {
     })
 
     if (existingUser) {
-      return NextResponse.json({ error: "El correo ya esta registrado" }, { status: 409 })
+      return NextResponse.json({ error: "El correo ya está registrado" }, { status: 409 })
     }
 
     // Hash password
@@ -25,10 +32,11 @@ export async function POST(req: Request) {
     // Create clinic if clinicName is provided
     let clinicId = null
     if (clinicName) {
+      const slug = clinicName.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 40) + "-" + Date.now().toString(36)
       const clinic = await db.clinic.create({
         data: {
           name: clinicName,
-          slug: clinicName.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 40) + "-" + Date.now().toString(36),
+          slug,
           email,
           mode: mode || "solo",
         },
