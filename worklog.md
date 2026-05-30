@@ -214,3 +214,27 @@ Stage Summary:
 - All content in Spanish, Mexico-focused, emphasizing competitive advantages
 - Premium UX/UI with Framer Motion animations throughout
 - Pricing tiers defined: Starter ($1,499), Pro ($3,999), Enterprise (custom)
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Fix nav visibility on dark hero + use real logo PNG instead of SVG recreation
+
+Work Log:
+- User reported: nav titles invisible on dark hero section, "Ver demo" button text not visible, logo should be the actual PNG they provided
+- Analyzed the real Sinap logo PNG with VLM: central purple node, light purple ring, green outer arcs, 2 green dots on horizontal axis, green connecting lines
+- Copied real logo (logo.png → sinap-logo-icon.png) to public directory
+- Rewrote SinapLogo component to use Next.js Image with the actual PNG file instead of SVG recreation
+- Fixed nav: added dynamic text color based on scroll state
+  - On dark hero (not scrolled): text-white/80, hover:text-white, bg-white/15 button with border
+  - On scrolled (white bg): text-[#2C2C2A]/70, hover:text-[#534AB7], bg-[#534AB7] button
+- Fixed logo variant: switches between 'dark' (not scrolled) and 'light' (scrolled) for text contrast
+- Fixed "Ver demo" hero button: removed variant="outline" (overrode text-white), used explicit bg-white/10 + text-white + border-white/25 + backdrop-blur
+- Fixed mobile menu toggle: text-white when not scrolled, text-[#2C2C2A] when scrolled
+- Build verified: clean compilation, all routes 200
+
+Stage Summary:
+- Navigation now fully visible on both dark hero and white scrolled states
+- Real logo PNG is used throughout the app (login, sidebar, landing, dashboard)
+- "Ver demo" button now clearly visible with white text + glassmorphic background
+- All logo instances automatically updated via SinapLogo component

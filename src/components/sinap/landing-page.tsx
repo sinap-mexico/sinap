@@ -61,6 +61,10 @@ function LandingNav() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
+  // On dark hero (not scrolled): white text + white logo. On scroll: dark text + dark logo
+  const navTextColor = scrolled ? 'text-[#2C2C2A]/70' : 'text-white/80'
+  const navHoverColor = scrolled ? 'hover:text-[#534AB7]' : 'hover:text-white'
+
   return (
     <motion.nav
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
@@ -71,32 +75,36 @@ function LandingNav() {
       transition={{ duration: 0.5 }}
     >
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-        <SinapLogo size={32} showText showTagline />
+        <SinapLogo size={32} showText showTagline variant={scrolled ? 'light' : 'dark'} />
 
         {/* Desktop links */}
         <div className="hidden md:flex items-center gap-8">
-          <a href="#que-es" className="text-sm text-[#2C2C2A]/70 hover:text-[#534AB7] transition-colors">Qué es Sinap</a>
-          <a href="#modulos" className="text-sm text-[#2C2C2A]/70 hover:text-[#534AB7] transition-colors">Módulos</a>
-          <a href="#por-que" className="text-sm text-[#2C2C2A]/70 hover:text-[#534AB7] transition-colors">Por qué Sinap</a>
-          <a href="#casos" className="text-sm text-[#2C2C2A]/70 hover:text-[#534AB7] transition-colors">Casos de uso</a>
-          <a href="#precios" className="text-sm text-[#2C2C2A]/70 hover:text-[#534AB7] transition-colors">Precios</a>
+          <a href="#que-es" className={`text-sm ${navTextColor} ${navHoverColor} transition-colors`}>Qué es Sinap</a>
+          <a href="#modulos" className={`text-sm ${navTextColor} ${navHoverColor} transition-colors`}>Módulos</a>
+          <a href="#por-que" className={`text-sm ${navTextColor} ${navHoverColor} transition-colors`}>Por qué Sinap</a>
+          <a href="#casos" className={`text-sm ${navTextColor} ${navHoverColor} transition-colors`}>Casos de uso</a>
+          <a href="#precios" className={`text-sm ${navTextColor} ${navHoverColor} transition-colors`}>Precios</a>
         </div>
 
         <div className="hidden md:flex items-center gap-3">
           <Link href="/dashboard">
-            <Button variant="ghost" className="text-sm text-[#2C2C2A]/70 hover:text-[#534AB7]">
+            <Button variant="ghost" className={`text-sm ${navTextColor} ${navHoverColor}`}>
               Iniciar sesión
             </Button>
           </Link>
           <Link href="/dashboard">
-            <Button className="bg-[#534AB7] hover:bg-[#4A42A5] text-white text-sm h-9 px-5 rounded-lg shadow-md shadow-[#534AB7]/20">
+            <Button className={`text-sm h-9 px-5 rounded-lg shadow-md shadow-[#534AB7]/20 transition-all ${
+              scrolled
+                ? 'bg-[#534AB7] hover:bg-[#4A42A5] text-white'
+                : 'bg-white/15 hover:bg-white/25 text-white border border-white/20 backdrop-blur-sm'
+            }`}>
               Comenzar gratis
             </Button>
           </Link>
         </div>
 
         {/* Mobile menu toggle */}
-        <button className="md:hidden p-2" onClick={() => setMobileOpen(!mobileOpen)}>
+        <button className={`md:hidden p-2 ${scrolled ? 'text-[#2C2C2A]' : 'text-white'}`} onClick={() => setMobileOpen(!mobileOpen)}>
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
       </div>
@@ -211,7 +219,7 @@ function HeroSection() {
             </Button>
           </Link>
           <Link href="/dashboard">
-            <Button variant="outline" className="h-13 px-8 border-white/20 text-white hover:bg-white/8 text-base font-medium rounded-xl transition-all">
+            <Button className="h-13 px-8 bg-white/10 hover:bg-white/20 text-white border border-white/25 backdrop-blur-sm text-base font-medium rounded-xl transition-all">
               <Play className="h-4 w-4 mr-2" />
               Ver demo
             </Button>
