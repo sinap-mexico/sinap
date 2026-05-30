@@ -1,11 +1,20 @@
 import type { NextAuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
-import { PrismaAdapter } from "@next-auth/prisma-adapter"
 import bcrypt from "bcryptjs"
-import { db } from "./db"
+
+// Lazy-load Prisma only when needed — avoids crash if DB is unavailable (e.g. Vercel serverless without SQLite)
+async function getDb() {
+  try {
+    const { db } = await import("./db")
+    return db
+  } catch {
+    return null
+  }
+}
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(db),
+  // No PrismaAdapter — we use JWT strategy, so no database sessions needed
+  // The authorize() function handles user lookup with error handling
   providers: [
     CredentialsProvider({
       name: "credentials",
@@ -18,26 +27,37 @@ export const authOptions: NextAuthOptions = {
           return null
         }
 
-        const user = await db.user.findUnique({
-          where: { email: credentials.email },
-          include: { clinic: true },
-        })
-
-        if (!user || !user.password) {
+        const db = await getDb()
+        if (!db) {
+          console.warn("[Auth] Database not available — cannot authenticate with credentials")
           return null
         }
 
-        const isValid = await bcrypt.compare(credentials.password, user.password)
-        if (!isValid) {
-          return null
-        }
+        try {
+          const user = await db.user.findUnique({
+            where: { email: credentials.email },
+            include: { clinic: true },
+          })
 
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          clinicId: user.clinicId,
+          if (!user || !user.password) {
+            return null
+          }
+
+          const isValid = await bcrypt.compare(credentials.password, user.password)
+          if (!isValid) {
+            return null
+          }
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            clinicId: user.clinicId,
+          }
+        } catch (error) {
+          console.error("[Auth] Database error during authorize:", error)
+          return null
         }
       },
     }),

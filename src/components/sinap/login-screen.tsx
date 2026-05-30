@@ -211,16 +211,18 @@ export function LoginScreen() {
     setTimeout(() => setShakeError(false), 500)
   }, [])
 
+  // Use window.location.href instead of router.push to avoid "Failed to fetch" errors
+  // when NextAuth can't establish a session (no database available on Vercel)
   const navigateToDashboard = useCallback(() => {
     setOnboardingComplete(true)
-    router.push('/dashboard')
-  }, [router, setOnboardingComplete])
+    window.location.href = '/dashboard'
+  }, [setOnboardingComplete])
 
   const navigateToDemo = useCallback(() => {
     setOnboardingComplete(true)
     setIsDemoMode(true)
-    router.push('/dashboard')
-  }, [router, setOnboardingComplete, setIsDemoMode])
+    window.location.href = '/dashboard'
+  }, [setOnboardingComplete, setIsDemoMode])
 
   const handleLogin = async () => {
     if (!email || !password) {
