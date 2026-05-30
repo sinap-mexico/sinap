@@ -46,7 +46,7 @@ function ModuleContent({ module }: { module: string }) {
 
 export default function SinapDashboard() {
   const { data: session, status } = useSession()
-  const { activeModule, onboardingComplete } = useSinapStore()
+  const { activeModule, onboardingComplete, isDemoMode } = useSinapStore()
   const router = useRouter()
   const [isMobile, setIsMobile] = useState(false)
   const [mounted, setMounted] = useState(false)
@@ -60,17 +60,17 @@ export default function SinapDashboard() {
   }, [])
 
   // Redirect to login ONLY via useEffect to avoid render-time redirects that cause loops
+  // User is authenticated if: they have a NextAuth session OR they are in demo mode
   useEffect(() => {
-    // Wait for mount and session check to complete
     if (!mounted) return
     if (status === 'loading') return
-    // If no session and not in demo mode (onboardingComplete), go to login
-    if (!session?.user && !onboardingComplete) {
+    const isAuthenticated = session?.user || isDemoMode || onboardingComplete
+    if (!isAuthenticated) {
       router.replace('/login')
     }
-  }, [mounted, status, session, onboardingComplete, router])
+  }, [mounted, status, session, isDemoMode, onboardingComplete, router])
 
-  // Show loading while session is being fetched or component is mounting
+  // Show loading while mounting or session is being fetched
   if (!mounted || status === 'loading') {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-[#F1EFE8]">
@@ -85,8 +85,9 @@ export default function SinapDashboard() {
     )
   }
 
-  // If not authenticated and not in demo mode, show loading while redirect happens
-  if (!session?.user && !onboardingComplete) {
+  // If not authenticated in any way, show loading while redirect happens
+  const isAuthenticated = session?.user || isDemoMode || onboardingComplete
+  if (!isAuthenticated) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-[#F1EFE8]">
         <Loader2 className="h-8 w-8 animate-spin text-[#534AB7]" />

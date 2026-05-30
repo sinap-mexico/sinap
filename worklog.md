@@ -287,3 +287,27 @@ Stage Summary:
 - New route: /login (src/app/login/page.tsx)
 - Updated: landing-page.tsx (all links → /login), login-screen.tsx (redirect after auth), dashboard/page.tsx (client-side auth redirect), middleware.ts (removed /dashboard protection)
 - Flow: Landing page → /login → auth/demo → /dashboard
+
+---
+Task ID: 3
+Agent: Main
+Task: Fix demo mode redirect loop + add Zustand persistence + prepare for Vercel
+
+Work Log:
+- Root cause: Zustand state was in-memory only, lost on page reload -> demo mode reset -> redirect loop
+- Added Zustand persist middleware with localStorage storage
+- Added isDemoMode flag to store (persisted across reloads)
+- Added resetStore method for logout
+- Partialized persistence: only auth state, profile, settings persisted (not volatile events/soap)
+- Login screen: demo mode uses navigateToDemo() which sets isDemoMode=true + onboardingComplete=true
+- Login screen: back to router.push (no more window.location.href needed since state persists)
+- Dashboard: checks session?.user OR isDemoMode OR onboardingComplete for authentication
+- Removed output: "standalone" from next.config.ts (Vercel doesn't need it)
+- Simplified build script in package.json (removed standalone copy commands)
+- Vercel CLI installed but no token available — project is ready for deploy
+
+Stage Summary:
+- Zustand store now persists to localStorage via persist middleware
+- Demo mode works: sets isDemoMode=true, survives page reloads
+- No more redirect loops in any navigation scenario
+- Project is Vercel-deploy-ready (needs VERCEL_TOKEN to deploy)

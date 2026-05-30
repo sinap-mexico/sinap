@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { signIn } from 'next-auth/react'
 import { useSinapStore } from '@/lib/sinap-store'
 import { Button } from '@/components/ui/button'
@@ -187,7 +188,8 @@ const staggerItem = {
 }
 
 export function LoginScreen() {
-  const { setOnboardingComplete } = useSinapStore()
+  const router = useRouter()
+  const { setOnboardingComplete, setIsDemoMode } = useSinapStore()
   const [isRegister, setIsRegister] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -211,10 +213,14 @@ export function LoginScreen() {
 
   const navigateToDashboard = useCallback(() => {
     setOnboardingComplete(true)
-    // Use full page navigation to avoid client-side routing issues
-    // router.push can fail with "Failed to fetch" when NextAuth session fetch errors occur
-    window.location.href = '/dashboard'
-  }, [setOnboardingComplete])
+    router.push('/dashboard')
+  }, [router, setOnboardingComplete])
+
+  const navigateToDemo = useCallback(() => {
+    setOnboardingComplete(true)
+    setIsDemoMode(true)
+    router.push('/dashboard')
+  }, [router, setOnboardingComplete, setIsDemoMode])
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -307,7 +313,7 @@ export function LoginScreen() {
     setIsLoading(true)
     // Bypass NextAuth entirely for demo mode — avoids redirect loops
     // NextAuth requires a database connection which may not be available
-    navigateToDashboard()
+    navigateToDemo()
   }
 
   return (

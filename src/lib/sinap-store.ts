@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
 
 export type SinapModule = 'os' | 'agenda' | 'desk' | 'flow' | 'bill' | 'grow' | 'sight' | 'hub' | 'config'
 
@@ -86,6 +87,9 @@ interface SinapStore {
   // Onboarding
   onboardingComplete: boolean
   setOnboardingComplete: (v: boolean) => void
+  // Demo mode
+  isDemoMode: boolean
+  setIsDemoMode: (v: boolean) => void
   // Profile data
   doctorProfile: DoctorProfile
   setDoctorProfile: (p: Partial<DoctorProfile>) => void
@@ -102,6 +106,8 @@ interface SinapStore {
   soapNotes: SoapNoteItem[]
   addSoapNote: (note: SoapNoteItem) => void
   updateSoapNote: (id: string, updates: Partial<SoapNoteItem>) => void
+  // Reset
+  resetStore: () => void
 }
 
 const defaultFeatureFlags: FeatureFlag[] = [
@@ -154,69 +160,105 @@ const defaultRecentEvents: SinapEvent[] = [
   { id: 'evt5', eventType: 'paciente_nuevo', sourceAgent: 'desk', targetAgent: 'grow', payload: 'Fernando Diaz Vega', createdAt: '2026-05-30T08:30:00Z' },
 ]
 
-export const useSinapStore = create<SinapStore>((set) => ({
-  activeModule: 'os',
-  setActiveModule: (module) => set({ activeModule: module }),
-  sidebarCollapsed: false,
-  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
-  clinicMode: 'clinic',
-  setClinicMode: (mode) => set({ clinicMode: mode }),
-  clinicName: 'Clinica San Angel',
-  setClinicName: (name) => set({ clinicName: name }),
-  plan: 'pro',
-  featureFlags: defaultFeatureFlags,
-  setFeatureFlag: (id, state) =>
-    set((s) => ({
-      featureFlags: s.featureFlags.map((f) => (f.id === id ? { ...f, state } : f)),
-    })),
-  // Auth
-  isLoggedIn: false,
-  setIsLoggedIn: (v) => set({ isLoggedIn: v }),
-  // Onboarding
-  onboardingComplete: false,
-  setOnboardingComplete: (v) => set({ onboardingComplete: v }),
-  // Profile data
-  doctorProfile: {
-    name: 'Dr. Alejandro Ruiz',
-    specialty: 'Dermatologia',
-    license: '12345678',
-    email: 'aruiz@clinicasanangel.mx',
-    phone: '+52 55 1234 5678',
-  },
-  setDoctorProfile: (p) => set((s) => ({ doctorProfile: { ...s.doctorProfile, ...p } })),
-  clinicProfile: {
-    name: 'Clinica San Angel',
-    rfc: 'CSA230515ABC',
-    address: 'Av. Insurgentes Sur 1234, Col. San Angel',
-    city: 'Ciudad de Mexico',
-    state: 'CDMX',
-    phone: '+52 55 1234 5678',
-    email: 'contacto@clinicasanangel.mx',
-  },
-  setClinicProfile: (p) => set((s) => ({ clinicProfile: { ...s.clinicProfile, ...p } })),
-  services: [
-    { id: 'svc1', name: 'Consulta general', duration: 30, price: 1200, category: 'Consulta', isActive: true },
-    { id: 'svc2', name: 'Revision dermatologica', duration: 45, price: 1500, category: 'Consulta', isActive: true },
-    { id: 'svc3', name: 'Tratamiento laser', duration: 45, price: 2800, category: 'Procedimiento', isActive: true },
-    { id: 'svc4', name: 'Crioterapia', duration: 30, price: 1800, category: 'Procedimiento', isActive: true },
-    { id: 'svc5', name: 'Biopsia', duration: 60, price: 3500, category: 'Procedimiento', isActive: true },
-    { id: 'svc6', name: 'Consulta estetica', duration: 30, price: 2000, category: 'Estetica', isActive: true },
-  ],
-  setServices: (s) => set({ services: s }),
-  schedule: {
-    workDays: '1,2,3,4,5',
-    workStart: '09:00',
-    workEnd: '18:00',
-    slotMinutes: 30,
-  },
-  setSchedule: (s) => set((prev) => ({ schedule: { ...prev.schedule, ...s } })),
-  // Event Bus
-  recentEvents: defaultRecentEvents,
-  addRecentEvent: (event) => set((s) => ({ recentEvents: [event, ...s.recentEvents].slice(0, 50) })),
-  // SOAP Notes
-  soapNotes: defaultSoapNotes,
-  addSoapNote: (note) => set((s) => ({ soapNotes: [note, ...s.soapNotes] })),
-  updateSoapNote: (id, updates) => set((s) => ({
-    soapNotes: s.soapNotes.map((n) => n.id === id ? { ...n, ...updates } : n),
-  })),
-}))
+const defaultServices: ServiceItem[] = [
+  { id: 'svc1', name: 'Consulta general', duration: 30, price: 1200, category: 'Consulta', isActive: true },
+  { id: 'svc2', name: 'Revision dermatologica', duration: 45, price: 1500, category: 'Consulta', isActive: true },
+  { id: 'svc3', name: 'Tratamiento laser', duration: 45, price: 2800, category: 'Procedimiento', isActive: true },
+  { id: 'svc4', name: 'Crioterapia', duration: 30, price: 1800, category: 'Procedimiento', isActive: true },
+  { id: 'svc5', name: 'Biopsia', duration: 60, price: 3500, category: 'Procedimiento', isActive: true },
+  { id: 'svc6', name: 'Consulta estetica', duration: 30, price: 2000, category: 'Estetica', isActive: true },
+]
+
+export const useSinapStore = create<SinapStore>()(
+  persist(
+    (set) => ({
+      activeModule: 'os',
+      setActiveModule: (module) => set({ activeModule: module }),
+      sidebarCollapsed: false,
+      toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+      clinicMode: 'clinic',
+      setClinicMode: (mode) => set({ clinicMode: mode }),
+      clinicName: 'Clinica San Angel',
+      setClinicName: (name) => set({ clinicName: name }),
+      plan: 'pro',
+      featureFlags: defaultFeatureFlags,
+      setFeatureFlag: (id, state) =>
+        set((s) => ({
+          featureFlags: s.featureFlags.map((f) => (f.id === id ? { ...f, state } : f)),
+        })),
+      // Auth
+      isLoggedIn: false,
+      setIsLoggedIn: (v) => set({ isLoggedIn: v }),
+      // Onboarding
+      onboardingComplete: false,
+      setOnboardingComplete: (v) => set({ onboardingComplete: v }),
+      // Demo mode
+      isDemoMode: false,
+      setIsDemoMode: (v) => set({ isDemoMode: v }),
+      // Profile data
+      doctorProfile: {
+        name: 'Dr. Alejandro Ruiz',
+        specialty: 'Dermatologia',
+        license: '12345678',
+        email: 'aruiz@clinicasanangel.mx',
+        phone: '+52 55 1234 5678',
+      },
+      setDoctorProfile: (p) => set((s) => ({ doctorProfile: { ...s.doctorProfile, ...p } })),
+      clinicProfile: {
+        name: 'Clinica San Angel',
+        rfc: 'CSA230515ABC',
+        address: 'Av. Insurgentes Sur 1234, Col. San Angel',
+        city: 'Ciudad de Mexico',
+        state: 'CDMX',
+        phone: '+52 55 1234 5678',
+        email: 'contacto@clinicasanangel.mx',
+      },
+      setClinicProfile: (p) => set((s) => ({ clinicProfile: { ...s.clinicProfile, ...p } })),
+      services: defaultServices,
+      setServices: (s) => set({ services: s }),
+      schedule: {
+        workDays: '1,2,3,4,5',
+        workStart: '09:00',
+        workEnd: '18:00',
+        slotMinutes: 30,
+      },
+      setSchedule: (s) => set((prev) => ({ schedule: { ...prev.schedule, ...s } })),
+      // Event Bus
+      recentEvents: defaultRecentEvents,
+      addRecentEvent: (event) => set((s) => ({ recentEvents: [event, ...s.recentEvents].slice(0, 50) })),
+      // SOAP Notes
+      soapNotes: defaultSoapNotes,
+      addSoapNote: (note) => set((s) => ({ soapNotes: [note, ...s.soapNotes] })),
+      updateSoapNote: (id, updates) => set((s) => ({
+        soapNotes: s.soapNotes.map((n) => n.id === id ? { ...n, ...updates } : n),
+      })),
+      // Reset — clears everything back to defaults (used for logout)
+      resetStore: () => set({
+        activeModule: 'os',
+        sidebarCollapsed: false,
+        onboardingComplete: false,
+        isLoggedIn: false,
+        isDemoMode: false,
+      }),
+    }),
+    {
+      name: 'sinap-store',
+      storage: createJSONStorage(() => localStorage),
+      // Only persist these fields — volatile data like events/soap stays as defaults
+      partialize: (state) => ({
+        onboardingComplete: state.onboardingComplete,
+        isLoggedIn: state.isLoggedIn,
+        isDemoMode: state.isDemoMode,
+        clinicMode: state.clinicMode,
+        clinicName: state.clinicName,
+        plan: state.plan,
+        featureFlags: state.featureFlags,
+        doctorProfile: state.doctorProfile,
+        clinicProfile: state.clinicProfile,
+        services: state.services,
+        schedule: state.schedule,
+        activeModule: state.activeModule,
+      }),
+    }
+  )
+)
