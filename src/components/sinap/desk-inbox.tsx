@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { conversations as initialConversations, type Conversation, type ConversationMessage } from '@/lib/mock-data'
+import { eventBus } from '@/lib/event-bus'
 import {
   MessageSquare,
   Search,
@@ -140,7 +141,7 @@ export function DeskInbox() {
       const aiMsg: ConversationMessage = {
         id: `m${Date.now() + 1}`,
         direction: 'outbound',
-        text: data.response || 'Disculpe, no pude procesar su mensaje. Un miembro del personal le atenderá pronto.',
+        text: data.response || 'Disculpe, no pude procesar su mensaje. Un miembro del personal le atendera pronto.',
         time: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
         agent: data.agent || 'Sinap Desk',
         isAI: true,
@@ -155,12 +156,40 @@ export function DeskInbox() {
 
       setConvList(prev => prev.map(c => c.id === finalConv.id ? finalConv : c))
       setSelectedConversation(finalConv)
+
+      // Emit event for conversation handled
+      eventBus.emit(
+        'demo',
+        'conversacion_atendida',
+        'desk',
+        'os',
+        JSON.stringify({
+          patientId: selectedConversation.patientId,
+          patientName: selectedConversation.patientName,
+          agent: data.routedAgent || 'desk',
+        })
+      )
+
+      // Check if the routed agent suggests an appointment
+      const lowerMsg = userMsg.text.toLowerCase()
+      if (lowerMsg.includes('cita') || lowerMsg.includes('agendar') || lowerMsg.includes('horario')) {
+        eventBus.emit(
+          'demo',
+          'cita_agendada',
+          'desk',
+          'flow',
+          JSON.stringify({
+            patientId: selectedConversation.patientId,
+            patientName: selectedConversation.patientName,
+          })
+        )
+      }
     } catch {
       // Fallback if API fails
       const errorMsg: ConversationMessage = {
         id: `m${Date.now() + 1}`,
         direction: 'outbound',
-        text: 'Disculpe, hay un problema temporal de conexión. Por favor intente de nuevo en un momento.',
+        text: 'Disculpe, hay un problema temporal de conexion. Por favor intente de nuevo en un momento.',
         time: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
         agent: 'Sinap Desk',
         isAI: true,
@@ -439,11 +468,11 @@ export function DeskInbox() {
                 Sugerencia IA
               </p>
               <p className="text-xs text-[#2C2C2A] leading-relaxed">
-                {selectedConversation?.intent === 'Cotización'
+                {selectedConversation?.intent === 'Cotizacion'
                   ? 'El paciente pregunta por precio. Sugiere agendar primera cita con enlace de pago.'
-                  : selectedConversation?.intent === 'Reactivación'
+                  : selectedConversation?.intent === 'Reactivacion'
                   ? 'Paciente inactiva. Ofrece horario flexible o promocion de reactivacion.'
-                  : selectedConversation?.intent === 'Confirmación de cita'
+                  : selectedConversation?.intent === 'Confirmacion de cita'
                   ? 'Confirma la cita y envia recordatorio con ubicacion de la clinica.'
                   : 'Responde de forma empatica y ofrece soluciones concretas.'}
               </p>

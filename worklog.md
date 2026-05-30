@@ -45,3 +45,29 @@ Stage Summary:
 - Comprehensive settings with 7 tabs
 - Zero emojis — all Lucide icons
 - All brand colors and typography enforced
+
+---
+Task ID: 3
+Agent: Main Agent + Fullstack Subagent
+Task: Build Facturama CFDI, Event Bus, Pre-consulta AI, Enhanced Orchestrator
+
+Work Log:
+- Built Facturama CFDI 4.0 API route: POST (generate), GET (list), DELETE (cancel) with sandbox/production toggle
+- Built CFDI generation helper with proper CFDI 4.0 JSON structure (Emisor, Receptor, Conceptos, Impuestos, IVA 16%)
+- Built Event Bus API route: POST (emit), GET (pending for agent), PATCH (mark processed)
+- Built client-side SinapEventBus class with emit/subscribe/fetchPendingEvents/markProcessed
+- Built Pre-consulta AI endpoint: generates 5 specialty-specific questions via z-ai-web-dev-sdk
+- Built SOAP note generator endpoint: creates S/O/A/P drafts from pre-consulta responses
+- Enhanced Orchestrator with multi-agent routing (desk/flow/bill/grow) and keyword scoring
+- Updated Bill Dashboard with CFDI generation dialog, cancel button, Facturama status
+- Updated Flow Clinical with pre-consulta chat interface and SOAP notes browser with S/O green, A/P purple
+- Added recentEvents and soapNotes to Zustand store
+- Environment variables for Facturama configured
+- Lint passes clean
+
+Stage Summary:
+- 5 API routes: facturama, events, preconsulta, soap, enhanced orchestrator
+- CFDI 4.0 invoice generation functional (sandbox mode)
+- Event bus connecting agents (cita_agendada → factura_generada, etc.)
+- Pre-consulta with real AI questions + SOAP note generation
+- Multi-agent routing in orchestrator
