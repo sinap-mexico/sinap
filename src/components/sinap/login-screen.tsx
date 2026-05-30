@@ -338,19 +338,10 @@ export function LoginScreen() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8, ease: 'easeOut' }}
           >
-            <SinapLogo size={48} showText showTagline variant="dark" />
+            <SinapLogo size={80} showText variant="dark" />
           </motion.div>
 
-          <div className="h-4" />
-
-          <motion.p
-            className="text-lg text-[#1D9E75] font-medium mb-4"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.35, duration: 0.5 }}
-          >
-            Inteligencia que conecta
-          </motion.p>
+          <div className="h-6" />
 
           <motion.p
             className="text-[15px] text-white/80 leading-relaxed max-w-sm mb-12"
