@@ -1,0 +1,92 @@
+[
+  {
+    "url": "https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/overview",
+    "name": "Embedded Signup - Developer Platform - Facebook",
+    "snippet": "If you need to onboard more than 200 customers per week, apply to become a Meta Business Partner⁠ . Note: Existing WhatsApp Business Accounts (WABAs) that were ...",
+    "host_name": "developers.facebook.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://whatsappbusiness.com/partners/become-a-partner",
+    "name": "Become a Partner | WhatsApp for Business",
+    "snippet": "Can onboard businesses using Embedded Signup. Eligibility for partner program ... Account sharing allows clients to work with multiple Tech Providers and Solution ...\nWhy become a Tech Provider? Build and launch solutions on WhatsApp easier and faster. Simple client onboarding. Onboard clients to your solution using embedded ...",
+    "host_name": "whatsappbusiness.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/WhatsappBusinessAPI/comments/1t4k4g4/looking_for_guidance_on_whatsapp_integrations",
+    "name": "Looking for guidance on Whatsapp Integrations - Reddit",
+    "snippet": "With multiple pros each needing their own WABA or at least their own sender identity, you need a BSP that supports embedded signup at scale. Not ...",
+    "host_name": "www.reddit.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/support/migrating-wabas-among-solutions-via-embedded-signup",
+    "name": "Migrating a WABA from one Multi-Partner Solution to another via",
+    "snippet": "If you are a Tech Provider, you can use the API and Embedded Signup to migrate a client's WABA from one Multi-Partner Solution (the “source solution”) to ...",
+    "host_name": "developers.facebook.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.wuseller.com/whatsapp-business-knowledge-hub/whatsapp-business-solution-providers-partner-tiers-2026",
+    "name": "WhatsApp Business Solution Providers: Partner Tiers (2026)",
+    "snippet": "To start, choose a tier. Pass the Meta App Review. Then, use the Embedded Signup flow to onboard your clients quickly and securely. ​. ​Building ...",
+    "host_name": "www.wuseller.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://stackoverflow.com/questions/79942104/whatsapp-embedded-signup-tech-provider-option-missing-in-business-manager-desp",
+    "name": "WhatsApp Embedded Signup — Tech Provider option missing in",
+    "snippet": "I'm building a WhatsApp Coexistence integration using the Embedded Signup flow. According to the official docs, a Tech Provider must meet ...",
+    "host_name": "stackoverflow.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=6W4aoz65m3Y",
+    "name": "WhatsApp Embedded Signup Tutorial | Facebook Login for Business",
+    "snippet": "In this complete step-by-step tutorial, I'll show you how to set up WhatsApp Embedded Signup for your WhatsApp Business SaaS application ...\nthe WhatsApp Cloud API. WhatsApp Embedded Signup is the official onboarding flow from Meta that allows businesses to self-onboard to the ...",
+    "host_name": "www.youtube.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.twilio.com/docs/whatsapp/isv/tech-provider-program/integration-guide",
+    "name": "WhatsApp Tech Provider program integration guide - Twilio",
+    "snippet": "You'll create a Meta app and become a WhatsApp Tech Provider, add the Twilio Partner Solution, and integrate Embedded Signup into your application. Note: If you ...",
+    "host_name": "www.twilio.com",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.infobip.com/docs/whatsapp/tech-provider-program/setup-and-integration",
+    "name": "Set up and integrate the Tech Provider Program - Infobip",
+    "snippet": "Integrating WhatsApp Business with your system requires setting up a Meta app, registering as a Meta Developer, and configuring key components.",
+    "host_name": "www.infobip.com",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://chakrahq.com/article/whatsapp-api-partner-integration-solution-embedded",
+    "name": "Embed WhatsApp Business API Into Your SaaS or Agency Platform",
+    "snippet": "Chakra Chat provides an Embedded Signup flow, so your customers can connect their WhatsApp Business Account (WABA) and phone numbers without ...",
+    "host_name": "chakrahq.com",
+    "rank": 9,
+    "date": "",
+    "favicon": ""
+  }
+]

@@ -1,0 +1,92 @@
+[
+  {
+    "url": "https://www.twilio.com/docs/whatsapp/isv/tech-provider-program",
+    "name": "Tech Provider program overview | Twilio",
+    "snippet": "Learn how the WhatsApp Tech Provider program simplifies WhatsApp onboarding for ISVs using Twilio, enabling self-service onboarding for client businesses.",
+    "host_name": "www.twilio.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/get-started-for-tech-providers",
+    "name": "Become a Tech Provider - Developer Platform - Facebook",
+    "snippet": "This document describes the steps you must take to become a Tech Provider. As a Tech Provider, you can independently provide all WhatsApp messaging services ...",
+    "host_name": "developers.facebook.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/WhatsappBusinessAPI/comments/1stusyc/best_way_to_let_users_connect_their_own_whatsapp",
+    "name": "Best way to let users connect their own WhatsApp number inside a",
+    "snippet": "You become a Tech Provider through Meta (or work with a BSP that gives you reseller access), then you embed the signup flow in your onboarding.",
+    "host_name": "www.reddit.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=M0katK_jkNw",
+    "name": "Introducing the Tech Provider Program: A Path to Business Growth",
+    "snippet": "This video addresses the challenges tech providers face in connecting with customers and expanding their reach.",
+    "host_name": "www.youtube.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.twilio.com/docs/whatsapp/isv/tech-provider-program/integration-guide",
+    "name": "WhatsApp Tech Provider program integration guide - Twilio",
+    "snippet": "As a Twilio ISV, integrate with the Tech Provider program to enable self-service onboarding to WhatsApp for your customers via API.",
+    "host_name": "www.twilio.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.facebook.com/MetaforDevelopers/videos/whatsapp-embedded-signup-tutorial/1980388915797195",
+    "name": "WhatsApp Embedded Signup Tutorial - Facebook",
+    "snippet": "Whether you're a Business Solution Provider or a Tech Provider, this tool will help you pre-verify phone numbers, configure the setup, and start ...",
+    "host_name": "www.facebook.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/WhatsappBusinessAPI/comments/1o8gpbd/how_i_got_approved_as_a_meta_tech_provider_full",
+    "name": "How I Got Approved as a Meta Tech Provider (Full Step-by  - Reddit",
+    "snippet": "After a long process of testing, rejections, and learning, I finally got approved as a Meta Tech Provider for the WhatsApp Business Platform! A ...",
+    "host_name": "www.reddit.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://developer.vonage.com/en/channel-manager/guides/whatsapp/hosted-es-flow",
+    "name": "WhatsApp Hosted Embedded Sign-up Flow - Vonage",
+    "snippet": "WhatsApp Hosted Embedded Sign-up Flow is a white-labeled onboarding UI. It enables Vonage Partners to onboard their clients to WhatsApp Business Accounts ...",
+    "host_name": "developer.vonage.com",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://engineering.teknasyon.com/embedded-signup-a-solution-to-streamline-transition-to-whatsapp-business-api-cdf57783a2d4",
+    "name": "Embedded Signup: A Solution to Streamline Transition to WhatsApp",
+    "snippet": "WhatsApp Embedded Signup is a feature that enables businesses to quickly sign up for WhatsApp Business Platform from a BSP's website or app.",
+    "host_name": "engineering.teknasyon.com",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=HVYw2donIs8",
+    "name": "Onboarding Businesses with Embedded Signup to Meta  - YouTube",
+    "snippet": "... Meta Business Messaging technologies across WhatsApp, Messenger, and Instagram. This step-by-step guide shows how businesses can sign up and ...",
+    "host_name": "www.youtube.com",
+    "rank": 9,
+    "date": "",
+    "favicon": ""
+  }
+]
