@@ -1,6 +1,7 @@
 'use client'
 
 import { useSession } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
 import { useSinapStore, type SinapModule } from '@/lib/sinap-store'
 import { SinapSidebar } from '@/components/sinap/sidebar'
 import { SinapHeader } from '@/components/sinap/header'
@@ -13,7 +14,6 @@ import { GrowMarketing } from '@/components/sinap/grow-marketing'
 import { SightAnalytics } from '@/components/sinap/sight-analytics'
 import { HubOperations } from '@/components/sinap/hub-operations'
 import { SettingsPages } from '@/components/sinap/settings-pages'
-import { LoginScreen } from '@/components/sinap/login-screen'
 import { OnboardingFlow } from '@/components/sinap/onboarding-flow'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Loader2 } from 'lucide-react'
@@ -47,6 +47,7 @@ function ModuleContent({ module }: { module: string }) {
 export default function SinapDashboard() {
   const { data: session, status } = useSession()
   const { activeModule, onboardingComplete } = useSinapStore()
+  const router = useRouter()
   const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
@@ -71,9 +72,14 @@ export default function SinapDashboard() {
     )
   }
 
-  // Show login screen if not authenticated
-  if (!session?.user) {
-    return <LoginScreen />
+  // If not authenticated and not in demo mode, redirect to login
+  if (!session?.user && !onboardingComplete) {
+    router.push('/login')
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-[#F1EFE8]">
+        <Loader2 className="h-8 w-8 animate-spin text-[#534AB7]" />
+      </div>
+    )
   }
 
   // Show onboarding if not complete

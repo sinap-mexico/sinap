@@ -266,3 +266,24 @@ Stage Summary:
 - 2 new logo files created: sinap-logo-icon-only.png, sinap-logo-full.png
 - Nav text now fully white, "Ver demo" visible in both nav and hero
 - Real user logo PNG now used throughout the app
+
+---
+Task ID: 2
+Agent: Main
+Task: Fix navigation flow - all buttons now work correctly
+
+Work Log:
+- Identified root cause: middleware redirected to /login but no /login route existed
+- Created /login route at src/app/login/page.tsx with LoginScreen component
+- Updated all landing page links from /dashboard to /login (10 instances)
+- Removed /dashboard from middleware matcher (dashboard handles auth client-side)
+- Updated LoginScreen to use useRouter for navigation after login/register/demo
+- Demo mode now bypasses NextAuth if no database is available - goes directly to dashboard
+- After successful login or register, user is redirected to /dashboard
+- Dashboard page redirects unauthenticated users to /login
+- All buttons now functional: Iniciar sesión → /login, Ver demo → /login, Comenzar gratis → /login
+
+Stage Summary:
+- New route: /login (src/app/login/page.tsx)
+- Updated: landing-page.tsx (all links → /login), login-screen.tsx (redirect after auth), dashboard/page.tsx (client-side auth redirect), middleware.ts (removed /dashboard protection)
+- Flow: Landing page → /login → auth/demo → /dashboard

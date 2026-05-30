@@ -87,18 +87,18 @@ function LandingNav() {
         </div>
 
         <div className="hidden md:flex items-center gap-3">
-          <Link href="/dashboard">
+          <Link href="/login">
             <Button variant="ghost" className={`text-sm ${navTextColor} ${navHoverColor}`}>
               Iniciar sesión
             </Button>
           </Link>
-          <Link href="/dashboard">
+          <Link href="/login">
             <Button variant="ghost" className={`text-sm gap-1.5 ${navTextColor} ${navHoverColor}`}>
               <Play className="h-3.5 w-3.5" />
               Ver demo
             </Button>
           </Link>
-          <Link href="/dashboard">
+          <Link href="/login">
             <Button className={`text-sm h-9 px-5 rounded-lg shadow-md shadow-[#534AB7]/20 transition-all ${
               scrolled
                 ? 'bg-[#534AB7] hover:bg-[#4A42A5] text-white'
@@ -130,13 +130,13 @@ function LandingNav() {
               <a href="#por-que" onClick={() => setMobileOpen(false)} className="text-sm py-2 text-[#2C2C2A]/70">Por qué Sinap</a>
               <a href="#casos" onClick={() => setMobileOpen(false)} className="text-sm py-2 text-[#2C2C2A]/70">Casos de uso</a>
               <a href="#precios" onClick={() => setMobileOpen(false)} className="text-sm py-2 text-[#2C2C2A]/70">Precios</a>
-              <Link href="/dashboard">
+              <Link href="/login">
                 <Button variant="outline" className="w-full border-[#534AB7]/30 text-[#534AB7] hover:bg-[#534AB7]/8 text-sm h-10 rounded-lg mt-2">
                   <Play className="h-4 w-4 mr-1.5" />
                   Ver demo
                 </Button>
               </Link>
-              <Link href="/dashboard">
+              <Link href="/login">
                 <Button className="w-full bg-[#534AB7] text-white text-sm h-10 rounded-lg">Comenzar gratis</Button>
               </Link>
             </div>
@@ -224,13 +224,13 @@ function HeroSection() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5, duration: 0.6 }}
         >
-          <Link href="/dashboard">
+          <Link href="/login">
             <Button className="h-13 px-8 bg-[#534AB7] hover:bg-[#4A42A5] text-white text-base font-medium rounded-xl shadow-xl shadow-[#534AB7]/25 hover:shadow-[#534AB7]/35 transition-all">
               Comenzar gratis
               <ArrowRight className="h-5 w-5 ml-2" />
             </Button>
           </Link>
-          <Link href="/dashboard">
+          <Link href="/login">
             <Button className="h-13 px-8 bg-white/90 hover:bg-white text-[#534AB7] border border-white/50 text-base font-medium rounded-xl shadow-lg shadow-white/10 transition-all">
               <Play className="h-4 w-4 mr-2" />
               Ver demo
@@ -876,7 +876,7 @@ function PricingSection() {
                   ))}
                 </div>
 
-                <Link href="/dashboard" className="block">
+                <Link href="/login" className="block">
                   <Button
                     className={`w-full h-11 rounded-xl text-sm font-medium transition-all ${
                       plan.highlight
@@ -919,13 +919,13 @@ function CTASection() {
             Comienza gratis, sin compromiso. En menos de 5 minutos tendrás tu primera cita agendada por IA.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/dashboard">
+            <Link href="/login">
               <Button className="h-13 px-8 bg-[#534AB7] hover:bg-[#4A42A5] text-white text-base font-medium rounded-xl shadow-xl shadow-[#534AB7]/25 transition-all">
                 Comenzar gratis
                 <ArrowRight className="h-5 w-5 ml-2" />
               </Button>
             </Link>
-            <Link href="/dashboard">
+            <Link href="/login">
               <Button variant="outline" className="h-13 px-8 border-[#1D9E75]/40 text-[#1D9E75] hover:bg-[#1D9E75]/8 text-base font-medium rounded-xl transition-all">
                 Hablar con ventas
               </Button>

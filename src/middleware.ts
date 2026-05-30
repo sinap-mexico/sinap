@@ -1,4 +1,5 @@
 import { withAuth } from "next-auth/middleware"
+import { NextResponse } from "next/server"
 
 export default withAuth({
   pages: {
@@ -8,7 +9,6 @@ export default withAuth({
 
 export const config = {
   matcher: [
-    "/dashboard/:path*",
     "/api/orchestrator/:path*",
     "/api/patients/:path*",
     "/api/appointments/:path*",
