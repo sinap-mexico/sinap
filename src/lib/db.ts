@@ -4,8 +4,8 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
-// Only create PrismaClient if DATABASE_URL is set and points to a valid database
-// On Vercel serverless without SQLite, this gracefully returns null
+// Create PrismaClient — works with both SQLite (dev) and PostgreSQL (Supabase)
+// Gracefully returns null if no DATABASE_URL is set (demo mode on Vercel)
 function createPrismaClient(): PrismaClient | null {
   const dbUrl = process.env.DATABASE_URL
 
@@ -16,7 +16,7 @@ function createPrismaClient(): PrismaClient | null {
 
   try {
     const client = new PrismaClient({
-      log: process.env.NODE_ENV === 'development' ? ['query'] : ['error'],
+      log: process.env.NODE_ENV === 'development' ? ['query'] : ['warn'],
     })
     return client
   } catch (error) {
