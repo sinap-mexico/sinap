@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing",
+    "name": "Pricing on the WhatsApp Business Platform - Meta for Developers",
+    "snippet": "Starting in 2026, businesses integrated into Marketing Messages API for WhatsApp can choose to set a max-price per marketing message delivery; when a max-price ...",
+    "host_name": "developers.facebook.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://setsmart.io/blog/whatsapp-business-api-pricing",
+    "name": "WhatsApp Business API Pricing 2026: Hidden Fees - SetSmart",
+    "snippet": "WhatsApp Business API pricing changed in 2026. The old \"free for the first 1,000 conversations per month\" tier is gone.",
+    "host_name": "setsmart.io",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://wapilot.io/affordable-whatsapp-api-pricing",
+    "name": "Affordable WhatsApp API Pricing in 2026: What Changed & Why",
+    "snippet": "WhatsApp API pricing depends on Meta's conversation-based model. Businesses typically pay between $0.008 and $0.06 per conversation, along with possible ...",
+    "host_name": "wapilot.io",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/WhatsappBusinessAPI/comments/1rxz1c3/psa_meta_is_updating_whatsapp_business_platform",
+    "name": "Meta is updating WhatsApp Business Platform Cloud API Terms on",
+    "snippet": "If you're using the WhatsApp Cloud API, Meta just sent out an email about Terms of Service changes taking effect April 2, 2026.",
+    "host_name": "www.reddit.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://respond.io/blog/whatsapp-business-api-pricing",
+    "name": "WhatsApp API Pricing: What Business Need to Know in 2026",
+    "snippet": "WhatsApp API pricing has 3 parts: Meta message & call fees, BSP charges, and inbox software. Use this breakdown to forecast monthly spend ...",
+    "host_name": "respond.io",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

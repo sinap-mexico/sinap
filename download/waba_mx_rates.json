@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://whatsappbusiness.com/products/platform-pricing",
+    "name": "WhatsApp Business Platform Pricing",
+    "snippet": "Businesses using our platform are charged on a per-message basis for each message we deliver to users. We charge when a message is delivered (not sent).",
+    "host_name": "whatsappbusiness.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.engagelab.com/blog/whatsapp-business-api-pricing",
+    "name": "WhatsApp Business API Pricing: 2026 Complete Cost Guide",
+    "snippet": "$0.025 for marketing — an 84% difference per message. Order confirmations, shipping updates, and payment receipts qualify as utility. If these ...",
+    "host_name": "www.engagelab.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.salesforce.com/en-us/wp-content/uploads/sites/4/assets/pdf/whatsapp-business-messaging-rate-card-mm-lite-feb-1-2026.pdf",
+    "name": "[PDF] WhatsApp Business Messaging Credits - Salesforce",
+    "snippet": "Rate Card – Effective February 1, 2026. This Rate Card is applicable to WhatsApp Business Messaging (1,000). Customers using. WhatsApp ...\nThis Rate Card is applicable to WhatsApp Business Messaging (1,000). Customers using. WhatsApp Business Messaging will be charged per ...",
+    "host_name": "www.salesforce.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://flowcall.co/blog/whatsapp-business-api-pricing-2026",
+    "name": "WhatsApp Business API Pricing 2026: Complete Guide - Flowcall",
+    "snippet": "Marketing messages cost $0.025-$0.1365 per message, utility messages ... Total cost: $48,520.00 (effective rate: $0.00323 per message).\nMarketing messages cost $0.025-$0.1365 per message, utility messages range from $0.004-$0.0456, and authentication messages cost $0.004-$0.0456, ...",
+    "host_name": "flowcall.co",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.spurnow.com/en/blogs/whatsapp-business-api-pricing-explained",
+    "name": "WhatsApp Business API Pricing: Complete Guide (2026) - Spur",
+    "snippet": "WhatsApp Business API now charges per message delivered (not per conversation), with costs ranging from fractions of a cent to $0.20+ ...\nMeta rate: ~$0.035 per marketing message. WhatsApp API cost: 5,000 messages × $0.035 = $175. Provider fees (examples):. • With Twilio: +$0.005 ...",
+    "host_name": "www.spurnow.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

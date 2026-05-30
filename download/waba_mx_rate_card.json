@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing",
+    "name": "Pricing on the WhatsApp Business Platform - Meta for Developers",
+    "snippet": "This document explains how pricing works on the WhatsApp Business Platform. Cloud API and Marketing Messages API for WhatsApp.",
+    "host_name": "developers.facebook.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://whatsappbusiness.com/products/platform-pricing",
+    "name": "WhatsApp Business Platform Pricing",
+    "snippet": "Businesses using our platform are charged on a per-message basis for each message we deliver to users. We charge when a message is delivered (not sent).",
+    "host_name": "whatsappbusiness.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.uptail.ai/blog/whatsapp-business-api-pricing-2026-what-it-costs-and-how-billing-works",
+    "name": "WhatsApp Business API Pricing 2026: What It Costs and How Billing",
+    "snippet": "According to Meta's published rate card, marketing messages can cost as little as ~$0.01 per message in lower-cost markets and over $0.13 in ...",
+    "host_name": "www.uptail.ai",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://whats.team/waba-pricing/mexico",
+    "name": "WhatsApp API Pricing in Mexico (2026) | WhatsTeam",
+    "snippet": "Check WhatsApp Business API pricing for Mexico. Compare marketing, utility, and authentication message costs. Updated 2026 rates.",
+    "host_name": "whats.team",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://flowcall.co/blog/whatsapp-business-api-pricing-2026",
+    "name": "WhatsApp Business API Pricing 2026: Complete Guide - Flowcall",
+    "snippet": "Marketing messages cost $0.025-$0.1365 per message, utility messages ... authentication messages as you scale, rewarding growth with lower per ...",
+    "host_name": "flowcall.co",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

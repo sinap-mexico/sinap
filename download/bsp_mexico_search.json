@@ -1,0 +1,92 @@
+[
+  {
+    "url": "https://360dialog.com/pricing",
+    "name": "WhatsApp Business Platform Pricing - 360Dialog",
+    "snippet": "Simple, transparent WhatsApp Business pricing. Plans from €49/month, no markup on Meta fees, no hidden costs. Compare WhatsApp API, Partner Platform, ...",
+    "host_name": "360dialog.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://setsmart.io/blog/whatsapp-business-api-pricing",
+    "name": "WhatsApp Business API Pricing 2026: Hidden Fees - SetSmart",
+    "snippet": "BSP (360dialog Hosting): $49 + 226K × $0.005 markup = $1,179. Total monthly cost: ~$10,454. Marketing dominates the bill — 86% of it. The single ...",
+    "host_name": "setsmart.io",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://docs.360dialog.com/partner/get-started/pricing",
+    "name": "Pricing - 360dialog Documentation",
+    "snippet": "Voice call pricing is defined by Meta and published in the official Volume-Based Pricing (VBP) Rate Cards for the WhatsApp Business Calling API.",
+    "host_name": "docs.360dialog.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.twilio.com/en-us/whatsapp/pricing",
+    "name": "WhatsApp Messaging Pricing - Twilio",
+    "snippet": "Twilio's per-message fee for WhatsApp is $0.005, inbound or outbound. Meta's per-template message fees are available on WhatsApp's rate cards.",
+    "host_name": "www.twilio.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/WhatsappBusinessAPI/comments/1tqryo2/everyone_recommends_the_same_whatsapp_api",
+    "name": "Everyone recommends the same WhatsApp API providers. Here's",
+    "snippet": "BSP markup on top of Meta's fee — this is the quiet budget killer. WATI charges an additional 20% per message on top of Meta's charges.",
+    "host_name": "www.reddit.com",
+    "rank": 4,
+    "date": "May 29, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://docs.360dialog.com/docs/get-started/pricing",
+    "name": "Pricing | Client Documentation",
+    "snippet": "This guide outlines the pricing structures, management workflows, and billing cycles within the 360Dialog Hub. Each WhatsApp Business channel ...",
+    "host_name": "docs.360dialog.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.engagelab.com/blog/whatsapp-business-api-pricing",
+    "name": "WhatsApp Business API Pricing: 2026 Complete Cost Guide",
+    "snippet": "Twilio is one of the most established BSPs, known for transparent pricing and detailed API documentation. It typically adds $0.005–$0.010 per ...",
+    "host_name": "www.engagelab.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://360dialog.com/whatsapp-api",
+    "name": "WhatsApp Business API - 360Dialog",
+    "snippet": "Get WhatsApp Business API access in 30 minutes. Official Meta Partner, fair pricing from $59/mo, docs that make sense, and 24/7 support from real engineers.",
+    "host_name": "360dialog.com",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.uptail.ai/blog/whatsapp-business-api-pricing-2026-what-it-costs-and-how-billing-works",
+    "name": "WhatsApp Business API Pricing 2026: What It Costs and How Billing",
+    "snippet": "This guide breaks down exactly how pricing works in 2026, what each message category costs, what's free, and how to keep your bill under control ...",
+    "host_name": "www.uptail.ai",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://chatarmin.com/en/blog/twilio-whats-app-api",
+    "name": "Twilio WhatsApp API: Pricing, Setup & Alternatives 2026 - Chatarmin",
+    "snippet": "In this article, you'll learn how the WhatsApp Business API works via Twilio, what changed with the pricing model in 2025/2026, and when you can ...",
+    "host_name": "chatarmin.com",
+    "rank": 9,
+    "date": "",
+    "favicon": ""
+  }
+]

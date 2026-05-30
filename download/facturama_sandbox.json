@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://apisandbox.facturama.mx/Docs",
+    "name": "Documentación API REST de Facturación 4.0 Facturama",
+    "snippet": "Deberás generar una cuenta en Facturama donde deberás completar la información solicitada es importante cargar correctamente tus certificados del sello ...",
+    "host_name": "apisandbox.facturama.mx",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://facturama.elevio.help/en/articles/114-how-do-i-register-for-facturama-s-api-sandbox",
+    "name": "How do I register for Facturama's API Sandbox?",
+    "snippet": "At Facturama, you can register for free in a dedicated environment to begin your development process and integrate the API: the Sandbox ...",
+    "host_name": "facturama.elevio.help",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://facturama.mx",
+    "name": "Facturar en línea CFDI | Sistema de Facturación Electrónica",
+    "snippet": "Facturar en línea nunca había sido tan fácil. Facturama es el Sistema de Facturación Online líder de México. Prueba por 30 días, Gratis 15 folios fiscales.",
+    "host_name": "facturama.mx",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://facturama.mx/api-facturacion-electronica",
+    "name": "API Facturación Electrónica CFDI 4.0 | Carta Porte 3.1 - Facturama",
+    "snippet": "Integra el timbrado de facturacion electronica a tu sistema usando nuestra bien documentada API, tenemos librerias para PHP, .NET, JAVA, JavaScript, Postman ...",
+    "host_name": "facturama.mx",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://facturama.elevio.help/en/articles/91-faqs-facturama-api",
+    "name": "FAQs: Facturama API | name",
+    "snippet": "The Facturama API is a tool that enables automation of electronic invoice issuance, payroll receipts, and other CFDI (Digital Tax Receipts) supplements.",
+    "host_name": "facturama.elevio.help",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]
