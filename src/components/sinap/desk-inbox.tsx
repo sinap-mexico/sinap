@@ -1,0 +1,336 @@
+'use client'
+
+import { useState } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
+import { conversations, type Conversation } from '@/lib/mock-data'
+import {
+  MessageSquare,
+  Search,
+  Send,
+  Phone,
+  Instagram,
+  Facebook,
+  Clock,
+  User,
+  Tag,
+  Heart,
+  AlertTriangle,
+  ChevronRight,
+} from 'lucide-react'
+
+function ChannelIcon({ channel }: { channel: string }) {
+  switch (channel) {
+    case 'whatsapp':
+      return <Phone className="h-3.5 w-3.5 text-green-600" />
+    case 'instagram':
+      return <Instagram className="h-3.5 w-3.5 text-pink-500" />
+    case 'facebook':
+      return <Facebook className="h-3.5 w-3.5 text-blue-600" />
+    default:
+      return <MessageSquare className="h-3.5 w-3.5" />
+  }
+}
+
+function ChannelLabel({ channel }: { channel: string }) {
+  const labels: Record<string, string> = {
+    whatsapp: 'WhatsApp',
+    instagram: 'Instagram',
+    facebook: 'Facebook',
+  }
+  return <span className="text-[10px] text-[#888780]">{labels[channel] || channel}</span>
+}
+
+function SentimentBadge({ sentiment }: { sentiment: string }) {
+  const config: Record<string, { color: string; bg: string; label: string }> = {
+    positive: { color: '#1D9E75', bg: '#E1F5EE', label: 'Positivo' },
+    neutral: { color: '#888780', bg: '#F1EFE8', label: 'Neutral' },
+    negative: { color: '#E53E3E', bg: '#FEE2E2', label: 'Negativo' },
+  }
+  const s = config[sentiment] || config.neutral
+  return (
+    <Badge
+      className="text-[10px] border-0 font-medium"
+      style={{ backgroundColor: s.bg, color: s.color }}
+    >
+      {s.label}
+    </Badge>
+  )
+}
+
+export function DeskInbox() {
+  const [selectedConversation, setSelectedConversation] = useState<Conversation>(conversations[0])
+  const [messageInput, setMessageInput] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const filteredConversations = conversations.filter((c) =>
+    c.patientName.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
+  return (
+    <div className="flex gap-4 h-[calc(100vh-8rem)]">
+      {/* Left panel - Conversation list */}
+      <Card className="border-[#E1F5EE] bg-white w-80 shrink-0 flex flex-col">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-medium tracking-[-0.03em]">
+              Conversaciones
+            </CardTitle>
+            <Badge className="bg-[#EEEDFE] text-[#534AB7] border-0 text-[10px]">
+              {conversations.length} activas
+            </Badge>
+          </div>
+          <div className="relative mt-2">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-[#888780]" />
+            <Input
+              placeholder="Buscar paciente..."
+              className="pl-8 h-8 text-xs bg-[#F1EFE8] border-[#E1F5EE]"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+        </CardHeader>
+        <Separator className="bg-[#E1F5EE]" />
+        <ScrollArea className="flex-1">
+          <div className="p-2 space-y-1">
+            {filteredConversations.map((conv) => (
+              <button
+                key={conv.id}
+                onClick={() => setSelectedConversation(conv)}
+                className={`w-full text-left p-3 rounded-lg transition-colors ${
+                  selectedConversation?.id === conv.id
+                    ? 'bg-[#EEEDFE] border border-[#534AB7]/20'
+                    : 'hover:bg-[#F1EFE8]'
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  <div className="h-8 w-8 rounded-full bg-[#E1F5EE] flex items-center justify-center shrink-0">
+                    <span className="text-xs font-medium text-[#1D9E75]">
+                      {conv.patientName.split(' ').map((n) => n[0]).join('').slice(0, 2)}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-[#2C2C2A] truncate">
+                        {conv.patientName}
+                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                        <ChannelIcon channel={conv.channel} />
+                        <span className="text-[10px] text-[#888780]">{conv.lastTime}</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-[#888780] truncate mt-0.5">
+                      {conv.lastMessage}
+                    </p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <ChannelLabel channel={conv.channel} />
+                      {conv.unread > 0 && (
+                        <Badge className="bg-[#534AB7] text-white border-0 text-[9px] h-4 min-w-[16px] flex items-center justify-center">
+                          {conv.unread}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </ScrollArea>
+      </Card>
+
+      {/* Center panel - Chat view */}
+      <Card className="border-[#E1F5EE] bg-white flex-1 flex flex-col">
+        {/* Chat header */}
+        <div className="px-4 py-3 border-b border-[#E1F5EE] flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-full bg-[#E1F5EE] flex items-center justify-center">
+              <span className="text-sm font-medium text-[#1D9E75]">
+                {selectedConversation?.patientName.split(' ').map((n) => n[0]).join('').slice(0, 2)}
+              </span>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-[#2C2C2A]">
+                {selectedConversation?.patientName}
+              </p>
+              <div className="flex items-center gap-1.5">
+                <ChannelIcon channel={selectedConversation?.channel || 'whatsapp'} />
+                <ChannelLabel channel={selectedConversation?.channel || 'whatsapp'} />
+              </div>
+            </div>
+          </div>
+          <Badge className="bg-amber-100 text-amber-700 border-0 text-[10px]">
+            <AlertTriangle className="h-3 w-3 mr-1" />
+            Simulación
+          </Badge>
+        </div>
+
+        {/* Messages */}
+        <ScrollArea className="flex-1 p-4">
+          <div className="space-y-4">
+            {selectedConversation?.messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={`flex ${msg.direction === 'inbound' ? 'justify-start' : 'justify-end'}`}
+              >
+                <div
+                  className={`max-w-[75%] rounded-xl px-4 py-2.5 ${
+                    msg.direction === 'inbound'
+                      ? 'bg-[#F1EFE8] text-[#2C2C2A]'
+                      : msg.isAI
+                      ? 'bg-[#534AB7] text-white'
+                      : 'bg-[#1D9E75] text-white'
+                  }`}
+                >
+                  {msg.direction === 'outbound' && msg.agent && (
+                    <div className="flex items-center gap-1 mb-1">
+                      <Badge
+                        className={`text-[9px] border-0 py-0 px-1.5 ${
+                          msg.isAI ? 'bg-white/20 text-white' : 'bg-white/20 text-white'
+                        }`}
+                      >
+                        {msg.agent}
+                      </Badge>
+                    </div>
+                  )}
+                  <p className="text-sm leading-relaxed">{msg.text}</p>
+                  <p
+                    className={`text-[10px] mt-1 ${
+                      msg.direction === 'inbound' ? 'text-[#888780]' : 'text-white/60'
+                    }`}
+                  >
+                    {msg.time}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
+
+        {/* Input */}
+        <div className="px-4 py-3 border-t border-[#E1F5EE]">
+          <div className="flex items-center gap-2">
+            <Input
+              placeholder="Escribe un mensaje..."
+              className="flex-1 h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE]"
+              value={messageInput}
+              onChange={(e) => setMessageInput(e.target.value)}
+            />
+            <Button size="icon" className="bg-[#534AB7] hover:bg-[#534AB7]/90 h-9 w-9">
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* Right panel - Conversation detail */}
+      <Card className="border-[#E1F5EE] bg-white w-72 shrink-0 flex flex-col hidden xl:flex">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium tracking-[-0.03em]">
+            Detalle
+          </CardTitle>
+        </CardHeader>
+        <Separator className="bg-[#E1F5EE]" />
+        <ScrollArea className="flex-1 p-4">
+          <div className="space-y-4">
+            {/* Patient info */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <User className="h-4 w-4 text-[#888780]" />
+                <span className="text-xs font-medium text-[#888780] uppercase tracking-wide">
+                  Paciente
+                </span>
+              </div>
+              <p className="text-sm font-medium text-[#2C2C2A]">
+                {selectedConversation?.patientName}
+              </p>
+            </div>
+
+            {/* Intent */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Tag className="h-4 w-4 text-[#888780]" />
+                <span className="text-xs font-medium text-[#888780] uppercase tracking-wide">
+                  Intención
+                </span>
+              </div>
+              <Badge className="bg-[#EEEDFE] text-[#534AB7] border-0 text-xs">
+                {selectedConversation?.intent}
+              </Badge>
+            </div>
+
+            {/* Sentiment */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Heart className="h-4 w-4 text-[#888780]" />
+                <span className="text-xs font-medium text-[#888780] uppercase tracking-wide">
+                  Sentimiento
+                </span>
+              </div>
+              <SentimentBadge sentiment={selectedConversation?.sentiment || 'neutral'} />
+            </div>
+
+            {/* Channel */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Phone className="h-4 w-4 text-[#888780]" />
+                <span className="text-xs font-medium text-[#888780] uppercase tracking-wide">
+                  Canal
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <ChannelIcon channel={selectedConversation?.channel || 'whatsapp'} />
+                <span className="text-sm text-[#2C2C2A]">
+                  {selectedConversation?.channel === 'whatsapp'
+                    ? 'WhatsApp'
+                    : selectedConversation?.channel === 'instagram'
+                    ? 'Instagram DM'
+                    : 'Facebook Messenger'}
+                </span>
+              </div>
+            </div>
+
+            {/* Last activity */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Clock className="h-4 w-4 text-[#888780]" />
+                <span className="text-xs font-medium text-[#888780] uppercase tracking-wide">
+                  Última actividad
+                </span>
+              </div>
+              <p className="text-sm text-[#2C2C2A]">{selectedConversation?.lastTime}</p>
+            </div>
+
+            <Separator className="bg-[#E1F5EE]" />
+
+            {/* AI suggestion */}
+            <div className="bg-[#EEEDFE] rounded-lg p-3">
+              <p className="text-[10px] font-medium text-[#534AB7] uppercase tracking-wide mb-1.5">
+                Sugerencia IA
+              </p>
+              <p className="text-xs text-[#2C2C2A] leading-relaxed">
+                {selectedConversation?.intent === 'Cotización'
+                  ? 'El paciente pregunta por precio. Sugiere agendar primera cita con enlace de pago.'
+                  : selectedConversation?.intent === 'Reactivación'
+                  ? 'Paciente inactiva. Ofrece horario flexible o promoción de reactivación.'
+                  : selectedConversation?.intent === 'Confirmación de cita'
+                  ? 'Confirma la cita y envía recordatorio con ubicación de la clínica.'
+                  : 'Responde de forma empática y ofrece soluciones concretas.'}
+              </p>
+              <Button
+                size="sm"
+                className="mt-2 bg-[#534AB7] hover:bg-[#534AB7]/90 text-white text-xs h-7"
+              >
+                Usar sugerencia
+                <ChevronRight className="h-3 w-3 ml-1" />
+              </Button>
+            </div>
+          </div>
+        </ScrollArea>
+      </Card>
+    </div>
+  )
+}

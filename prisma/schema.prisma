@@ -1,8 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// Sinap OS — Multi-tenant SaaS Platform for Health Clinics
+// Schema v1.0 — Fase 1
 
 generator client {
   provider = "prisma-client-js"
@@ -13,20 +10,410 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// ─── TENANT & AUTH ───────────────────────────────────────
+
+model Clinic {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  mode          String   @default("solo") // "solo" | "clinic"
+  rfc           String?  // RFC para facturación México
+  regimenFiscal String?  // Régimen fiscal SAT
+  email         String
+  phone         String?
+  address       String?
+  city          String?
+  state         String?
+  country       String   @default("MX")
+
+  // Meta Business API config
+  wabaId         String?  // WhatsApp Business Account ID
+  phoneNumberId  String?  // Meta Phone Number ID
+  metaAccessToken String? // Encrypted access token
+  igBusinessId   String?  // Instagram Business Account ID
+  fbPageId       String?  // Facebook Page ID
+
+  // Facturama config
+  facturamaUserId   String?
+  facturamaToken    String?
+  facturamaSandbox  Boolean @default(true)
+
+  // Plan & billing
+  plan           String   @default("starter") // "starter" | "pro" | "premium"
+  monthlyConvLimit Int    @default(200)
+  maxDoctors     Int      @default(1)
+
+  // Branding
+  logoUrl        String?
+  primaryColor   String   @default("#1D9E75")
+  personaName    String?  // Nombre del agente IA (ej. "Asistente del Dr. Martínez")
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  doctors        Doctor[]
+  patients       Patient[]
+  appointments   Appointment[]
+  invoices       Invoice[]
+  conversations  Conversation[]
+  messages       Message[]
+  featureFlags   FeatureFlag[]
+  events         EventBus[]
+  staff          Staff[]
+  services       Service[]
+  soapNotes      SoapNote[]
 }
 
-model Post {
+model Doctor {
+  id          String   @id @default(cuid())
+  clinicId    String
+  name        String
+  email       String?
+  phone       String?
+  specialty   String?
+  license     String?  // Cédula profesional
+  color       String   @default("#1D9E75") // Color en agenda
+  isActive    Boolean  @default(true)
+
+  // Agenda config
+  workDays    String   @default("1,2,3,4,5") // Lun-Vie
+  workStart   String   @default("09:00")
+  workEnd     String   @default("18:00")
+  slotMinutes Int      @default(30)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clinic      Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+  services    ServiceDoctor[]
+  soapNotes   SoapNote[]
+
+  @@index([clinicId])
+}
+
+model Staff {
   id        String   @id @default(cuid())
-  title     String
-  content   String?
-  published Boolean  @default(false)
-  authorId  String
+  clinicId  String
+  name      String
+  email     String?
+  phone     String?
+  role      String   @default("receptionist") // "receptionist" | "assistant" | "admin" | "manager"
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId])
+}
+
+model Service {
+  id          String   @id @default(cuid())
+  clinicId    String
+  name        String   // "Consulta general", "Limpieza dental", etc.
+  description String?
+  duration    Int      @default(30) // minutos
+  price       Float    @default(0)
+  category    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clinic      Clinic         @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  doctors     ServiceDoctor[]
+  appointments Appointment[]
+
+  @@index([clinicId])
+}
+
+model ServiceDoctor {
+  id        String   @id @default(cuid())
+  serviceId String
+  doctorId  String
+
+  service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  doctor    Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, doctorId])
+}
+
+// ─── PATIENTS ────────────────────────────────────────────
+
+model Patient {
+  id            String   @id @default(cuid())
+  clinicId      String
+  firstName     String
+  lastName      String
+  fullName      String
+  phone         String?
+  email         String?
+  birthDate     DateTime?
+  gender        String?  // "M" | "F" | "other"
+  rfc           String?  // Para facturación
+  address       String?
+
+  // CRM fields
+  source        String?  // "whatsapp" | "instagram" | "facebook" | "referral" | "walk_in"
+  firstContactDate DateTime?
+  lastVisitDate DateTime?
+  totalVisits   Int      @default(0)
+  totalSpent    Float    @default(0)
+  ltv           Float    @default(0)
+  segment       String   @default("new") // "new" | "active" | "inactive" | "churned" | "vip"
+  sentiment     String   @default("neutral") // "positive" | "neutral" | "negative"
+
+  // Preferences
+  preferredChannel String? @default("whatsapp")
+  preferredTime   String? // "morning" | "afternoon" | "evening"
+  doNotContact    Boolean @default(false)
+
+  // Clinical
+  allergies      String?
+  medicalHistory String? // JSON string con antecedentes
+  notes          String?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  clinic        Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  appointments  Appointment[]
+  invoices      Invoice[]
+  conversations Conversation[]
+  soapNotes     SoapNote[]
+
+  @@index([clinicId])
+  @@index([clinicId, phone])
+  @@index([clinicId, segment])
+}
+
+// ─── APPOINTMENTS ────────────────────────────────────────
+
+model Appointment {
+  id          String   @id @default(cuid())
+  clinicId    String
+  patientId   String
+  doctorId    String
+  serviceId   String?
+
+  date        DateTime
+  startTime   String   // "10:00"
+  endTime     String   // "10:30"
+  status      String   @default("scheduled") // "scheduled" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show"
+  channel     String   @default("whatsapp")  // Canal por el que se agendó
+
+  // Pre-consulta
+  preConsultCompleted Boolean @default(false)
+  preConsultData String? // JSON con respuestas de pre-consulta
+
+  notes       String?
+  cancelReason String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clinic      Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor      Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  service     Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  invoice     Invoice?
+  soapNote    SoapNote?
+
+  @@index([clinicId, date])
+  @@index([clinicId, status])
+  @@index([doctorId, date])
+  @@index([patientId])
+}
+
+// ─── CLINICAL ────────────────────────────────────────────
+
+model SoapNote {
+  id             String   @id @default(cuid())
+  clinicId       String
+  patientId      String
+  appointmentId  String?  @unique
+  doctorId       String
+
+  subjective     String?  // S - Síntomas del paciente
+  objective      String?  // O - Hallazgos objetivos
+  assessment     String?  // A - Diagnóstico/Diferenciales
+  plan           String?  // P - Plan de tratamiento
+
+  // IA metadata
+  aiGenerated    Boolean  @default(false)
+  aiSuggested    Boolean  @default(false) // True si fue ASSIST mode
+  doctorApproved Boolean  @default(false)
+  doctorSignedAt DateTime?
+
+  // Additional clinical data
+  vitals         String?  // JSON: {bp: "120/80", hr: 72, temp: 36.5, weight: 70}
+  diagnosis      String?
+  prescriptions  String?  // JSON array de recetas
+  attachments    String?  // JSON array de URLs
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  clinic         Clinic      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient        Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointment    Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  doctor         Doctor      @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId, patientId])
+  @@index([clinicId, doctorId])
+}
+
+// ─── BILLING ─────────────────────────────────────────────
+
+model Invoice {
+  id              String   @id @default(cuid())
+  clinicId        String
+  patientId       String
+  appointmentId   String?  @unique
+
+  // CFDI 4.0 fields
+  cfdiUuid        String?  // UUID del CFDI timbrado por SAT
+  cfdiVersion     String   @default("4.0")
+  serie           String?  // Serie de la factura
+  folio           String?  // Folio consecutivo
+  fechaTimbrado   DateTime?
+
+  // Amounts
+  subtotal        Float    @default(0)
+  iva             Float    @default(0)
+  total           Float    @default(0)
+  currency        String   @default("MXN")
+
+  // CFDI details
+  formaPago       String   @default("01") // SAT catalog
+  metodoPago      String   @default("PUE") // PUE o PPD
+  tipoComprobante String   @default("I") // I=Ingreso
+  usoCFDI         String   @default("G01") // SAT catalog
+  concepto        String?  // Descripción del servicio
+
+  // Status
+  status          String   @default("pending") // "pending" | "timbrada" | "cancelled" | "error"
+  paymentStatus   String   @default("unpaid") // "unpaid" | "paid" | "partial"
+  paidAt          DateTime?
+
+  // Facturama response
+  facturamaId     String?  // ID en Facturama
+  pdfUrl          String?  // URL del PDF
+  xmlUrl          String?  // URL del XML
+
+  errorMessage    String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  clinic          Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient         Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointment     Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@index([clinicId, status])
+  @@index([clinicId, createdAt])
+  @@index([patientId])
+}
+
+// ─── CONVERSATIONS & MESSAGES ────────────────────────────
+
+model Conversation {
+  id          String   @id @default(cuid())
+  clinicId    String
+  patientId   String?
+
+  channel     String   @default("whatsapp") // "whatsapp" | "instagram" | "messenger"
+  status      String   @default("active")   // "active" | "closed" | "handed_off"
+
+  // Agent routing
+  currentAgent String? // "reception" | "clinical" | "billing" | "marketing"
+  routedToHuman Boolean @default(false)
+  humanAssignee String? // staff ID
+
+  // Context
+  intent      String?  // "schedule" | "reschedule" | "cancel" | "inquiry" | "complaint" | "billing"
+  sentiment   String   @default("neutral")
+  isMock      Boolean  @default(false) // True si es simulación
+
+  lastMessageAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clinic      Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient     Patient?  @relation(fields: [patientId], references: [id], onDelete: SetNull)
+  messages    Message[]
+
+  @@index([clinicId, status])
+  @@index([clinicId, channel])
+  @@index([clinicId, lastMessageAt])
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  clinicId       String
+  conversationId String
+
+  direction      String   // "inbound" | "outbound"
+  channel        String   @default("whatsapp")
+  senderType     String   // "patient" | "agent" | "doctor" | "system"
+  senderId       String?  // ID del agente o doctor
+
+  content        String
+  messageType    String   @default("text") // "text" | "image" | "document" | "template" | "interactive"
+  mediaUrl       String?
+
+  // AI metadata
+  agentName      String?  // "reception" | "clinical" | "billing"
+  aiGenerated    Boolean  @default(false)
+  confidence     Float?   // 0-1 confidence del agente
+
+  isMock         Boolean  @default(false)
+
+  createdAt      DateTime @default(now())
+
+  clinic         Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([clinicId, createdAt])
+}
+
+// ─── FEATURE FLAGS ───────────────────────────────────────
+
+model FeatureFlag {
+  id        String   @id @default(cuid())
+  clinicId  String
+  module    String   // "desk" | "flow" | "bill" | "grow" | "sight" | "hub"
+  feature   String   // "autoSchedule" | "soapNote" | "autoCFDI" etc.
+  state     String   @default("assist") // "on" | "assist" | "off"
+  config    String?  // JSON con config adicional (thresholds, subfields, etc.)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@unique([clinicId, module, feature])
+  @@index([clinicId, module])
+}
+
+// ─── EVENT BUS ───────────────────────────────────────────
+
+model EventBus {
+  id          String   @id @default(cuid())
+  clinicId    String
+  eventType   String   // "cita_agendada" | "cita_completada" | "factura_generada" etc.
+  sourceAgent String   // "desk" | "flow" | "bill" | "grow" | "sight" | "hub" | "system"
+  targetAgent String?  // Agent que debe procesar, null = broadcast
+  payload     String   // JSON con datos del evento
+  status      String   @default("pending") // "pending" | "processed" | "failed"
+  processedAt DateTime?
+
+  createdAt   DateTime @default(now())
+
+  clinic      Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId, eventType])
+  @@index([clinicId, status])
+  @@index([createdAt])
 }
