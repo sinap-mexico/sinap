@@ -234,11 +234,15 @@ export function LoginScreen() {
       if (result?.error) {
         setError('Correo o contraseña incorrectos')
         triggerShake()
-      } else {
+      } else if (result?.ok) {
         navigateToDashboard()
+      } else {
+        // result is null/undefined — NextAuth might not be properly configured
+        setError('Error de autenticación. Intenta el modo demo.')
+        triggerShake()
       }
     } catch {
-      setError('Error de conexión. Intenta de nuevo.')
+      setError('Error de conexión. Intenta de nuevo o usa el modo demo.')
       triggerShake()
     } finally {
       setIsLoading(false)
@@ -286,10 +290,10 @@ export function LoginScreen() {
       }
       // Auto sign in after registration
       const result = await signIn('credentials', { email, password, redirect: false })
-      if (result?.error) {
-        setError('Cuenta creada. Intenta iniciar sesión manualmente.')
-      } else {
+      if (result?.ok) {
         navigateToDashboard()
+      } else {
+        setError('Cuenta creada. Intenta iniciar sesión manualmente.')
       }
     } catch {
       setError('Error de conexión. Intenta de nuevo.')
@@ -301,27 +305,9 @@ export function LoginScreen() {
 
   const handleDemoLogin = async () => {
     setIsLoading(true)
-    try {
-      // Try NextAuth demo credentials first
-      const result = await signIn('credentials', {
-        email: 'demo@sinap.health',
-        password: 'demo1234',
-        redirect: false,
-      })
-      if (result?.error) {
-        // If NextAuth fails (no DB), bypass directly to dashboard with demo mode
-        console.log('Demo auth bypassed — no database connection available')
-        navigateToDashboard()
-      } else {
-        navigateToDashboard()
-      }
-    } catch {
-      // If NextAuth completely fails, bypass to dashboard anyway
-      console.log('Demo auth bypassed — using client-side demo mode')
-      navigateToDashboard()
-    } finally {
-      setIsLoading(false)
-    }
+    // Bypass NextAuth entirely for demo mode — avoids redirect loops
+    // NextAuth requires a database connection which may not be available
+    navigateToDashboard()
   }
 
   return (

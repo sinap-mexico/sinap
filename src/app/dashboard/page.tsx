@@ -49,16 +49,29 @@ export default function SinapDashboard() {
   const { activeModule, onboardingComplete } = useSinapStore()
   const router = useRouter()
   const [isMobile, setIsMobile] = useState(false)
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    setMounted(true)
     const check = () => setIsMobile(window.innerWidth < 1024)
     check()
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
   }, [])
 
-  // Show loading while session is being fetched
-  if (status === 'loading') {
+  // Redirect to login ONLY via useEffect to avoid render-time redirects that cause loops
+  useEffect(() => {
+    // Wait for mount and session check to complete
+    if (!mounted) return
+    if (status === 'loading') return
+    // If no session and not in demo mode (onboardingComplete), go to login
+    if (!session?.user && !onboardingComplete) {
+      router.replace('/login')
+    }
+  }, [mounted, status, session, onboardingComplete, router])
+
+  // Show loading while session is being fetched or component is mounting
+  if (!mounted || status === 'loading') {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-[#F1EFE8]">
         <motion.div
@@ -72,9 +85,8 @@ export default function SinapDashboard() {
     )
   }
 
-  // If not authenticated and not in demo mode, redirect to login
+  // If not authenticated and not in demo mode, show loading while redirect happens
   if (!session?.user && !onboardingComplete) {
-    router.push('/login')
     return (
       <div className="flex h-screen w-full items-center justify-center bg-[#F1EFE8]">
         <Loader2 className="h-8 w-8 animate-spin text-[#534AB7]" />
