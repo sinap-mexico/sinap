@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://apisandbox.facturama.mx/Docs",
+    "name": "Documentación API REST de Facturación 4.0 Facturama",
+    "snippet": "Deberás generar una cuenta en Facturama donde deberás completar la información solicitada es importante cargar correctamente tus certificados del sello ...",
+    "host_name": "apisandbox.facturama.mx",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://apisandbox.facturama.mx/docs/menu",
+    "name": "Documentación API REST de Facturación 4.0 Facturama",
+    "snippet": "Valida el Receptor que su información coincida y sea coherente en cuanto RFC, Nombre, Código Postal y Régimen Fiscal. CfdisLite. Generación de CFDI sin ...",
+    "host_name": "apisandbox.facturama.mx",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://facturama.elevio.help/en/articles/91-faqs-facturama-api",
+    "name": "FAQs: Facturama API | name",
+    "snippet": "The Facturama API is a tool that enables automation of electronic invoice issuance, payroll receipts, and other CFDI (Digital Tax Receipts) supplements.",
+    "host_name": "facturama.elevio.help",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://facturama.mx/api-facturacion-electronica",
+    "name": "API Facturación Electrónica CFDI 4.0 | Carta Porte 3.1 - Facturama",
+    "snippet": "Integra el timbrado de facturacion electronica a tu sistema usando nuestra bien documentada API, tenemos librerias para PHP, .NET, JAVA, JavaScript, Postman ...",
+    "host_name": "facturama.mx",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://fiscalapi.com",
+    "name": "API de Facturación Electrónica CFDI 4.0 en México",
+    "snippet": "Genera y timbra facturas electrónicas CFDI 4.0 con nuestra API REST. Soporta ingreso, egreso, pago, nómina, carta porte y más. Suscripción mensual + paquetes de ...",
+    "host_name": "fiscalapi.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

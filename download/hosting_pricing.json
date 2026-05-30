@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://vercel.com/pricing",
+    "name": "Vercel Pricing: Hobby, Pro, and Enterprise plans",
+    "snippet": "Scale your app. Control your costs. Start free. Upgrade to Pro for $20/month. Pay only for active compute and set your own spend limits. Hobby.",
+    "host_name": "vercel.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/nextjs/comments/1lcqt8h/database_choice_for_nextjs_vercel_neon_or_supabase",
+    "name": "Database Choice for Next.js + Vercel, Neon or Supabase? : r/nextjs",
+    "snippet": "I'm about to launch an app built with Next.js and I'm wondering whether we should choose Neon or Supabase. Since Neon is serverless, ...",
+    "host_name": "www.reddit.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://designrevision.com/blog/supabase-vs-neon",
+    "name": "Neon vs Supabase: Benchmarks, Pricing & When to Use Each",
+    "snippet": "A detailed comparison of Neon and Supabase covering architecture, pricing, branching, performance, developer experience, and use cases.",
+    "host_name": "designrevision.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://getautonoma.com/blog/supabase-vs-neon",
+    "name": "Supabase vs Neon: Serverless Postgres Compared (2026)",
+    "snippet": "Supabase bundles database, auth, storage, and realtime into one plan. When you compare the total cost of Supabase Pro against Neon plus separate auth (Clerk ...",
+    "host_name": "getautonoma.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://supabase.com/pricing",
+    "name": "Pricing & Fees - Supabase",
+    "snippet": "Pro · 100,000 monthly active users. then $0.00325 per MAU · 8 GB disk size per project. then $0.125 per GB · 250 GB egress. then $0.09 per GB · 250 GB cached egress.",
+    "host_name": "supabase.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://baseapi.cl/precios",
+    "name": "Precios API SII Chile · Desde $14.990/mes · Plan Gratis - BaseAPI",
+    "snippet": "Planes API SII desde $14.990/mes. Consulta o Emisión, capa gratuita permanente, IVA incluido y sin contrato mínimo. Plan Empresa para alto volumen.",
+    "host_name": "baseapi.cl",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://baseapi.cl/blog/factura-electronica-chile-guia-completa-2026",
+    "name": "Factura Electrónica Chile 2026: Cómo Emitir Gratis (sin certificación)",
+    "snippet": "Guía 2026 actualizada: emite facturas electrónicas en Chile gratis usando el Portal MiPyME del SII o vía API REST sin certificación CAL.",
+    "host_name": "baseapi.cl",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.libredte.cl",
+    "name": "LibreDTE: Inicio",
+    "snippet": "Precio del Servicio Plus ; $40.000. Precio base hasta cuota de 2.000 documentos ; $15. Precio por cada documento extra sobre la cuota ...",
+    "host_name": "www.libredte.cl",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://edicomgroup.com/es/blog/factura-electronica-chile",
+    "name": "Factura electrónica en Chile | Cómo emitir DTE y cumplir con el SII",
+    "snippet": "El sistema de facturación electrónica en chile está basado en la validación previa de los Documentos Tributarios Electrónicos (DTE) ante el SII.",
+    "host_name": "edicomgroup.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.tupana.ai/api-factura",
+    "name": "API Facturación Electrónica Chile | API SII Multicredencial - Tupana",
+    "snippet": "API REST que replica el facturador MiPyme del SII, 100% programable. Emite hasta 200 documentos por llamada, multicredencial, webhooks.",
+    "host_name": "www.tupana.ai",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

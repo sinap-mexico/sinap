@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://www.twilio.com/docs/messaging/api/pricing",
+    "name": "Pricing: Messaging Countries resource - Twilio",
+    "snippet": "Full API reference for pricing of Twilio's Programmable Messaging API. Get pricing information for a country or list all countries with Twilio Message ...",
+    "host_name": "www.twilio.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.twilio.com/en-us/pricing",
+    "name": "Twilio Pricing | Twilio",
+    "snippet": "Send and receive SMS and MMS messages. Starts at $0.0083 to send or receive a message. ... Send and receive RCS messages. Starts at $0.0083 to send or receive a ...",
+    "host_name": "www.twilio.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.twilio.com/en-us/sms/pricing/usa",
+    "name": "SMS Pricing in United States for Text Messaging | Twilio",
+    "snippet": "SMS (U.S.) starts at $0.0083. Price per outbound message sent to U.S. long codes. ; RCS Rich starts at $0.0083. Price per outbound message in the U.S. ; Start for ...",
+    "host_name": "www.twilio.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.twilio.com/en-us/sms/pricing/co",
+    "name": "SMS Pricing in Colombia for Text Messaging | Twilio",
+    "snippet": "View SMS pricing to send & receive text messages in the Colombia. Pay as you go to scale for your business needs. Start now with a free trial.",
+    "host_name": "www.twilio.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://getvoip.com/blog/twilio-pricing",
+    "name": "Twilio Pricing & Plans: A Closer Look at Their Products - GetVoIP",
+    "snippet": "Costs start at just $0.05 per user per month, plus media storage fees beginning at $0.25 monthly per GB of storage. Standard Twilio programmable ...",
+    "host_name": "getvoip.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]
