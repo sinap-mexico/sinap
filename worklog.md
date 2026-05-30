@@ -238,3 +238,31 @@ Stage Summary:
 - Real logo PNG is used throughout the app (login, sidebar, landing, dashboard)
 - "Ver demo" button now clearly visible with white text + glassmorphic background
 - All logo instances automatically updated via SinapLogo component
+---
+Task ID: 1
+Agent: Main
+Task: Fix landing page issues - white nav text, Ver demo button visible, use real logo PNG
+
+Work Log:
+- Copied user's PNG logo from upload directory to public/sinap-logo-icon.png and public/sinap-logo-full.png
+- Analyzed logo image dimensions (1672x941 horizontal) and content layout using PIL
+- Created icon-only version (510x510) by cropping left portion of the logo
+- Created clean full logo (1490x490) with proper padding removed
+- Updated sinap-logo.tsx component to use real PNG files with two variants:
+  - sinap-logo-icon-only.png for icon-only usage
+  - sinap-logo-full.png for full logo with text
+  - Added brightness-0 invert CSS filter for dark variant (white on dark backgrounds)
+- Fixed landing page nav: changed text-white/80 to text-white for full opacity
+- Added "Ver demo" button in nav next to "Comenzar gratis" (ghost button with Play icon)
+- Changed "Comenzar gratis" nav button from semi-transparent to white/90 on dark bg for better visibility
+- Made hero "Ver demo" button more visible: changed from bg-white/10 to bg-white/90 with purple text
+- Added "Ver demo" button in mobile menu
+- Updated login screen to use real logo PNG (SinapLogo size={48} showText showTagline variant="dark")
+- Removed redundant "Sinap" h1 from login left panel (since logo PNG includes text)
+- All builds pass successfully
+
+Stage Summary:
+- 3 files modified: sinap-logo.tsx, landing-page.tsx, login-screen.tsx
+- 2 new logo files created: sinap-logo-icon-only.png, sinap-logo-full.png
+- Nav text now fully white, "Ver demo" visible in both nav and hero
+- Real user logo PNG now used throughout the app

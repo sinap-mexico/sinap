@@ -13,14 +13,14 @@ interface SinapLogoProps {
 }
 
 /**
- * Sinap logo component using the actual brand logo PNG.
+ * Sinap logo component using the actual brand logo PNG files.
  *
- * The logo is a synapse-inspired icon: central purple node (AI core),
- * light purple ring (connection layer), green outer arcs + green dots
- * on horizontal axis (channels connecting).
+ * Two image files:
+ * - /sinap-logo-icon-only.png — square icon (synapse node)
+ * - /sinap-logo-full.png — horizontal logo with icon + "Sinap" text
  *
- * Variant "dark": used on dark backgrounds
- * Variant "light" / "default": used on white/light backgrounds
+ * Variant "dark": used on dark backgrounds (adds brightness-0 invert filter for white output)
+ * Variant "light" / "default": used on white/light backgrounds — logo colors as-is
  */
 export function SinapLogo({
   size = 36,
@@ -31,56 +31,43 @@ export function SinapLogo({
   variant = 'default',
 }: SinapLogoProps) {
   const isDark = variant === 'dark'
-  const textColor = isDark ? 'text-white' : 'text-[#0F2D26]'
-  const taglineColor = isDark ? 'text-[#1D9E75]' : 'text-[#888780]'
+  const filterClass = isDark ? 'brightness-0 invert' : ''
 
-  const logoElement = (
+  // When showText or showTagline is true, show the full horizontal logo (icon + text)
+  // Otherwise just the square icon
+  const useFullLogo = showText || showTagline
+
+  const logoElement = useFullLogo ? (
     <Image
-      src="/sinap-logo-icon.png"
+      src="/sinap-logo-full.png"
+      alt="Sinap — Inteligencia que conecta"
+      width={Math.round(size * 3)}
+      height={size}
+      className={`shrink-0 ${filterClass} ${className}`}
+      priority
+      style={{ height: size, width: 'auto' }}
+    />
+  ) : (
+    <Image
+      src="/sinap-logo-icon-only.png"
       alt="Sinap"
       width={size}
       height={size}
-      className={`shrink-0 ${className}`}
+      className={`shrink-0 ${filterClass} ${className}`}
       priority
     />
   )
 
-  if (!showText && !showTagline) {
-    if (animate) {
-      return (
-        <motion.div
-          animate={{ y: [0, -6, 0] }}
-          transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-        >
-          {logoElement}
-        </motion.div>
-      )
-    }
-    return logoElement
+  if (animate) {
+    return (
+      <motion.div
+        animate={{ y: [0, -6, 0] }}
+        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+      >
+        {logoElement}
+      </motion.div>
+    )
   }
 
-  return (
-    <div className={`flex items-center gap-2.5 ${className}`}>
-      {animate ? (
-        <motion.div
-          animate={{ y: [0, -6, 0] }}
-          transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-        >
-          {logoElement}
-        </motion.div>
-      ) : (
-        logoElement
-      )}
-      <div>
-        <p className={`text-lg font-medium tracking-[-0.03em] ${textColor} leading-tight`}>
-          Sinap
-        </p>
-        {showTagline && (
-          <p className={`text-[10px] ${taglineColor} tracking-wide`}>
-            Inteligencia que conecta
-          </p>
-        )}
-      </div>
-    </div>
-  )
+  return logoElement
 }

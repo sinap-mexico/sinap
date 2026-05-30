@@ -62,8 +62,8 @@ function LandingNav() {
   }, [])
 
   // On dark hero (not scrolled): white text + white logo. On scroll: dark text + dark logo
-  const navTextColor = scrolled ? 'text-[#2C2C2A]/70' : 'text-white/80'
-  const navHoverColor = scrolled ? 'hover:text-[#534AB7]' : 'hover:text-white'
+  const navTextColor = scrolled ? 'text-[#2C2C2A]/70' : 'text-white'
+  const navHoverColor = scrolled ? 'hover:text-[#534AB7]' : 'hover:text-white/80'
 
   return (
     <motion.nav
@@ -93,10 +93,16 @@ function LandingNav() {
             </Button>
           </Link>
           <Link href="/dashboard">
+            <Button variant="ghost" className={`text-sm gap-1.5 ${navTextColor} ${navHoverColor}`}>
+              <Play className="h-3.5 w-3.5" />
+              Ver demo
+            </Button>
+          </Link>
+          <Link href="/dashboard">
             <Button className={`text-sm h-9 px-5 rounded-lg shadow-md shadow-[#534AB7]/20 transition-all ${
               scrolled
                 ? 'bg-[#534AB7] hover:bg-[#4A42A5] text-white'
-                : 'bg-white/15 hover:bg-white/25 text-white border border-white/20 backdrop-blur-sm'
+                : 'bg-white/90 hover:bg-white text-[#534AB7]'
             }`}>
               Comenzar gratis
             </Button>
@@ -125,7 +131,13 @@ function LandingNav() {
               <a href="#casos" onClick={() => setMobileOpen(false)} className="text-sm py-2 text-[#2C2C2A]/70">Casos de uso</a>
               <a href="#precios" onClick={() => setMobileOpen(false)} className="text-sm py-2 text-[#2C2C2A]/70">Precios</a>
               <Link href="/dashboard">
-                <Button className="w-full bg-[#534AB7] text-white text-sm h-10 rounded-lg mt-2">Comenzar gratis</Button>
+                <Button variant="outline" className="w-full border-[#534AB7]/30 text-[#534AB7] hover:bg-[#534AB7]/8 text-sm h-10 rounded-lg mt-2">
+                  <Play className="h-4 w-4 mr-1.5" />
+                  Ver demo
+                </Button>
+              </Link>
+              <Link href="/dashboard">
+                <Button className="w-full bg-[#534AB7] text-white text-sm h-10 rounded-lg">Comenzar gratis</Button>
               </Link>
             </div>
           </motion.div>
@@ -219,7 +231,7 @@ function HeroSection() {
             </Button>
           </Link>
           <Link href="/dashboard">
-            <Button className="h-13 px-8 bg-white/10 hover:bg-white/20 text-white border border-white/25 backdrop-blur-sm text-base font-medium rounded-xl transition-all">
+            <Button className="h-13 px-8 bg-white/90 hover:bg-white text-[#534AB7] border border-white/50 text-base font-medium rounded-xl shadow-lg shadow-white/10 transition-all">
               <Play className="h-4 w-4 mr-2" />
               Ver demo
             </Button>

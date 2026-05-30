@@ -344,23 +344,11 @@ export function LoginScreen() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8, ease: 'easeOut' }}
           >
-            <motion.div
-              animate={{ y: [0, -5, 0] }}
-              transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-            >
-              <SinapLogo size={80} animate={false} variant="dark" />
-            </motion.div>
+            <SinapLogo size={48} showText showTagline variant="dark" />
           </motion.div>
 
-          {/* Brand name — pure white, large, tight tracking */}
-          <motion.h1
-            className="text-[3rem] font-semibold tracking-[-0.04em] text-white mt-7 mb-2"
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2, duration: 0.6 }}
-          >
-            Sinap
-          </motion.h1>
+          {/* Spacing after logo */}
+          <div className="h-4" />
 
           {/* Tagline — brand green */}
           <motion.p
@@ -420,7 +408,7 @@ export function LoginScreen() {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.1 }}
         >
-          <SinapLogo size={44} variant="light" showText showTagline />
+          <SinapLogo size={36} variant="light" showText showTagline />
         </motion.div>
 
         {/* Form container */}
