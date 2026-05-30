@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { signIn } from 'next-auth/react'
 import { useSinapStore } from '@/lib/sinap-store'
 import { Button } from '@/components/ui/button'
@@ -188,7 +187,6 @@ const staggerItem = {
 }
 
 export function LoginScreen() {
-  const router = useRouter()
   const { setOnboardingComplete } = useSinapStore()
   const [isRegister, setIsRegister] = useState(false)
   const [email, setEmail] = useState('')
@@ -213,8 +211,10 @@ export function LoginScreen() {
 
   const navigateToDashboard = useCallback(() => {
     setOnboardingComplete(true)
-    router.push('/dashboard')
-  }, [router, setOnboardingComplete])
+    // Use full page navigation to avoid client-side routing issues
+    // router.push can fail with "Failed to fetch" when NextAuth session fetch errors occur
+    window.location.href = '/dashboard'
+  }, [setOnboardingComplete])
 
   const handleLogin = async () => {
     if (!email || !password) {
