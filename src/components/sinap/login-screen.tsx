@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { signIn } from 'next-auth/react'
 import { useSinapStore } from '@/lib/sinap-store'
 import { Button } from '@/components/ui/button'
@@ -16,31 +16,27 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { SinapLogo } from '@/components/sinap/sinap-logo'
 
 /* ------------------------------------------------------------------ */
-/*  Animated network constellation background                          */
+/*  Subtle network constellation background — VERY faint              */
 /* ------------------------------------------------------------------ */
 function NetworkBackground() {
-  // Generate deterministic nodes
   const nodes = [
-    { x: 12, y: 15, r: 2.5, o: 0.7 },
-    { x: 30, y: 8, r: 2, o: 0.5 },
-    { x: 55, y: 12, r: 3, o: 0.6 },
-    { x: 78, y: 10, r: 2, o: 0.4 },
-    { x: 90, y: 20, r: 2.5, o: 0.5 },
-    { x: 8, y: 45, r: 2, o: 0.4 },
-    { x: 25, y: 40, r: 3, o: 0.6 },
-    { x: 50, y: 38, r: 2.5, o: 0.5 },
-    { x: 72, y: 42, r: 2, o: 0.3 },
-    { x: 88, y: 50, r: 3, o: 0.6 },
-    { x: 15, y: 70, r: 2.5, o: 0.5 },
-    { x: 40, y: 68, r: 2, o: 0.4 },
-    { x: 62, y: 72, r: 3, o: 0.6 },
-    { x: 85, y: 65, r: 2, o: 0.4 },
-    { x: 35, y: 88, r: 2.5, o: 0.5 },
-    { x: 60, y: 90, r: 2, o: 0.3 },
-    { x: 80, y: 85, r: 2.5, o: 0.5 },
-    { x: 48, y: 55, r: 1.5, o: 0.25 },
-    { x: 18, y: 58, r: 1.5, o: 0.2 },
-    { x: 68, y: 28, r: 1.5, o: 0.2 },
+    { x: 12, y: 15, r: 2, o: 0.35 },
+    { x: 30, y: 8, r: 1.5, o: 0.25 },
+    { x: 55, y: 12, r: 2.5, o: 0.3 },
+    { x: 78, y: 10, r: 1.5, o: 0.2 },
+    { x: 90, y: 20, r: 2, o: 0.25 },
+    { x: 8, y: 45, r: 1.5, o: 0.2 },
+    { x: 25, y: 40, r: 2.5, o: 0.3 },
+    { x: 50, y: 38, r: 2, o: 0.25 },
+    { x: 72, y: 42, r: 1.5, o: 0.15 },
+    { x: 88, y: 50, r: 2.5, o: 0.3 },
+    { x: 15, y: 70, r: 2, o: 0.25 },
+    { x: 40, y: 68, r: 1.5, o: 0.2 },
+    { x: 62, y: 72, r: 2.5, o: 0.3 },
+    { x: 85, y: 65, r: 1.5, o: 0.2 },
+    { x: 35, y: 88, r: 2, o: 0.25 },
+    { x: 60, y: 90, r: 1.5, o: 0.15 },
+    { x: 80, y: 85, r: 2, o: 0.25 },
   ]
 
   const connections = [
@@ -50,8 +46,6 @@ function NetworkBackground() {
     [10, 11], [11, 12], [12, 13],
     [10, 14], [11, 15], [13, 16],
     [14, 15], [15, 16],
-    [6, 17], [7, 17], [5, 18], [17, 18],
-    [2, 19], [7, 19], [8, 19],
   ]
 
   return (
@@ -61,25 +55,35 @@ function NetworkBackground() {
       preserveAspectRatio="xMidYMid slice"
       fill="none"
     >
-      {/* Radial gradient glow */}
       <defs>
-        <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#1D9E75" stopOpacity="0.08" />
+        {/* Radial gradient: lighter center for text readability */}
+        <radialGradient id="bgGradient" cx="50%" cy="50%" r="60%">
+          <stop offset="0%" stopColor="#0F2942" />
+          <stop offset="100%" stopColor="#0A1929" />
+        </radialGradient>
+        {/* Subtle glow behind text area */}
+        <radialGradient id="textGlow" cx="50%" cy="45%" r="35%">
+          <stop offset="0%" stopColor="#1D9E75" stopOpacity="0.06" />
           <stop offset="100%" stopColor="#1D9E75" stopOpacity="0" />
         </radialGradient>
         <radialGradient id="dotGlow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#5DCAA5" stopOpacity="1" />
-          <stop offset="100%" stopColor="#5DCAA5" stopOpacity="0" />
+          <stop offset="0%" stopColor="#4FD1C5" stopOpacity="0.6" />
+          <stop offset="100%" stopColor="#4FD1C5" stopOpacity="0" />
         </radialGradient>
       </defs>
-      <rect width="100" height="100" fill="url(#centerGlow)" />
 
-      {/* Circular grid lines */}
-      <circle cx="50" cy="50" r="20" stroke="#5DCAA5" strokeWidth="0.15" opacity="0.15" />
-      <circle cx="50" cy="50" r="35" stroke="#5DCAA5" strokeWidth="0.12" opacity="0.1" />
-      <circle cx="50" cy="50" r="48" stroke="#5DCAA5" strokeWidth="0.1" opacity="0.06" />
+      {/* Background gradient */}
+      <rect width="100" height="100" fill="url(#bgGradient)" />
 
-      {/* Connection lines */}
+      {/* Subtle glow behind content */}
+      <rect width="100" height="100" fill="url(#textGlow)" />
+
+      {/* Faint circular grid lines emanating from center */}
+      <circle cx="50" cy="45" r="18" stroke="#4FD1C5" strokeWidth="0.1" opacity="0.08" />
+      <circle cx="50" cy="45" r="32" stroke="#4FD1C5" strokeWidth="0.08" opacity="0.05" />
+      <circle cx="50" cy="45" r="46" stroke="#4FD1C5" strokeWidth="0.06" opacity="0.03" />
+
+      {/* Connection lines — very faint */}
       {connections.map(([a, b], i) => (
         <line
           key={`line-${i}`}
@@ -87,17 +91,17 @@ function NetworkBackground() {
           y1={nodes[a].y}
           x2={nodes[b].x}
           y2={nodes[b].y}
-          stroke="#5DCAA5"
-          strokeWidth="0.15"
-          opacity="0.12"
+          stroke="#4FD1C5"
+          strokeWidth="0.08"
+          opacity="0.07"
         />
       ))}
 
-      {/* Glowing nodes */}
+      {/* Teal nodes with subtle glow */}
       {nodes.map((node, i) => (
         <g key={`node-${i}`}>
-          <circle cx={node.x} cy={node.y} r={node.r * 2.5} fill="url(#dotGlow)" opacity="0.15" />
-          <circle cx={node.x} cy={node.y} r={node.r} fill="#5DCAA5" opacity={node.o} />
+          <circle cx={node.x} cy={node.y} r={node.r * 3} fill="url(#dotGlow)" opacity="0.08" />
+          <circle cx={node.x} cy={node.y} r={node.r} fill="#4FD1C5" opacity={node.o} />
         </g>
       ))}
     </svg>
@@ -105,57 +109,15 @@ function NetworkBackground() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Animated floating particles                                        */
+/*  Feature item for horizontal row                                    */
 /* ------------------------------------------------------------------ */
-function FloatingParticles() {
-  const particles = Array.from({ length: 12 }, (_, i) => ({
-    id: i,
-    x: Math.random() * 100,
-    y: Math.random() * 100,
-    size: 1 + Math.random() * 2,
-    duration: 15 + Math.random() * 20,
-    delay: Math.random() * 5,
-  }))
-
+function FeatureItem({ icon: Icon, label }: { icon: React.ElementType; label: string }) {
   return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {particles.map((p) => (
-        <motion.div
-          key={p.id}
-          className="absolute rounded-full bg-[#5DCAA5]"
-          style={{
-            left: `${p.x}%`,
-            top: `${p.y}%`,
-            width: p.size,
-            height: p.size,
-            opacity: 0.15,
-          }}
-          animate={{
-            y: [0, -30, 0],
-            opacity: [0.15, 0.3, 0.15],
-          }}
-          transition={{
-            duration: p.duration,
-            delay: p.delay,
-            repeat: Infinity,
-            ease: 'easeInOut',
-          }}
-        />
-      ))}
-    </div>
-  )
-}
-
-/* ------------------------------------------------------------------ */
-/*  Feature pill component                                             */
-/* ------------------------------------------------------------------ */
-function FeaturePill({ icon: Icon, label }: { icon: React.ElementType; label: string }) {
-  return (
-    <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-white/8 backdrop-blur-sm border border-white/10">
-      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-[#5DCAA5]/15">
-        <Icon className="w-4 h-4 text-[#5DCAA5]" />
+    <div className="flex items-center gap-2">
+      <div className="flex items-center justify-center w-7 h-7 rounded-full border border-[#4FD1C5]/30">
+        <Icon className="w-3.5 h-3.5 text-[#4FD1C5]" />
       </div>
-      <span className="text-sm text-white/70 font-normal">{label}</span>
+      <span className="text-[13px] text-white/80 font-normal whitespace-nowrap">{label}</span>
     </div>
   )
 }
@@ -232,7 +194,6 @@ const shakeAnimation = {
   transition: { duration: 0.4 },
 }
 
-// Staggered entry container
 const staggerContainer = {
   hidden: { opacity: 0 },
   visible: {
@@ -260,7 +221,6 @@ export function LoginScreen() {
   const [shakeError, setShakeError] = useState(false)
   const [rememberMe, setRememberMe] = useState(true)
 
-  // Real-time validation
   const emailValid = email ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) : true
   const passwordValid = password ? password.length >= 8 : true
   const passwordsMatch = confirmPassword ? password === confirmPassword : true
@@ -283,14 +243,8 @@ export function LoginScreen() {
     }
     setError('')
     setIsLoading(true)
-
     try {
-      const result = await signIn('credentials', {
-        email,
-        password,
-        redirect: false,
-      })
-
+      const result = await signIn('credentials', { email, password, redirect: false })
       if (result?.error) {
         setError('Correo o contraseña incorrectos')
         triggerShake()
@@ -324,36 +278,25 @@ export function LoginScreen() {
       triggerShake()
       return
     }
-
     setError('')
     setIsLoading(true)
-
     try {
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name,
-          email,
-          password,
+          name, email, password,
           clinicName: clinicName || name,
           mode: clinicName ? 'clinic' : 'solo',
         }),
       })
-
       const data = await response.json()
-
       if (!response.ok) {
         setError(data.error || 'Error al crear la cuenta')
         triggerShake()
         return
       }
-
-      await signIn('credentials', {
-        email,
-        password,
-        redirect: false,
-      })
+      await signIn('credentials', { email, password, redirect: false })
     } catch {
       setError('Error de conexión. Intenta de nuevo.')
       triggerShake()
@@ -370,7 +313,6 @@ export function LoginScreen() {
         password: 'demo1234',
         redirect: false,
       })
-
       if (result?.error) {
         setError('Error al acceder al demo')
         triggerShake()
@@ -388,32 +330,31 @@ export function LoginScreen() {
   return (
     <div className="flex h-screen w-full overflow-hidden">
       {/* ============================================================ */}
-      {/* LEFT PANEL — Dark brand panel with network background        */}
+      {/* LEFT PANEL — Dark brand panel                                */}
       {/* ============================================================ */}
-      <div className="hidden lg:flex lg:w-[58%] bg-[#0A1929] flex-col items-center justify-center p-12 relative overflow-hidden">
-        {/* Animated network background */}
+      <div className="hidden lg:flex lg:w-[55%] flex-col items-center justify-center p-16 relative overflow-hidden">
+        {/* Network background with radial gradient */}
         <NetworkBackground />
-        <FloatingParticles />
 
         {/* Content layer */}
         <div className="relative z-10 flex flex-col items-center text-center max-w-md">
-          {/* Logo with subtle pulse */}
+          {/* Logo — white on dark */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
+            initial={{ opacity: 0, scale: 0.85 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8, ease: 'easeOut' }}
           >
             <motion.div
-              animate={{ y: [0, -6, 0] }}
+              animate={{ y: [0, -5, 0] }}
               transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
             >
               <SinapLogo size={80} animate={false} variant="dark" />
             </motion.div>
           </motion.div>
 
-          {/* Brand name */}
+          {/* Brand name — pure white, large, tight tracking */}
           <motion.h1
-            className="text-[3rem] font-medium tracking-[-0.04em] text-white mt-6 mb-2"
+            className="text-[3rem] font-semibold tracking-[-0.04em] text-white mt-7 mb-2"
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2, duration: 0.6 }}
@@ -421,9 +362,9 @@ export function LoginScreen() {
             Sinap
           </motion.h1>
 
-          {/* Tagline */}
+          {/* Tagline — brand green */}
           <motion.p
-            className="text-lg text-[#5DCAA5] font-normal mb-3"
+            className="text-lg text-[#1D9E75] font-medium mb-4"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.35, duration: 0.5 }}
@@ -431,9 +372,9 @@ export function LoginScreen() {
             Inteligencia que conecta
           </motion.p>
 
-          {/* Description */}
+          {/* Description — white at 80% opacity for readability */}
           <motion.p
-            className="text-[15px] text-white/50 leading-relaxed max-w-sm mb-10"
+            className="text-[15px] text-white/80 leading-relaxed max-w-sm mb-12"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5, duration: 0.5 }}
@@ -441,36 +382,38 @@ export function LoginScreen() {
             La plataforma multi-agente para clínicas y consultorios que quieren operar con más inteligencia.
           </motion.p>
 
-          {/* Feature pills */}
+          {/* Features — HORIZONTAL row with vertical dividers */}
           <motion.div
-            className="flex flex-col gap-3 w-full items-center"
+            className="flex items-center gap-0"
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.65, duration: 0.6 }}
           >
-            <FeaturePill icon={Brain} label="Inteligencia artificial" />
-            <FeaturePill icon={Shield} label="Seguridad y cumplimiento" />
-            <FeaturePill icon={BarChart3} label="Decisiones basadas en datos" />
+            <FeatureItem icon={Brain} label="Inteligencia artificial" />
+            <div className="w-px h-6 bg-white/15 mx-5" />
+            <FeatureItem icon={Shield} label="Seguridad y cumplimiento" />
+            <div className="w-px h-6 bg-white/15 mx-5" />
+            <FeatureItem icon={BarChart3} label="Decisiones basadas en datos" />
           </motion.div>
 
           {/* Security badge */}
           <motion.div
-            className="mt-10 flex items-center gap-2 text-white/30 text-xs"
+            className="mt-12 flex items-center gap-2 text-white/40 text-xs"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.9, duration: 0.5 }}
           >
-            <ShieldCheck className="w-3.5 h-3.5 text-[#5DCAA5]/50" />
+            <ShieldCheck className="w-3.5 h-3.5 text-[#4FD1C5]/50" />
             Segura, confiable y diseñada para la salud
           </motion.div>
         </div>
       </div>
 
       {/* ============================================================ */}
-      {/* RIGHT PANEL — Login form                                     */}
+      {/* RIGHT PANEL — Login form on white                            */}
       {/* ============================================================ */}
       <div className="flex-1 flex flex-col items-center justify-center bg-white px-6 sm:px-8 py-8 relative overflow-y-auto">
-        {/* Mobile logo (only visible on small screens) */}
+        {/* Mobile logo */}
         <motion.div
           className="lg:hidden flex flex-col items-center mb-8"
           initial={{ opacity: 0, scale: 0.9 }}
@@ -517,7 +460,7 @@ export function LoginScreen() {
             )}
           </AnimatePresence>
 
-          {/* Form fields with staggered animation */}
+          {/* Form fields */}
           <motion.div
             className="space-y-4"
             variants={staggerContainer}
@@ -559,7 +502,7 @@ export function LoginScreen() {
               )}
             </AnimatePresence>
 
-            {/* Email field */}
+            {/* Email */}
             <motion.div variants={staggerItem}>
               <FormInput
                 label="Correo electrónico"
@@ -573,7 +516,7 @@ export function LoginScreen() {
               />
             </motion.div>
 
-            {/* Password field */}
+            {/* Password */}
             <motion.div variants={staggerItem}>
               <FormInput
                 label="Contraseña"
@@ -600,7 +543,7 @@ export function LoginScreen() {
               />
             </motion.div>
 
-            {/* Confirm password (register only) */}
+            {/* Confirm password (register) */}
             <AnimatePresence mode="wait">
               {isRegister && (
                 <motion.div
@@ -629,7 +572,7 @@ export function LoginScreen() {
               )}
             </AnimatePresence>
 
-            {/* Remember me + Forgot password row */}
+            {/* Remember me + Forgot password */}
             {!isRegister && (
               <motion.div variants={staggerItem} className="flex items-center justify-between pt-1">
                 <div className="flex items-center gap-2">
@@ -639,10 +582,7 @@ export function LoginScreen() {
                     onCheckedChange={(v) => setRememberMe(v === true)}
                     className="h-4 w-4 rounded border-[#888780]/30 data-[state=checked]:bg-[#1D9E75] data-[state=checked]:border-[#1D9E75] data-[state=checked]:text-white"
                   />
-                  <label
-                    htmlFor="remember"
-                    className="text-[13px] text-[#888780] cursor-pointer select-none"
-                  >
+                  <label htmlFor="remember" className="text-[13px] text-[#888780] cursor-pointer select-none">
                     Recordarme en este dispositivo
                   </label>
                 </div>
@@ -656,7 +596,7 @@ export function LoginScreen() {
               </motion.div>
             )}
 
-            {/* Primary action button */}
+            {/* Primary button */}
             <motion.div variants={staggerItem} className="pt-1">
               <Button
                 className="w-full h-12 bg-[#534AB7] hover:bg-[#4A42A5] text-white text-[15px] font-medium rounded-lg transition-all duration-200 active:scale-[0.98] shadow-lg shadow-[#534AB7]/20 hover:shadow-[#534AB7]/30"
@@ -689,10 +629,7 @@ export function LoginScreen() {
               <Button
                 variant="outline"
                 className="w-full h-11 border-[#1D9E75]/40 text-[#1D9E75] hover:bg-[#1D9E75]/8 hover:border-[#1D9E75]/60 text-sm font-medium rounded-lg transition-all duration-200 active:scale-[0.98]"
-                onClick={() => {
-                  setIsRegister(!isRegister)
-                  setError('')
-                }}
+                onClick={() => { setIsRegister(!isRegister); setError('') }}
                 disabled={isLoading}
               >
                 {isRegister ? (
@@ -723,7 +660,7 @@ export function LoginScreen() {
           </motion.div>
         </motion.div>
 
-        {/* Footer security message */}
+        {/* Footer security */}
         <motion.div
           className="absolute bottom-6 left-0 right-0 flex justify-center"
           initial={{ opacity: 0 }}

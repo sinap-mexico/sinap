@@ -162,3 +162,24 @@ Stage Summary:
 - Login page completely redesigned matching premium reference design
 - Key visual improvements: dark navy left panel (#0A1929), animated network constellation background, glassmorphic feature pills, larger form inputs, teal input icons, purple gradient CTA with shadow, security footer, checkbox for remember me
 - All animations working: staggered entry, input focus transitions, button hover/active states, floating particles
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix login page text readability, update logo to white-on-dark, match reference design precisely
+
+Work Log:
+- Analyzed new reference image with VLM — identified key issues: text getting lost in background, logo should be all-white on dark, features should be horizontal with dividers, background needs radial gradient for text readability
+- Updated SinapLogo component: added dual-variant rendering — white-on-dark (variant="dark") with concentric white rings/dots at varying opacity, and original colored-on-light version
+- Rewrote NetworkBackground: added radial gradient (#0F2942 center → #0A1929 edges) for text readability, subtle textGlow behind content area, MUCH more faint network dots/lines (opacity 0.07-0.3 instead of 0.12-0.7)
+- Changed features from vertical pills to HORIZONTAL row with vertical dividers (bg-white/15, h-6)
+- Fixed text colors: brand name pure white, tagline in #1D9E75 (brand green, not #5DCAA5), description at white/80% (was white/50%), feature labels at white/80%
+- Removed floating particles component (too distracting)
+- Build verified: clean compilation, 200 response
+
+Stage Summary:
+- Text readability fixed: radial gradient background lighter in center, white/80% text instead of white/50%
+- Logo now renders all-white on dark backgrounds matching reference design
+- Features changed to horizontal layout with dividers
+- Network background made much more subtle
+- Tagline color corrected to brand green #1D9E75
