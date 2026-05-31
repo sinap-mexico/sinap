@@ -223,13 +223,13 @@ export function BillDashboard() {
 
   return (
     <motion.div
-      className="space-y-6"
+      className="flex flex-col gap-6 h-[calc(100vh-10rem)]"
       variants={containerVariants}
       initial="hidden"
       animate="visible"
     >
       {/* Stats row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 shrink-0">
         <motion.div variants={itemVariants}>
           <Card className="border-[#E1F5EE] bg-white hover:shadow-md transition-shadow">
             <CardContent className="p-5">
@@ -320,8 +320,8 @@ export function BillDashboard() {
       </div>
 
       {/* Invoices table */}
-      <motion.div variants={itemVariants}>
-        <Card className="border-[#E1F5EE] bg-white">
+      <motion.div variants={itemVariants} className="flex-1 min-h-0">
+        <Card className="border-[#E1F5EE] bg-white flex flex-col h-full">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-medium tracking-[-0.03em]">
@@ -347,8 +347,8 @@ export function BillDashboard() {
               </div>
             </div>
           </CardHeader>
-          <CardContent>
-            <ScrollArea className="max-h-[calc(100vh-380px)]">
+          <CardContent className="flex-1 min-h-0">
+            <ScrollArea className="h-full">
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>

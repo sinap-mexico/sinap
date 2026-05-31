@@ -249,6 +249,7 @@ export function DeskInbox() {
     <div className="flex gap-4 h-[calc(100vh-10rem)]">
       {/* Left panel - Conversation list */}
       <motion.div
+        className="h-full"
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.3 }}
@@ -333,7 +334,7 @@ export function DeskInbox() {
 
       {/* Center panel - Chat view */}
       <motion.div
-        className="flex-1"
+        className="flex-1 h-full"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, delay: 0.1 }}
@@ -466,7 +467,7 @@ export function DeskInbox() {
 
       {/* Right panel - Conversation detail */}
       <motion.div
-        className="hidden xl:block"
+        className="hidden xl:block h-full"
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.3, delay: 0.2 }}
