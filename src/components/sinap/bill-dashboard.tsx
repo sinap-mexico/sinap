@@ -229,10 +229,10 @@ export function BillDashboard() {
       animate="visible"
     >
       {/* Stats row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 shrink-0">
-        <motion.div variants={itemVariants}>
-          <Card className="border-[#E1F5EE] bg-white hover:shadow-md transition-shadow">
-            <CardContent className="p-5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 shrink-0 items-stretch">
+        <motion.div variants={itemVariants} className="h-full">
+          <Card className="border-[#E1F5EE] bg-white hover:shadow-md transition-shadow h-full flex flex-col">
+            <CardContent className="p-5 flex-1 flex flex-col">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-[#888780] font-medium uppercase tracking-wide">
@@ -262,9 +262,9 @@ export function BillDashboard() {
           </Card>
         </motion.div>
 
-        <motion.div variants={itemVariants}>
-          <Card className="border-[#E1F5EE] bg-white hover:shadow-md transition-shadow">
-            <CardContent className="p-5">
+        <motion.div variants={itemVariants} className="h-full">
+          <Card className="border-[#E1F5EE] bg-white hover:shadow-md transition-shadow h-full flex flex-col">
+            <CardContent className="p-5 flex-1 flex flex-col">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-[#888780] font-medium uppercase tracking-wide">
@@ -290,9 +290,9 @@ export function BillDashboard() {
           </Card>
         </motion.div>
 
-        <motion.div variants={itemVariants}>
-          <Card className="border-[#E1F5EE] bg-white hover:shadow-md transition-shadow">
-            <CardContent className="p-5">
+        <motion.div variants={itemVariants} className="h-full">
+          <Card className="border-[#E1F5EE] bg-white hover:shadow-md transition-shadow h-full flex flex-col">
+            <CardContent className="p-5 flex-1 flex flex-col">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-[#888780] font-medium uppercase tracking-wide">

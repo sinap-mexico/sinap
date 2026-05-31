@@ -479,8 +479,8 @@ export function DeskInbox() {
             </CardTitle>
           </CardHeader>
           <Separator className="bg-[#E1F5EE]" />
-          <ScrollArea className="flex-1 p-4">
-            <div className="space-y-4">
+          <ScrollArea className="flex-1">
+            <div className="p-4 space-y-4 pb-6">
               {/* Patient info */}
               <div>
                 <div className="flex items-center gap-2 mb-2">
@@ -580,18 +580,18 @@ export function DeskInbox() {
 
               {/* AI suggestion */}
               <motion.div
-                className="bg-[#EEEDFE] rounded-lg p-3"
+                className="bg-[#EEEDFE] rounded-lg p-4 border border-[#534AB7]/10"
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
               >
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <Sparkles className="h-3.5 w-3.5 text-[#534AB7]" />
-                  <p className="text-[10px] font-medium text-[#534AB7] uppercase tracking-wide">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Sparkles className="h-4 w-4 text-[#534AB7]" />
+                  <p className="text-xs font-semibold text-[#534AB7] uppercase tracking-wide">
                     Sugerencia IA
                   </p>
                 </div>
-                <p className="text-xs text-[#2C2C2A] leading-relaxed">
+                <p className="text-sm text-[#2C2C2A] leading-relaxed">
                   {selectedConversation?.intent === 'Cotizacion'
                     ? 'El paciente pregunta por precio. Sugiere agendar primera cita con enlace de pago.'
                     : selectedConversation?.intent === 'Reactivacion'
@@ -603,7 +603,7 @@ export function DeskInbox() {
                 <motion.div whileTap={{ scale: 0.95 }}>
                   <Button
                     size="sm"
-                    className="mt-2 bg-[#534AB7] hover:bg-[#534AB7]/90 text-white text-xs h-7"
+                    className="mt-3 bg-[#534AB7] hover:bg-[#534AB7]/90 text-white text-xs h-8 w-full"
                   >
                     Usar sugerencia
                     <ChevronRight className="h-3 w-3 ml-1" />
