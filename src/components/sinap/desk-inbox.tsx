@@ -480,18 +480,18 @@ export function DeskInbox() {
           </CardHeader>
           <Separator className="bg-[#E1F5EE]" />
           <ScrollArea className="flex-1">
-            <div className="p-4 space-y-4 pb-6">
+            <div className="p-4 space-y-5 pb-6">
               {/* Patient info */}
-              <div>
+              <div className="bg-[#F8F7F3] rounded-lg p-3">
                 <div className="flex items-center gap-2 mb-2">
                   <User className="h-4 w-4 text-[#888780]" />
-                  <span className="text-xs font-medium text-[#888780] uppercase tracking-wide">
+                  <span className="text-[10px] font-medium text-[#888780] uppercase tracking-wide">
                     Paciente
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-[#E1F5EE] flex items-center justify-center">
-                    <span className="text-xs font-medium text-[#1D9E75]">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-9 w-9 rounded-full bg-[#E1F5EE] flex items-center justify-center">
+                    <span className="text-xs font-semibold text-[#1D9E75]">
                       {selectedConversation?.patientName.split(' ').map((n) => n[0]).join('').slice(0, 2)}
                     </span>
                   </div>
@@ -501,99 +501,97 @@ export function DeskInbox() {
                 </div>
               </div>
 
-              {/* Intent */}
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Tag className="h-4 w-4 text-[#888780]" />
-                  <span className="text-xs font-medium text-[#888780] uppercase tracking-wide">
-                    Intencion
-                  </span>
+              {/* Intent & Sentiment row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-[#F8F7F3] rounded-lg p-3">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Tag className="h-3.5 w-3.5 text-[#888780]" />
+                    <span className="text-[10px] font-medium text-[#888780] uppercase tracking-wide">
+                      Intencion
+                    </span>
+                  </div>
+                  <Badge className="bg-[#EEEDFE] text-[#534AB7] border-0 text-xs">
+                    {selectedConversation?.intent}
+                  </Badge>
                 </div>
-                <Badge className="bg-[#EEEDFE] text-[#534AB7] border-0 text-xs">
-                  {selectedConversation?.intent}
-                </Badge>
-              </div>
-
-              {/* Sentiment */}
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Heart className="h-4 w-4 text-[#888780]" />
-                  <span className="text-xs font-medium text-[#888780] uppercase tracking-wide">
-                    Sentimiento
-                  </span>
-                </div>
-                <SentimentBadge sentiment={selectedConversation?.sentiment || 'neutral'} />
-              </div>
-
-              {/* Channel */}
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Phone className="h-4 w-4 text-[#888780]" />
-                  <span className="text-xs font-medium text-[#888780] uppercase tracking-wide">
-                    Canal
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <ChannelIcon channel={selectedConversation?.channel || 'whatsapp'} />
-                  <span className="text-sm text-[#2C2C2A]">
-                    {selectedConversation?.channel === 'whatsapp'
-                      ? 'WhatsApp'
-                      : selectedConversation?.channel === 'instagram'
-                      ? 'Instagram DM'
-                      : 'Facebook Messenger'}
-                  </span>
+                <div className="bg-[#F8F7F3] rounded-lg p-3">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Heart className="h-3.5 w-3.5 text-[#888780]" />
+                    <span className="text-[10px] font-medium text-[#888780] uppercase tracking-wide">
+                      Sentimiento
+                    </span>
+                  </div>
+                  <SentimentBadge sentiment={selectedConversation?.sentiment || 'neutral'} />
                 </div>
               </div>
 
-              {/* Last activity */}
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Clock className="h-4 w-4 text-[#888780]" />
-                  <span className="text-xs font-medium text-[#888780] uppercase tracking-wide">
-                    Ultima actividad
-                  </span>
+              {/* Channel & Last activity row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-[#F8F7F3] rounded-lg p-3">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Phone className="h-3.5 w-3.5 text-[#888780]" />
+                    <span className="text-[10px] font-medium text-[#888780] uppercase tracking-wide">
+                      Canal
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <ChannelIcon channel={selectedConversation?.channel || 'whatsapp'} />
+                    <span className="text-xs text-[#2C2C2A]">
+                      {selectedConversation?.channel === 'whatsapp'
+                        ? 'WhatsApp'
+                        : selectedConversation?.channel === 'instagram'
+                        ? 'Instagram'
+                        : 'Facebook'}
+                    </span>
+                  </div>
                 </div>
-                <p className="text-sm text-[#2C2C2A]">{selectedConversation?.lastTime}</p>
+                <div className="bg-[#F8F7F3] rounded-lg p-3">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Clock className="h-3.5 w-3.5 text-[#888780]" />
+                    <span className="text-[10px] font-medium text-[#888780] uppercase tracking-wide">
+                      Actividad
+                    </span>
+                  </div>
+                  <p className="text-xs font-medium text-[#2C2C2A]">{selectedConversation?.lastTime}</p>
+                </div>
               </div>
 
               {/* Quick actions */}
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <Calendar className="h-4 w-4 text-[#888780]" />
-                  <span className="text-xs font-medium text-[#888780] uppercase tracking-wide">
+                  <span className="text-[10px] font-medium text-[#888780] uppercase tracking-wide">
                     Acciones
                   </span>
                 </div>
-                <div className="space-y-1.5">
-                  <Button variant="outline" className="w-full h-7 text-xs border-[#1D9E75] text-[#1D9E75] hover:bg-[#E1F5EE] justify-start">
+                <div className="space-y-2">
+                  <Button variant="outline" className="w-full h-8 text-xs border-[#1D9E75] text-[#1D9E75] hover:bg-[#E1F5EE] justify-start">
                     <Calendar className="h-3 w-3 mr-1.5" />
                     Agendar cita
                   </Button>
-                  <Button variant="outline" className="w-full h-7 text-xs border-[#534AB7] text-[#534AB7] hover:bg-[#EEEDFE] justify-start">
+                  <Button variant="outline" className="w-full h-8 text-xs border-[#534AB7] text-[#534AB7] hover:bg-[#EEEDFE] justify-start">
                     <FileText className="h-3 w-3 mr-1.5" />
                     Ver historial
                   </Button>
                 </div>
               </div>
 
-              <Separator className="bg-[#E1F5EE]" />
-
-              {/* AI suggestion */}
+              {/* AI suggestion - prominent card */}
               <motion.div
-                className="bg-gradient-to-br from-[#EEEDFE] to-[#E1E0FB] rounded-xl p-5 border border-[#534AB7]/15 min-h-[180px] flex flex-col"
+                className="bg-gradient-to-br from-[#534AB7] to-[#6C63F0] rounded-xl p-5 min-h-[200px] flex flex-col shadow-lg shadow-[#534AB7]/20"
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
               >
                 <div className="flex items-center gap-2 mb-3">
-                  <div className="h-7 w-7 rounded-lg bg-[#534AB7] flex items-center justify-center">
+                  <div className="h-8 w-8 rounded-lg bg-white/20 flex items-center justify-center">
                     <Sparkles className="h-4 w-4 text-white" />
                   </div>
-                  <p className="text-sm font-semibold text-[#534AB7] tracking-wide">
+                  <p className="text-sm font-semibold text-white tracking-wide">
                     Sugerencia IA
                   </p>
                 </div>
-                <p className="text-sm text-[#2C2C2A] leading-relaxed flex-1">
+                <p className="text-sm text-white/90 leading-relaxed flex-1">
                   {selectedConversation?.intent === 'Cotizacion'
                     ? 'El paciente pregunta por precio. Sugiere agendar primera cita con enlace de pago.'
                     : selectedConversation?.intent === 'Reactivacion'
@@ -605,7 +603,7 @@ export function DeskInbox() {
                 <motion.div whileTap={{ scale: 0.95 }} className="mt-4">
                   <Button
                     size="sm"
-                    className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white text-xs h-9 w-full rounded-lg shadow-sm"
+                    className="bg-white text-[#534AB7] hover:bg-white/90 text-xs h-9 w-full rounded-lg font-semibold shadow-sm"
                   >
                     Usar sugerencia
                     <ChevronRight className="h-3.5 w-3.5 ml-1" />

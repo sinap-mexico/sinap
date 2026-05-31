@@ -11,6 +11,11 @@ const nextConfig: NextConfig = {
   images: {
     formats: ["image/avif", "image/webp"],
   },
+  allowedDevOrigins: [
+    'http://21.0.2.93:8080',
+    'http://21.0.2.93:81',
+    'http://localhost:8080',
+  ],
 };
 
 export default nextConfig;
