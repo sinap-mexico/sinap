@@ -15,7 +15,7 @@ import { SightAnalytics } from '@/components/sinap/sight-analytics'
 import { HubOperations } from '@/components/sinap/hub-operations'
 import { SettingsPages } from '@/components/sinap/settings-pages'
 import { OnboardingFlow } from '@/components/sinap/onboarding-flow'
-import { ScrollArea } from '@/components/ui/scroll-area'
+// ScrollArea removed from dashboard — native scroll avoids nested scroll conflicts
 import { Loader2 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -111,12 +111,12 @@ export default function SinapDashboard() {
         {/* Header */}
         <SinapHeader />
 
-        {/* Content area */}
-        <ScrollArea className="flex-1">
+        {/* Content area — native scroll to avoid Radix ScrollArea capturing inner scroll events */}
+        <div className="flex-1 overflow-y-auto sinap-scroll">
           <main className="p-4 lg:p-6">
             <ModuleContent module={activeModule} />
           </main>
-        </ScrollArea>
+        </div>
       </div>
     </div>
   )

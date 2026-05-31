@@ -31,6 +31,7 @@ import {
   Bot,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 type AppointmentStatus = 'confirmed' | 'pending' | 'scheduled' | 'cancelled' | 'no-show'
 
@@ -275,7 +276,8 @@ export function AgendaCalendar() {
             transition={{ duration: 0.2 }}
           >
             <Card className="border-[#E1F5EE] bg-white overflow-hidden">
-              <div className="flex max-h-[calc(100vh-220px)] overflow-y-auto sinap-scroll">
+              <ScrollArea className="max-h-[calc(100vh-12rem)]">
+              <div className="flex">
                 {/* Time column */}
                 <div className="w-16 shrink-0 border-r border-[#E1F5EE]">
                   {timeSlots.map((minutes) => (
@@ -366,6 +368,7 @@ export function AgendaCalendar() {
                   })}
                 </div>
               </div>
+              </ScrollArea>
             </Card>
           </motion.div>
         )}
@@ -379,8 +382,8 @@ export function AgendaCalendar() {
             transition={{ duration: 0.2 }}
           >
             <Card className="border-[#E1F5EE] bg-white overflow-hidden">
-              <div className="overflow-x-auto max-h-[calc(100vh-220px)] overflow-y-auto sinap-scroll">
-                <div className="min-w-[800px]">
+              <ScrollArea className="max-h-[calc(100vh-12rem)]">
+              <div className="min-w-[800px]">
                   {/* Day headers */}
                   <div className="flex border-b border-[#E1F5EE]">
                     <div className="w-14 shrink-0" />
@@ -444,7 +447,7 @@ export function AgendaCalendar() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </ScrollArea>
             </Card>
           </motion.div>
         )}

@@ -124,10 +124,10 @@ export function HubOperations() {
         </motion.div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
         {/* Staff overview */}
-        <motion.div variants={itemVariants}>
-          <Card className="border-[#E1F5EE] bg-white h-full">
+        <motion.div variants={itemVariants} className="h-full">
+          <Card className="border-[#E1F5EE] bg-white h-full flex flex-col">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium tracking-[-0.03em]">
@@ -176,8 +176,8 @@ export function HubOperations() {
         </motion.div>
 
         {/* Inventory alerts */}
-        <motion.div variants={itemVariants}>
-          <Card className="border-[#E1F5EE] bg-white h-full">
+        <motion.div variants={itemVariants} className="h-full">
+          <Card className="border-[#E1F5EE] bg-white h-full flex flex-col">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium tracking-[-0.03em]">

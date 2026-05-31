@@ -127,8 +127,8 @@ export function SightAnalytics() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Appointments chart */}
-        <motion.div variants={itemVariants}>
-          <Card className="border-[#E1F5EE] bg-white">
+        <motion.div variants={itemVariants} className="h-full">
+          <Card className="border-[#E1F5EE] bg-white h-full">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium tracking-[-0.03em]">
@@ -166,8 +166,8 @@ export function SightAnalytics() {
         </motion.div>
 
         {/* Revenue chart */}
-        <motion.div variants={itemVariants}>
-          <Card className="border-[#E1F5EE] bg-white">
+        <motion.div variants={itemVariants} className="h-full">
+          <Card className="border-[#E1F5EE] bg-white h-full">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium tracking-[-0.03em]">
