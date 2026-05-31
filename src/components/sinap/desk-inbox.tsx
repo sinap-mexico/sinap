@@ -580,18 +580,20 @@ export function DeskInbox() {
 
               {/* AI suggestion */}
               <motion.div
-                className="bg-[#EEEDFE] rounded-lg p-4 border border-[#534AB7]/10"
+                className="bg-gradient-to-br from-[#EEEDFE] to-[#E1E0FB] rounded-xl p-5 border border-[#534AB7]/15 min-h-[180px] flex flex-col"
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
               >
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Sparkles className="h-4 w-4 text-[#534AB7]" />
-                  <p className="text-xs font-semibold text-[#534AB7] uppercase tracking-wide">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="h-7 w-7 rounded-lg bg-[#534AB7] flex items-center justify-center">
+                    <Sparkles className="h-4 w-4 text-white" />
+                  </div>
+                  <p className="text-sm font-semibold text-[#534AB7] tracking-wide">
                     Sugerencia IA
                   </p>
                 </div>
-                <p className="text-sm text-[#2C2C2A] leading-relaxed">
+                <p className="text-sm text-[#2C2C2A] leading-relaxed flex-1">
                   {selectedConversation?.intent === 'Cotizacion'
                     ? 'El paciente pregunta por precio. Sugiere agendar primera cita con enlace de pago.'
                     : selectedConversation?.intent === 'Reactivacion'
@@ -600,13 +602,13 @@ export function DeskInbox() {
                     ? 'Confirma la cita y envia recordatorio con ubicacion de la clinica.'
                     : 'Responde de forma empatica y ofrece soluciones concretas.'}
                 </p>
-                <motion.div whileTap={{ scale: 0.95 }}>
+                <motion.div whileTap={{ scale: 0.95 }} className="mt-4">
                   <Button
                     size="sm"
-                    className="mt-3 bg-[#534AB7] hover:bg-[#534AB7]/90 text-white text-xs h-8 w-full"
+                    className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white text-xs h-9 w-full rounded-lg shadow-sm"
                   >
                     Usar sugerencia
-                    <ChevronRight className="h-3 w-3 ml-1" />
+                    <ChevronRight className="h-3.5 w-3.5 ml-1" />
                   </Button>
                 </motion.div>
               </motion.div>
