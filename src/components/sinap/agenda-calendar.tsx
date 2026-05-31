@@ -275,7 +275,7 @@ export function AgendaCalendar() {
             transition={{ duration: 0.2 }}
           >
             <Card className="border-[#E1F5EE] bg-white overflow-hidden">
-              <div className="flex">
+              <div className="flex max-h-[calc(100vh-220px)] overflow-y-auto sinap-scroll">
                 {/* Time column */}
                 <div className="w-16 shrink-0 border-r border-[#E1F5EE]">
                   {timeSlots.map((minutes) => (
@@ -379,7 +379,7 @@ export function AgendaCalendar() {
             transition={{ duration: 0.2 }}
           >
             <Card className="border-[#E1F5EE] bg-white overflow-hidden">
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto max-h-[calc(100vh-220px)] overflow-y-auto sinap-scroll">
                 <div className="min-w-[800px]">
                   {/* Day headers */}
                   <div className="flex border-b border-[#E1F5EE]">

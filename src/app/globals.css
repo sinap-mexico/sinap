@@ -134,18 +134,47 @@
   }
 }
 
-/* Custom scrollbar for Sinap */
+/* Custom scrollbar for Sinap — always visible, clear, on-brand */
 .sinap-scroll::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 .sinap-scroll::-webkit-scrollbar-track {
-  background: transparent;
+  background: #F1EFE8;
+  border-radius: 4px;
 }
 .sinap-scroll::-webkit-scrollbar-thumb {
-  background: #888780;
-  border-radius: 3px;
+  background: #888780/40;
+  border-radius: 4px;
+  border: 2px solid #F1EFE8;
 }
 .sinap-scroll::-webkit-scrollbar-thumb:hover {
+  background: #534AB7/60;
+}
+.sinap-scroll::-webkit-scrollbar-thumb:active {
+  background: #534AB7;
+}
+
+/* Global scrollbar styles — make native scrollbars always visible */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #888780/40 #F1EFE8;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: #F1EFE8;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(136, 135, 128, 0.35);
+  border-radius: 4px;
+  border: 2px solid #F1EFE8;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(83, 74, 183, 0.5);
+}
+*::-webkit-scrollbar-thumb:active {
   background: #534AB7;
 }
 

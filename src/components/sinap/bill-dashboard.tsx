@@ -348,7 +348,7 @@ export function BillDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="max-h-96">
+            <ScrollArea className="max-h-[calc(100vh-380px)]">
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>

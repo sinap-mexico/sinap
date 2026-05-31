@@ -295,7 +295,7 @@ export function FlowClinical() {
                 </CardTitle>
               </CardHeader>
               <Separator className="bg-[#E1F5EE]" />
-              <ScrollArea className="max-h-96">
+              <ScrollArea className="max-h-[calc(100vh-380px)]">
                 <div className="p-3 space-y-2">
                   {pendingPreconsultas.map((apt, i) => (
                     <motion.button
@@ -536,7 +536,7 @@ export function FlowClinical() {
                 </CardTitle>
               </CardHeader>
               <Separator className="bg-[#E1F5EE]" />
-              <ScrollArea className="max-h-96">
+              <ScrollArea className="max-h-[calc(100vh-380px)]">
                 <div className="p-3 space-y-2">
                   {soapNotes.map((note, i) => (
                     <motion.button
