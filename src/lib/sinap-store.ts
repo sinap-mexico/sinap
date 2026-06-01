@@ -94,6 +94,10 @@ interface SinapStore {
   setClinicMode: (mode: 'solo' | 'clinic') => void
   clinicName: string
   setClinicName: (name: string) => void
+  clinicId: string
+  setClinicId: (id: string) => void
+  clinicSlug: string
+  setClinicSlug: (slug: string) => void
   plan: 'starter' | 'pro' | 'enterprise'
   featureFlags: FeatureFlag[]
   setFeatureFlag: (id: string, state: FeatureFlagState) => void
@@ -204,6 +208,10 @@ export const useSinapStore = create<SinapStore>()(
       setClinicMode: (mode) => set({ clinicMode: mode }),
       clinicName: 'Clinica San Angel',
       setClinicName: (name) => set({ clinicName: name }),
+      clinicId: '',
+      setClinicId: (id) => set({ clinicId: id }),
+      clinicSlug: 'clinica-san-angel-demo',
+      setClinicSlug: (slug) => set({ clinicSlug: slug }),
       plan: 'pro',
       featureFlags: defaultFeatureFlags,
       setFeatureFlag: (id, state) =>
@@ -286,6 +294,8 @@ export const useSinapStore = create<SinapStore>()(
         isDemoMode: state.isDemoMode,
         clinicMode: state.clinicMode,
         clinicName: state.clinicName,
+        clinicId: state.clinicId,
+        clinicSlug: state.clinicSlug,
         plan: state.plan,
         featureFlags: state.featureFlags,
         doctorProfile: state.doctorProfile,

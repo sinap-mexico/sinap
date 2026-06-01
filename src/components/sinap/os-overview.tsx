@@ -8,8 +8,8 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { useSinapStore } from '@/lib/sinap-store'
 import {
   agentStatuses,
-  kpiData,
-  weeklyAppointments,
+  kpiData as mockKpiData,
+  weeklyAppointments as mockWeeklyAppointments,
 } from '@/lib/mock-data'
 import {
   Calendar,
@@ -167,10 +167,74 @@ const itemVariants = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
 }
 
-export function OsOverview() {
-  const { setActiveModule, recentEvents, doctorProfile } = useSinapStore()
+interface KpiData {
+  citasHoy: number
+  conversacionesActivas: number
+  facturasMes: number
+  totalFacturado: number
+  pacientesNuevos: number
+  ocupacion: number
+}
 
-  const maxAppointments = Math.max(...weeklyAppointments.map((d) => d.count))
+interface WeeklyAppointment {
+  day: string
+  count: number
+}
+
+export function OsOverview() {
+  const { setActiveModule, recentEvents, doctorProfile, clinicId, setClinicId, clinicSlug } = useSinapStore()
+
+  // Real data states
+  const [kpiData, setKpiData] = useState<KpiData>(mockKpiData)
+  const [weeklyAppointments, setWeeklyAppointments] = useState<WeeklyAppointment[]>(mockWeeklyAppointments)
+  const [isLoadingKpi, setIsLoadingKpi] = useState(true)
+
+  // Resolve clinicId on mount if needed
+  useEffect(() => {
+    async function resolveClinicId() {
+      if (clinicId) return
+      try {
+        const res = await fetch(`/api/clinic?slug=${encodeURIComponent(clinicSlug)}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.clinic?.id) {
+            setClinicId(data.clinic.id)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to resolve clinicId:', err)
+      }
+    }
+    resolveClinicId()
+  }, [clinicId, clinicSlug, setClinicId])
+
+  // Fetch KPI data
+  useEffect(() => {
+    if (!clinicId) return
+    async function fetchKpi() {
+      setIsLoadingKpi(true)
+      try {
+        const res = await fetch(`/api/dashboard/kpi?clinicId=${clinicId}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.kpi) {
+            setKpiData(data.kpi)
+          }
+          if (data.weeklyAppointments) {
+            setWeeklyAppointments(data.weeklyAppointments)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch KPI data:', err)
+        // Fallback to mock data is already the default
+      } finally {
+        setIsLoadingKpi(false)
+      }
+    }
+    fetchKpi()
+  }, [clinicId])
+
+  const maxAppointments = Math.max(...weeklyAppointments.map((d) => d.count), 1)
 
   const kpiCards = [
     {
@@ -268,7 +332,11 @@ export function OsOverview() {
                         {kpi.label}
                       </p>
                       <p className="text-3xl font-medium text-[#2C2C2A] mt-1 tracking-[-0.03em]">
-                        <AnimatedNumber value={kpi.value} prefix={kpi.prefix} />
+                        {isLoadingKpi ? (
+                          <span className="text-lg">—</span>
+                        ) : (
+                          <AnimatedNumber value={kpi.value} prefix={kpi.prefix} />
+                        )}
                       </p>
                       {kpi.label === 'Facturado este mes' && (
                         <p className="text-[10px] text-[#888780]">MXN</p>
@@ -369,7 +437,7 @@ export function OsOverview() {
               </div>
               <div className="mt-4 flex items-center gap-2">
                 <div className="h-2 w-2 rounded-full bg-[#1D9E75]" />
-                <span className="text-xs text-[#888780]">Ocupacion: {kpiData.ocupacion}%</span>
+                <span className="text-xs text-[#888780]">Ocupacion: {isLoadingKpi ? '—' : `${kpiData.ocupacion}%`}</span>
               </div>
             </CardContent>
           </Card>
@@ -468,8 +536,6 @@ export function OsOverview() {
                       className={`${action.outline ? 'border-[#534AB7] text-[#534AB7] hover:bg-[#EEEDFE]' : `bg-[${action.bg}] hover:bg-[${action.hoverBg}] text-white`} h-auto py-3 flex-col gap-2 w-full transition-all`}
                       style={!action.outline ? { backgroundColor: action.bg } : undefined}
                       onClick={() => setActiveModule(action.module)}
-                      whileHover={{ scale: 1.03, y: -2 }}
-                      whileTap={{ scale: 0.97 }}
                     >
                       <motion.div
                         whileHover={{ rotate: 10, scale: 1.15 }}
