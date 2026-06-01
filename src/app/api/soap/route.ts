@@ -1,9 +1,13 @@
 import ZAI from 'z-ai-web-dev-sdk'
 import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
 
 export async function POST(req: NextRequest) {
   try {
-    const { patientId, clinicId, specialty, preConsultaResponses, patientHistory } = await req.json()
+    const {
+      patientId, clinicId, doctorId, appointmentId,
+      specialty, preConsultaResponses, patientHistory,
+    } = await req.json()
 
     if (!patientId || !clinicId || !preConsultaResponses) {
       return NextResponse.json(
@@ -81,7 +85,62 @@ Responde SOLO con un objeto JSON con las claves: subjective, objective, assessme
       plan: soapData.plan || 'SUGERIDO: Pendiente evaluacion clinica para definir plan de accion.',
     }
 
-    return NextResponse.json(result)
+    // Save to DB if clinicId, patientId, and doctorId are provided
+    let soapNoteId: string | null = null
+
+    if (db && clinicId && patientId && doctorId) {
+      try {
+        // If appointmentId provided and a SoapNote already exists, UPDATE it
+        if (appointmentId) {
+          const existing = await db.soapNote.findUnique({
+            where: { appointmentId },
+          })
+
+          if (existing) {
+            await db.soapNote.update({
+              where: { id: existing.id },
+              data: {
+                subjective: result.subjective,
+                objective: result.objective,
+                assessment: result.assessment,
+                plan: result.plan,
+                aiGenerated: true,
+                aiSuggested: true,
+              },
+            })
+            soapNoteId = existing.id
+          }
+        }
+
+        // If no existing note found, CREATE a new one
+        if (!soapNoteId) {
+          const soapNote = await db.soapNote.create({
+            data: {
+              clinicId,
+              patientId,
+              doctorId,
+              appointmentId: appointmentId || null,
+              subjective: result.subjective,
+              objective: result.objective,
+              assessment: result.assessment,
+              plan: result.plan,
+              aiGenerated: true,
+              aiSuggested: true,
+              doctorApproved: false,
+            },
+          })
+          soapNoteId = soapNote.id
+        }
+      } catch (dbError) {
+        console.error('Failed to save SOAP note to DB:', dbError)
+        // Don't fail the whole request if DB save fails
+      }
+    }
+
+    return NextResponse.json({
+      ...result,
+      ...(soapNoteId ? { soapNoteId } : {}),
+    })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Error desconocido'
     console.error('SOAP error:', error)

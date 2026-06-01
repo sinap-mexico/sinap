@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { useSinapStore, type FeatureFlagState, type SoapNoteItem } from '@/lib/sinap-store'
 import { eventBus } from '@/lib/event-bus'
 import {
@@ -22,6 +22,7 @@ import {
   Loader2,
   Send,
   AlertCircle,
+  ShieldCheck,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -69,6 +70,15 @@ interface FlowAppointment {
   serviceId?: string
 }
 
+/** Extended SoapNoteItem that can carry DB-persisted fields */
+interface DbSoapNoteItem extends SoapNoteItem {
+  dbId?: string
+  doctorApproved?: boolean
+  doctorSignedAt?: string | null
+  doctorName?: string
+  appointmentId?: string
+}
+
 const soapSections = [
   { key: 'subjective', label: 'Subjetivo', badge: 'S', color: '#1D9E75', bgColor: '#E1F5EE', borderColor: 'border-l-[#1D9E75]' },
   { key: 'objective', label: 'Objetivo', badge: 'O', color: '#1D9E75', bgColor: '#E1F5EE', borderColor: 'border-l-[#1D9E75]' },
@@ -100,9 +110,21 @@ export function FlowClinical() {
   const [editingNote, setEditingNote] = useState<string | null>(null)
   const [editField, setEditField] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
 
-  // Selected SOAP note for viewing
-  const [selectedSoapNote, setSelectedSoapNote] = useState<SoapNoteItem | null>(soapNotes[0] || null)
+  // Selected SOAP note for viewing — uses extended type
+  const [selectedSoapNote, setSelectedSoapNote] = useState<DbSoapNoteItem | null>(null)
+
+  // DB-fetched SOAP notes
+  const [dbSoapNotes, setDbSoapNotes] = useState<DbSoapNoteItem[]>([])
+  const [isLoadingSoapNotes, setIsLoadingSoapNotes] = useState(false)
+
+  // Approve & sign state
+  const [showApproveDialog, setShowApproveDialog] = useState(false)
+  const [isApproving, setIsApproving] = useState(false)
+
+  // Ref to avoid re-fetching SOAP notes too aggressively
+  const soapFetchRef = useRef(false)
 
   // Resolve clinicId on mount if needed
   useEffect(() => {
@@ -162,6 +184,59 @@ export function FlowClinical() {
     }
     fetchAppointments()
   }, [clinicId])
+
+  // Fetch SOAP notes from DB on mount
+  useEffect(() => {
+    if (!clinicId || soapFetchRef.current) return
+    soapFetchRef.current = true
+
+    async function fetchSoapNotes() {
+      setIsLoadingSoapNotes(true)
+      try {
+        const res = await fetch(`/api/soap-notes?clinicId=${clinicId}`)
+        if (res.ok) {
+          const data = await res.json()
+          const mapped: DbSoapNoteItem[] = (data.soapNotes || []).map((note: Record<string, unknown>) => ({
+            id: (note.id as string) || `soap_${Date.now()}`,
+            dbId: note.id as string,
+            patientId: (note.patientId as string) || '',
+            patientName: (note.patientName as string) || 'Paciente',
+            subjective: (note.subjective as string) || '',
+            objective: (note.objective as string) || '',
+            assessment: (note.assessment as string) || '',
+            plan: (note.plan as string) || '',
+            status: (note.doctorApproved as boolean) ? 'approved' : 'draft',
+            createdAt: (note.createdAt as string) || new Date().toISOString(),
+            aiGenerated: (note.aiGenerated as boolean) || false,
+            doctorApproved: (note.doctorApproved as boolean) || false,
+            doctorSignedAt: (note.doctorSignedAt as string) || null,
+            doctorName: (note.doctorName as string) || '',
+            appointmentId: (note.appointmentId as string) || undefined,
+          }))
+          setDbSoapNotes(mapped)
+          if (mapped.length > 0 && !selectedSoapNote) {
+            setSelectedSoapNote(mapped[0])
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch SOAP notes:', err)
+      } finally {
+        setIsLoadingSoapNotes(false)
+      }
+    }
+    fetchSoapNotes()
+  }, [clinicId])
+
+  // Combined SOAP notes list: DB notes first, then local-only notes
+  const allSoapNotes: DbSoapNoteItem[] = [
+    ...dbSoapNotes,
+    ...soapNotes
+      .filter((local) => !dbSoapNotes.some((db) => db.dbId === local.id))
+      .map((local) => ({
+        ...local,
+        dbId: local.id.startsWith('soap_') ? undefined : local.id,
+      })),
+  ]
 
   const handleStartPreConsulta = useCallback(async () => {
     if (!selectedPatient) return
@@ -233,6 +308,8 @@ export function FlowClinical() {
         body: JSON.stringify({
           patientId: selectedPatient?.patientId || '',
           clinicId: clinicId || 'demo',
+          doctorId: selectedPatient?.doctorId || '',
+          appointmentId: selectedPatient?.id || '',
           specialty: doctorProfile.specialty,
           preConsultaResponses: responses,
         }),
@@ -241,8 +318,9 @@ export function FlowClinical() {
       const data = await response.json()
 
       if (data.subjective) {
-        const newNote: SoapNoteItem = {
-          id: `soap_${Date.now()}`,
+        const newNote: DbSoapNoteItem = {
+          id: data.soapNoteId || `soap_${Date.now()}`,
+          dbId: data.soapNoteId || undefined,
           patientId: selectedPatient?.patientId || '',
           patientName: selectedPatient?.patientName || 'Paciente',
           subjective: data.subjective,
@@ -252,12 +330,34 @@ export function FlowClinical() {
           status: 'draft',
           createdAt: new Date().toISOString(),
           aiGenerated: true,
+          doctorApproved: false,
+          doctorSignedAt: null,
+          appointmentId: selectedPatient?.id,
         }
-        addSoapNote(newNote)
+
+        // Add to local Zustand store for immediate UI feedback
+        addSoapNote({
+          id: newNote.id,
+          patientId: newNote.patientId,
+          patientName: newNote.patientName,
+          subjective: newNote.subjective,
+          objective: newNote.objective,
+          assessment: newNote.assessment,
+          plan: newNote.plan,
+          status: 'draft',
+          createdAt: newNote.createdAt,
+          aiGenerated: true,
+        })
+
+        // Also add to DB notes list
+        if (newNote.dbId) {
+          setDbSoapNotes(prev => [newNote, ...prev])
+        }
+
         setSelectedSoapNote(newNote)
         setActiveTab('soap')
 
-        eventBus.emit('demo', 'soap_borrador_listo', 'flow', 'os',
+        eventBus.emit(clinicId || 'demo', 'soap_borrador_listo', 'flow', 'os',
           JSON.stringify({ patientName: selectedPatient?.patientName, noteId: newNote.id })
         )
       }
@@ -268,28 +368,121 @@ export function FlowClinical() {
     }
   }
 
-  const handleApproveNote = (noteId: string) => {
-    updateSoapNote(noteId, { status: 'approved' })
-    if (selectedSoapNote?.id === noteId) {
-      setSelectedSoapNote(prev => prev ? { ...prev, status: 'approved' } : null)
+  const handleApproveNote = async (noteId: string) => {
+    const note = allSoapNotes.find(n => n.id === noteId || n.dbId === noteId)
+    if (!note) return
+    setShowApproveDialog(true)
+  }
+
+  const confirmApprove = async () => {
+    if (!selectedSoapNote) return
+    const dbId = selectedSoapNote.dbId || selectedSoapNote.id
+
+    setIsApproving(true)
+    try {
+      // Try PATCH to DB endpoint first
+      if (selectedSoapNote.dbId) {
+        const res = await fetch(`/api/soap-notes/${selectedSoapNote.dbId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          const updatedNote: DbSoapNoteItem = {
+            ...selectedSoapNote,
+            status: 'approved',
+            doctorApproved: true,
+            doctorSignedAt: data.soapNote?.doctorSignedAt || new Date().toISOString(),
+            aiSuggested: false,
+          }
+
+          // Update DB notes list
+          setDbSoapNotes(prev => prev.map(n =>
+            (n.dbId || n.id) === (selectedSoapNote.dbId || selectedSoapNote.id)
+              ? updatedNote
+              : n
+          ))
+          setSelectedSoapNote(updatedNote)
+
+          // Also update Zustand store
+          updateSoapNote(selectedSoapNote.id, { status: 'approved' })
+        }
+      } else {
+        // Fallback: update local store only
+        updateSoapNote(selectedSoapNote.id, { status: 'approved' })
+        setSelectedSoapNote(prev => prev ? { ...prev, status: 'approved', doctorApproved: true, doctorSignedAt: new Date().toISOString() } : null)
+      }
+    } catch (err) {
+      console.error('Failed to approve SOAP note:', err)
+      // Fallback to local update
+      updateSoapNote(selectedSoapNote.id, { status: 'approved' })
+      setSelectedSoapNote(prev => prev ? { ...prev, status: 'approved', doctorApproved: true, doctorSignedAt: new Date().toISOString() } : null)
+    } finally {
+      setIsApproving(false)
+      setShowApproveDialog(false)
     }
   }
 
   const handleEditField = (noteId: string, field: string, value: string) => {
+    // Don't allow editing approved notes
+    const note = allSoapNotes.find(n => n.id === noteId || n.dbId === noteId)
+    if (note?.doctorApproved) return
+
     setEditingNote(noteId)
     setEditField(field)
     setEditValue(value)
   }
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingNote || !editField) return
-    updateSoapNote(editingNote, { [editField]: editValue })
-    if (selectedSoapNote?.id === editingNote) {
-      setSelectedSoapNote(prev => prev ? { ...prev, [editField]: editValue } : null)
+    setIsSavingEdit(true)
+
+    try {
+      const note = allSoapNotes.find(n => n.id === editingNote || n.dbId === editingNote)
+
+      // Try PUT to DB endpoint
+      if (note?.dbId) {
+        const res = await fetch(`/api/soap-notes/${note.dbId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [editField]: editValue }),
+        })
+
+        if (res.ok) {
+          const updatedNote = {
+            ...note,
+            [editField]: editValue,
+          }
+          setDbSoapNotes(prev => prev.map(n =>
+            (n.dbId || n.id) === (note.dbId || note.id)
+              ? updatedNote as DbSoapNoteItem
+              : n
+          ))
+          if (selectedSoapNote?.id === editingNote || selectedSoapNote?.dbId === editingNote) {
+            setSelectedSoapNote(updatedNote as DbSoapNoteItem)
+          }
+        }
+      }
+
+      // Also update Zustand store for immediate UI consistency
+      updateSoapNote(editingNote, { [editField]: editValue })
+      if (selectedSoapNote?.id === editingNote) {
+        setSelectedSoapNote(prev => prev ? { ...prev, [editField]: editValue } : null)
+      }
+    } catch (err) {
+      console.error('Failed to save SOAP edit:', err)
+      // Still update locally
+      updateSoapNote(editingNote, { [editField]: editValue })
+      if (selectedSoapNote?.id === editingNote) {
+        setSelectedSoapNote(prev => prev ? { ...prev, [editField]: editValue } : null)
+      }
+    } finally {
+      setIsSavingEdit(false)
+      setEditingNote(null)
+      setEditField(null)
+      setEditValue('')
     }
-    setEditingNote(null)
-    setEditField(null)
-    setEditValue('')
   }
 
   // Progress calculation for pre-consulta
@@ -341,7 +534,7 @@ export function FlowClinical() {
           onClick={() => setActiveTab('soap')}
         >
           <FileText className="h-3.5 w-3.5 mr-1" />
-          Notas SOAP ({soapNotes.length})
+          Notas SOAP ({allSoapNotes.length})
         </Button>
       </div>
 
@@ -617,13 +810,17 @@ export function FlowClinical() {
               <Separator className="bg-[#E1F5EE]" />
               <ScrollArea className="max-h-[calc(100vh-380px)]">
                 <div className="p-3 space-y-2">
-                  {soapNotes.length === 0 ? (
+                  {isLoadingSoapNotes ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-5 w-5 animate-spin text-[#534AB7]" />
+                    </div>
+                  ) : allSoapNotes.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-8 text-center">
                       <FileText className="h-8 w-8 text-[#888780]/30 mb-2" />
                       <p className="text-xs text-[#888780]">Sin notas SOAP</p>
                     </div>
                   ) : (
-                    soapNotes.map((note, i) => (
+                    allSoapNotes.map((note, i) => (
                       <motion.button
                         key={note.id}
                         onClick={() => setSelectedSoapNote(note)}
@@ -648,16 +845,16 @@ export function FlowClinical() {
                         <div className="flex items-center gap-1.5 mt-1.5">
                           <Badge
                             className={`text-[9px] border-0 ${
-                              note.status === 'approved'
-                                ? 'bg-[#E1F5EE] text-[#1D9E75]'
-                                : note.status === 'signed'
+                              note.doctorApproved
                                 ? 'bg-[#534AB7] text-white'
+                                : note.status === 'approved'
+                                ? 'bg-[#E1F5EE] text-[#1D9E75]'
                                 : 'bg-[#FEF3C7] text-[#D97706]'
                             }`}
                           >
-                            {note.status === 'approved' ? 'Aprobada' : note.status === 'signed' ? 'Firmada' : 'Borrador'}
+                            {note.doctorApproved ? 'Firmada' : note.status === 'approved' ? 'Aprobada' : 'Borrador IA'}
                           </Badge>
-                          {note.aiGenerated && (
+                          {note.aiGenerated && !note.doctorApproved && (
                             <Badge className="text-[9px] border-0 bg-[#EEEDFE] text-[#534AB7]">
                               <Sparkles className="h-2.5 w-2.5 mr-0.5" />
                               IA
@@ -684,15 +881,15 @@ export function FlowClinical() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {selectedSoapNote?.status && (
+                    {selectedSoapNote && (
                       <Badge className={`text-[10px] border-0 ${
-                        selectedSoapNote.status === 'approved'
-                          ? 'bg-[#E1F5EE] text-[#1D9E75]'
-                          : selectedSoapNote.status === 'signed'
+                        selectedSoapNote.doctorApproved
                           ? 'bg-[#534AB7] text-white'
+                          : selectedSoapNote.status === 'approved'
+                          ? 'bg-[#E1F5EE] text-[#1D9E75]'
                           : 'bg-[#FEF3C7] text-[#D97706]'
                       }`}>
-                        {selectedSoapNote.status === 'approved' ? 'Aprobada' : selectedSoapNote.status === 'signed' ? 'Firmada' : 'Borrador'}
+                        {selectedSoapNote.doctorApproved ? 'Firmada' : selectedSoapNote.status === 'approved' ? 'Aprobada' : 'Borrador IA'}
                       </Badge>
                     )}
                     <Badge className="bg-[#EEEDFE] text-[#534AB7] border-0 text-[10px]">
@@ -705,11 +902,37 @@ export function FlowClinical() {
               <CardContent className="space-y-4">
                 {selectedSoapNote ? (
                   <>
+                    {/* Signed indicator */}
+                    {selectedSoapNote.doctorApproved && selectedSoapNote.doctorSignedAt && (
+                      <motion.div
+                        className="rounded-lg bg-[#534AB7]/5 border border-[#534AB7]/20 p-3 flex items-center gap-2"
+                        initial={{ opacity: 0, y: -5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                      >
+                        <ShieldCheck className="h-5 w-5 text-[#534AB7]" />
+                        <div>
+                          <p className="text-sm font-medium text-[#534AB7]">
+                            Firmada por {doctorProfile.name}
+                          </p>
+                          <p className="text-[10px] text-[#888780]">
+                            {new Date(selectedSoapNote.doctorSignedAt).toLocaleString('es-MX', {
+                              day: '2-digit',
+                              month: 'long',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </p>
+                        </div>
+                      </motion.div>
+                    )}
+
                     {/* SOAP sections with color-coded left borders and timeline feel */}
                     {soapSections.map((section, idx) => {
-                      const content = selectedSoapNote[section.key as keyof SoapNoteItem] as string
+                      const content = selectedSoapNote[section.key as keyof DbSoapNoteItem] as string
                       const isAI = selectedSoapNote.aiGenerated
                       const isSuggested = section.key === 'assessment' || section.key === 'plan'
+                      const isReadOnly = selectedSoapNote.doctorApproved
 
                       return (
                         <motion.div
@@ -734,7 +957,7 @@ export function FlowClinical() {
                                 {section.badge}
                               </Badge>
                               <span className="text-sm font-medium text-[#2C2C2A]">{section.label}</span>
-                              {(isAI || isSuggested) && (
+                              {(isAI || isSuggested) && !selectedSoapNote.doctorApproved && (
                                 <Badge
                                   className="bg-white text-[10px] border"
                                   style={{ color: section.color, borderColor: section.color + '30' }}
@@ -744,38 +967,46 @@ export function FlowClinical() {
                                 </Badge>
                               )}
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 text-xs text-[#888780] hover:text-[#534AB7]"
-                              onClick={() => handleEditField(selectedSoapNote.id, section.key, content)}
-                            >
-                              <Edit3 className="h-3 w-3 mr-1" />
-                              Editar
-                            </Button>
+                            {!isReadOnly && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs text-[#888780] hover:text-[#534AB7]"
+                                onClick={() => handleEditField(selectedSoapNote.id, section.key, content)}
+                              >
+                                <Edit3 className="h-3 w-3 mr-1" />
+                                Editar
+                              </Button>
+                            )}
+                            {isReadOnly && (
+                              <Badge className="text-[9px] border-0 bg-white/80 text-[#888780]">
+                                <ShieldCheck className="h-2.5 w-2.5 mr-0.5" />
+                                Solo lectura
+                              </Badge>
+                            )}
                           </div>
-                          <p className="text-sm text-[#2C2C2A] leading-relaxed whitespace-pre-line">{content}</p>
+                          <p className={`text-sm text-[#2C2C2A] leading-relaxed whitespace-pre-line ${isReadOnly ? 'opacity-80' : ''}`}>{content}</p>
                         </motion.div>
                       )
                     })}
 
                     {/* Actions */}
                     <div className="flex items-center gap-3 pt-2">
-                      {selectedSoapNote.status !== 'approved' && (
+                      {!selectedSoapNote.doctorApproved && (
                         <motion.div whileTap={{ scale: 0.97 }}>
                           <Button
                             className="bg-[#1D9E75] hover:bg-[#1D9E75]/90 text-white h-9"
                             onClick={() => handleApproveNote(selectedSoapNote.id)}
                           >
                             <CheckCircle2 className="h-4 w-4 mr-1.5" />
-                            Aprobar nota
+                            Aprobar y firmar
                           </Button>
                         </motion.div>
                       )}
-                      {selectedSoapNote.status === 'approved' && (
-                        <Badge className="bg-[#E1F5EE] text-[#1D9E75] border-0 text-xs py-1 px-3">
-                          <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-                          Nota aprobada por el medico
+                      {selectedSoapNote.doctorApproved && (
+                        <Badge className="bg-[#534AB7] text-white border-0 text-xs py-1.5 px-3">
+                          <ShieldCheck className="h-3.5 w-3.5 mr-1" />
+                          Nota aprobada y firmada
                         </Badge>
                       )}
                       <Button variant="outline" className="border-[#E1F5EE] text-[#2C2C2A] h-9">
@@ -820,8 +1051,69 @@ export function FlowClinical() {
             <Button variant="outline" className="text-sm" onClick={() => { setEditField(null); setEditValue('') }}>
               Cancelar
             </Button>
-            <Button className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white text-sm" onClick={handleSaveEdit}>
-              Guardar cambios
+            <Button
+              className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white text-sm"
+              onClick={handleSaveEdit}
+              disabled={isSavingEdit}
+            >
+              {isSavingEdit ? (
+                <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Guardando...</>
+              ) : (
+                'Guardar cambios'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Approve & Sign Confirmation Dialog */}
+      <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-medium tracking-[-0.03em] flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-[#534AB7]" />
+              Aprobar y firmar nota SOAP
+            </DialogTitle>
+            <DialogDescription className="text-sm text-[#888780]">
+              Al firmar esta nota, confirma que ha revisado y aprobado el contenido. La nota no podra ser editada despues de firmarla.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-3 rounded-lg bg-[#E1F5EE]">
+            <p className="text-xs text-[#1D9E75] font-medium">Paciente: {selectedSoapNote?.patientName}</p>
+            <p className="text-[10px] text-[#888780] mt-0.5">
+              Fecha: {selectedSoapNote ? new Date(selectedSoapNote.createdAt).toLocaleDateString('es-MX') : ''}
+            </p>
+            {selectedSoapNote?.aiGenerated && (
+              <p className="text-[10px] text-[#D97706] mt-1 flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" />
+                Esta nota fue generada por IA. Al firmarla, usted asume responsabilidad del contenido.
+              </p>
+            )}
+          </div>
+          <div className="p-3 rounded-lg bg-[#EEEDFE]">
+            <p className="text-xs text-[#534AB7] font-medium">Firmara como:</p>
+            <p className="text-sm text-[#2C2C2A] mt-0.5">{doctorProfile.name}</p>
+            <p className="text-[10px] text-[#888780]">Cedula: {doctorProfile.license}</p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              className="text-sm"
+              onClick={() => setShowApproveDialog(false)}
+              disabled={isApproving}
+            >
+              Cancelar
+            </Button>
+            <Button
+              className="bg-[#1D9E75] hover:bg-[#1D9E75]/90 text-white text-sm"
+              onClick={confirmApprove}
+              disabled={isApproving}
+            >
+              {isApproving ? (
+                <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Firmando...</>
+              ) : (
+                <><ShieldCheck className="h-3.5 w-3.5 mr-1" />Confirmar firma</>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

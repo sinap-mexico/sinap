@@ -357,3 +357,155 @@ CFDI Generation Flow (after changes):
 
 5. Update local invoice list in UI
 ```
+
+---
+
+# Task 5: Persist SOAP Notes to Database in Flow Clinical Module
+
+## Summary
+Made the Flow clinical module persist SOAP notes to the database. Previously, `/api/soap` generated SOAP notes with AI but never saved them to the `SoapNote` table, and the Flow component stored them only in Zustand (localStorage). Now SOAP notes are saved to the database on creation, updated via API on edits, and signed via a dedicated approve/sign flow with PATCH endpoint.
+
+## Changes Made
+
+### 1. Created `/api/soap-notes` CRUD endpoints
+
+**File**: `src/app/api/soap-notes/route.ts` (NEW)
+
+**POST** — Create or update SOAP note:
+- If `appointmentId` is provided and a SoapNote already exists for that appointment (via `@unique` constraint), UPDATE it
+- Otherwise CREATE a new SoapNote
+- Required fields: `clinicId`, `patientId`, `doctorId`
+- Optional fields: `appointmentId`, `subjective`, `objective`, `assessment`, `plan`, `aiGenerated`, `aiSuggested`, `vitals`, `diagnosis`, `prescriptions`
+- Defaults: `aiGenerated=true`, `aiSuggested=false`, `doctorApproved=false`
+- Returns `{ soapNote }` with status 201 on create, 200 on update
+
+**GET** — List SOAP notes:
+- Query params: `clinicId` (required), `patientId` (optional)
+- If `patientId` provided, filters notes for that patient
+- Includes `patient.fullName` as `patientName` and `doctor.name` as `doctorName` in response
+- Ordered by `createdAt` desc
+- Returns `{ soapNotes: [...] }`
+
+### 2. Created `/api/soap-notes/[id]` endpoint
+
+**File**: `src/app/api/soap-notes/[id]/route.ts` (NEW)
+
+**PUT** — Update SOAP note fields:
+- Accepts partial updates: `subjective`, `objective`, `assessment`, `plan`, `vitals`, `diagnosis`, `prescriptions`, `doctorApproved`
+- If `doctorApproved` is set to `true`, also sets `doctorSignedAt = new Date()`
+- Returns 403 if note is already approved/signed (read-only after signing)
+- Returns 404 if note not found
+
+**PATCH** — Approve/sign SOAP note:
+- Sets `doctorApproved = true`, `doctorSignedAt = new Date()`
+- Sets `aiSuggested = false` (doctor has reviewed, no longer just a suggestion)
+- Returns 400 if note is already approved
+- Returns 404 if note not found
+
+### 3. Updated `/api/soap` to save to DB after AI generation
+
+**File**: `src/app/api/soap/route.ts`
+
+After generating the SOAP note with AI:
+- Now accepts additional fields: `doctorId`, `appointmentId`
+- If `clinicId`, `patientId`, and `doctorId` are all provided AND `db` is available:
+  - If `appointmentId` is provided and a SoapNote already exists for that appointment, UPDATE it
+  - Otherwise CREATE a new SoapNote
+- Sets `aiGenerated = true`, `aiSuggested = true` (doctor hasn't approved yet)
+- If `appointmentId` is provided, links to the appointment
+- Returns both the SOAP data AND the created note's `id` as `soapNoteId`
+- DB save failure does NOT fail the overall request (graceful degradation)
+
+### 4. Updated `flow-clinical.tsx` for DB persistence
+
+**File**: `src/components/sinap/flow-clinical.tsx`
+
+Major changes:
+
+**Extended type system**:
+- Added `DbSoapNoteItem` interface extending `SoapNoteItem` with `dbId`, `doctorApproved`, `doctorSignedAt`, `doctorName`, `appointmentId`
+- Used `DbSoapNoteItem` for `selectedSoapNote` state
+
+**DB fetch on mount**:
+- Added `dbSoapNotes` state and `isLoadingSoapNotes` state
+- On component mount, fetches SOAP notes from `GET /api/soap-notes?clinicId=xxx`
+- Maps DB response to `DbSoapNoteItem[]` with patient/doctor names
+- Uses `useRef` to prevent duplicate fetches
+
+**Combined notes list**:
+- `allSoapNotes` merges DB notes with local Zustand notes (deduped by `dbId`)
+- DB notes appear first, local-only notes follow
+
+**AI generation flow**:
+- `handleGenerateSOAP` now sends `clinicId`, `patientId`, `doctorId`, `appointmentId` to `/api/soap`
+- When response includes `soapNoteId`, stores it as `dbId` on the note
+- Adds to both `dbSoapNotes` state and Zustand store
+
+**Editing flow**:
+- `handleSaveEdit` now calls `PUT /api/soap-notes/[id]` to persist edits to DB
+- Falls back to local-only update if API fails
+- Shows loading spinner on "Guardar cambios" button while saving
+- Added `isSavingEdit` state for loading indicator
+
+**Approve & Sign flow** (replaces simple approve):
+- "Aprobar nota" button changed to "Aprobar y firmar" with `ShieldCheck` icon
+- Clicking opens a confirmation dialog (`showApproveDialog`)
+- Dialog shows:
+  - Warning that note cannot be edited after signing
+  - Patient name and date
+  - AI-generated warning if applicable
+  - Doctor name and license number for signing
+  - "Confirmar firma" button
+- On confirm, calls `PATCH /api/soap-notes/[id]` to set `doctorApproved=true`
+- Updates both `dbSoapNotes` state and Zustand store
+
+**Signed/Read-only state**:
+- After approval, SOAP sections show "Solo lectura" badge instead of "Editar" button
+- Signed indicator banner at top: "Firmada por Dr. [name]" with formatted timestamp
+- Status badge changes from "Borrador IA" to "Firmada" (purple)
+- Edit attempts on approved notes are blocked
+- Content shown with `opacity-80` to visually indicate read-only
+
+**Status badges**:
+- Draft AI notes: amber "Borrador IA" + purple "IA" badge with sparkle
+- Approved notes: green "Aprobada"
+- Signed notes: purple "Firmada"
+
+## Verification
+
+- ✅ Build: `npx next build` completes successfully
+- ✅ Lint: 0 errors (4 pre-existing warnings in settings-pages.tsx)
+- ✅ New API routes visible in build output: `/api/soap-notes` and `/api/soap-notes/[id]`
+- ✅ Dev server: running without errors
+- ✅ No Prisma schema changes needed (all fields already existed)
+
+## Flow Diagram
+
+```
+SOAP Note Lifecycle (after changes):
+
+1. Doctor starts pre-consulta → answers questions → clicks "Generar nota SOAP con IA"
+   → POST /api/soap with { clinicId, patientId, doctorId, appointmentId, specialty, preConsultaResponses }
+   → AI generates SOAP content
+   → If clinicId + patientId + doctorId provided: saves to SoapNote table
+     → aiGenerated=true, aiSuggested=true, doctorApproved=false
+   → Returns { subjective, objective, assessment, plan, soapNoteId }
+
+2. Doctor edits a field (clicks "Editar" on S/O/A/P section)
+   → Opens edit dialog with textarea
+   → On save: PUT /api/soap-notes/[dbId] with { [field]: newValue }
+   → Updates DB + local state
+   → Blocked if note is already approved (403)
+
+3. Doctor approves/signs note (clicks "Aprobar y firmar")
+   → Shows confirmation dialog with doctor name + license
+   → On confirm: PATCH /api/soap-notes/[dbId]
+     → Sets doctorApproved=true, doctorSignedAt=now(), aiSuggested=false
+   → UI updates: "Firmada" badge, "Solo lectura" on fields, signed indicator banner
+
+4. On component mount:
+   → GET /api/soap-notes?clinicId=xxx
+   → Loads all SOAP notes for clinic from DB
+   → Merges with local Zustand notes
+   → Displays in sidebar list
+```
