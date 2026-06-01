@@ -246,16 +246,16 @@ export function DeskInbox() {
   const quickReplies = getQuickReplies(selectedConversation?.intent)
 
   return (
-    <div className="flex gap-4" style={{ height: 'calc(100vh - 7rem)' }}>
+    <div className="flex gap-4 h-full">
       {/* Left panel - Conversation list */}
       <motion.div
-        className="h-full"
+        className="h-full shrink-0"
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.3 }}
       >
-        <Card className="border-[#E1F5EE] bg-white w-80 shrink-0 flex flex-col h-full">
-          <CardHeader className="pb-3">
+        <Card className="border-[#E1F5EE] bg-white w-80 flex flex-col h-full overflow-hidden">
+          <CardHeader className="pb-3 shrink-0">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-medium tracking-[-0.03em]">
                 Conversaciones
@@ -274,8 +274,8 @@ export function DeskInbox() {
               />
             </div>
           </CardHeader>
-          <Separator className="bg-[#E1F5EE]" />
-          <ScrollArea className="flex-1">
+          <Separator className="bg-[#E1F5EE] shrink-0" />
+          <ScrollArea className="flex-1 min-h-0">
             <div className="p-2 space-y-1">
               {filteredConversations.map((conv, i) => (
                 <motion.button
@@ -334,12 +334,12 @@ export function DeskInbox() {
 
       {/* Center panel - Chat view */}
       <motion.div
-        className="flex-1 h-full"
+        className="flex-1 h-full min-w-0"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, delay: 0.1 }}
       >
-        <Card className="border-[#E1F5EE] bg-white h-full flex flex-col">
+        <Card className="border-[#E1F5EE] bg-white h-full flex flex-col overflow-hidden">
           {/* Chat header */}
           <div className="px-4 py-3 border-b border-[#E1F5EE] flex items-center justify-between shrink-0">
             <div className="flex items-center gap-3">
@@ -365,8 +365,8 @@ export function DeskInbox() {
           </div>
 
           {/* Messages */}
-          <ScrollArea className="flex-1 p-4">
-            <div className="space-y-3">
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="p-4 space-y-3">
               {selectedConversation?.messages.map((msg, i) => (
                 <motion.div
                   key={msg.id}
@@ -417,7 +417,7 @@ export function DeskInbox() {
 
           {/* Quick replies */}
           {quickReplies.length > 0 && !isTyping && (
-            <div className="px-4 py-2 border-t border-[#E1F5EE]/50">
+            <div className="px-4 py-2 border-t border-[#E1F5EE]/50 shrink-0">
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {quickReplies.map((reply) => (
                   <motion.button
@@ -465,22 +465,24 @@ export function DeskInbox() {
         </Card>
       </motion.div>
 
-      {/* Right panel - Conversation detail */}
+      {/* Right panel - Conversation detail + AI suggestion (SPLIT LAYOUT) */}
       <motion.div
-        className="hidden xl:block h-full"
+        className="hidden xl:flex h-full shrink-0"
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.3, delay: 0.2 }}
       >
-        <Card className="border-[#E1F5EE] bg-white w-72 shrink-0 flex flex-col h-full">
-          <CardHeader className="pb-3">
+        <Card className="border-[#E1F5EE] bg-white w-72 flex flex-col h-full overflow-hidden">
+          <CardHeader className="pb-3 shrink-0">
             <CardTitle className="text-sm font-medium tracking-[-0.03em]">
               Detalle
             </CardTitle>
           </CardHeader>
-          <Separator className="bg-[#E1F5EE]" />
-          <ScrollArea className="flex-1">
-            <div className="p-4 space-y-5 pb-6">
+          <Separator className="bg-[#E1F5EE] shrink-0" />
+
+          {/* Scrollable patient details - takes remaining space */}
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="p-4 space-y-4">
               {/* Patient info */}
               <div className="bg-[#F8F7F3] rounded-lg p-3">
                 <div className="flex items-center gap-2 mb-2">
@@ -575,57 +577,58 @@ export function DeskInbox() {
                   </Button>
                 </div>
               </div>
-
-              {/* AI suggestion - prominent card */}
-              <motion.div
-                className="bg-gradient-to-br from-[#534AB7] to-[#6C63F0] rounded-xl p-5 min-h-[260px] flex flex-col shadow-lg shadow-[#534AB7]/20"
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-              >
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="h-8 w-8 rounded-lg bg-white/20 flex items-center justify-center">
-                    <Sparkles className="h-4 w-4 text-white" />
-                  </div>
-                  <p className="text-sm font-semibold text-white tracking-wide">
-                    Sugerencia IA
-                  </p>
-                </div>
-                <p className="text-sm text-white/90 leading-relaxed">
-                  {selectedConversation?.intent === 'Cotizacion'
-                    ? 'El paciente pregunta por precio. Sugiere agendar primera cita con enlace de pago.'
-                    : selectedConversation?.intent === 'Reactivacion'
-                    ? 'Paciente inactiva. Ofrece horario flexible o promocion de reactivacion.'
-                    : selectedConversation?.intent === 'Confirmacion de cita'
-                    ? 'Confirma la cita y envia recordatorio con ubicacion de la clinica.'
-                    : 'Responde de forma empatica y ofrece soluciones concretas.'}
-                </p>
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {getQuickReplies(selectedConversation?.intent).slice(0, 2).map((reply) => (
-                    <motion.button
-                      key={reply}
-                      className="shrink-0 text-[11px] px-3 py-1.5 rounded-full bg-white/15 text-white hover:bg-white/25 transition-colors whitespace-nowrap border border-white/20"
-                      onClick={() => handleQuickReply(reply)}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      {reply}
-                    </motion.button>
-                  ))}
-                </div>
-                <div className="flex-1" />
-                <motion.div whileTap={{ scale: 0.95 }} className="mt-3">
-                  <Button
-                    size="sm"
-                    className="bg-white text-[#534AB7] hover:bg-white/90 text-xs h-9 w-full rounded-lg font-semibold shadow-sm"
-                  >
-                    Usar sugerencia
-                    <ChevronRight className="h-3.5 w-3.5 ml-1" />
-                  </Button>
-                </motion.div>
-              </motion.div>
             </div>
           </ScrollArea>
+
+          {/* AI suggestion - FIXED at bottom, OUTSIDE ScrollArea */}
+          <div className="shrink-0 p-4 pt-2 border-t border-[#E1F5EE]">
+            <motion.div
+              className="bg-gradient-to-br from-[#534AB7] to-[#6C63F0] rounded-xl p-4 shadow-lg shadow-[#534AB7]/20"
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className="h-7 w-7 rounded-lg bg-white/20 flex items-center justify-center">
+                  <Sparkles className="h-3.5 w-3.5 text-white" />
+                </div>
+                <p className="text-sm font-semibold text-white tracking-wide">
+                  Sugerencia IA
+                </p>
+              </div>
+              <p className="text-xs text-white/90 leading-relaxed mb-3">
+                {selectedConversation?.intent === 'Cotizacion'
+                  ? 'El paciente pregunta por precio. Sugiere agendar primera cita con enlace de pago.'
+                  : selectedConversation?.intent === 'Reactivacion'
+                  ? 'Paciente inactiva. Ofrece horario flexible o promocion de reactivacion.'
+                  : selectedConversation?.intent === 'Confirmacion de cita'
+                  ? 'Confirma la cita y envia recordatorio con ubicacion de la clinica.'
+                  : 'Responde de forma empatica y ofrece soluciones concretas.'}
+              </p>
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {getQuickReplies(selectedConversation?.intent).slice(0, 2).map((reply) => (
+                  <motion.button
+                    key={reply}
+                    className="shrink-0 text-[10px] px-2.5 py-1 rounded-full bg-white/15 text-white hover:bg-white/25 transition-colors whitespace-nowrap border border-white/20"
+                    onClick={() => handleQuickReply(reply)}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    {reply}
+                  </motion.button>
+                ))}
+              </div>
+              <motion.div whileTap={{ scale: 0.95 }}>
+                <Button
+                  size="sm"
+                  className="bg-white text-[#534AB7] hover:bg-white/90 text-xs h-8 w-full rounded-lg font-semibold shadow-sm"
+                >
+                  Usar sugerencia
+                  <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                </Button>
+              </motion.div>
+            </motion.div>
+          </div>
         </Card>
       </motion.div>
     </div>
