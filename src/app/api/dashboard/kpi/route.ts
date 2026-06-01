@@ -178,6 +178,31 @@ export async function GET(req: NextRequest) {
     // Current month revenue for KPI card
     const currentMonthRevenue = monthlyRevenue.length > 0 ? monthlyRevenue[monthlyRevenue.length - 1].amount : 0
 
+    // Doctor appointments today — count per doctor
+    const todayAppts = await db.appointment.findMany({
+      where: {
+        clinicId,
+        date: { gte: today, lte: todayEnd },
+        status: { notIn: ['cancelled', 'no_show'] },
+      },
+      select: { doctorId: true, doctor: { select: { name: true } } },
+    })
+
+    const doctorApptMap = new Map<string, { doctorName: string; todayCount: number }>()
+    for (const appt of todayAppts) {
+      const existing = doctorApptMap.get(appt.doctorId)
+      if (existing) {
+        existing.todayCount++
+      } else {
+        doctorApptMap.set(appt.doctorId, { doctorName: appt.doctor.name, todayCount: 1 })
+      }
+    }
+    const doctorAppointments = Array.from(doctorApptMap, ([doctorId, data]) => ({
+      doctorId,
+      doctorName: data.doctorName,
+      todayCount: data.todayCount,
+    }))
+
     return NextResponse.json({
       kpi: {
         citasHoy,
@@ -191,6 +216,7 @@ export async function GET(req: NextRequest) {
       monthlyRevenue,
       noShowRate,
       currentMonthRevenue,
+      doctorAppointments,
     })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error'

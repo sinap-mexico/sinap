@@ -632,3 +632,97 @@ Direct API Call Flow (no Desk component):
    → Server-side: update conversation.lastMessageAt and currentAgent
    → Return AI response
 ```
+
+---
+
+# Task 7: Polish Hub, Grow, and Sight — DB-Connected Appointment Counts
+
+## Summary
+Polished the Hub module to display real today's appointment counts per doctor (previously hardcoded as 0) and added a "Citas hoy" KPI card. Updated the `/api/dashboard/kpi` endpoint to include a `doctorAppointments` field so Hub can get per-doctor counts in a single API call. Verified that Grow and Sight modules are already fully DB-connected.
+
+## Changes Made
+
+### 1. Updated `/api/dashboard/kpi` to include `doctorAppointments`
+
+**File**: `src/app/api/dashboard/kpi/route.ts`
+
+- Added a new query that fetches today's appointments (excluding cancelled/no_show) with `doctorId` and `doctor.name`
+- Groups appointments by doctor using a `Map<string, { doctorName: string; todayCount: number }>`
+- Converts the map to an array: `doctorAppointments: Array<{ doctorId: string; doctorName: string; todayCount: number }>`
+- Includes this in the KPI JSON response alongside existing fields
+- This allows Hub to get per-doctor appointment counts in a single API call instead of needing a separate `/api/appointments` fetch
+
+### 2. Updated `hub-operations.tsx` — Per-doctor appointment counts
+
+**File**: `src/components/sinap/hub-operations.tsx`
+
+- Extended `kpiData` state to include `citasHoy` and `doctorAppointments` fields
+- `fetchKpi` now stores `citasHoy` from `data.kpi.citasHoy` and `doctorAppointments` from `data.doctorAppointments`
+- Added a `useEffect` that merges `doctorAppointments` into `staffMembers`:
+  - Creates a `Map<doctorId, todayCount>` from `kpiData.doctorAppointments`
+  - Uses `setStaffMembers(prev => prev.map(...))` with the functional updater to avoid stale state
+  - Updates `todayAppointments` for each staff member based on their doctor ID
+  - Only runs when `kpiData.doctorAppointments` changes (after KPI fetch completes)
+
+### 3. Updated `hub-operations.tsx` — "Citas hoy" KPI card
+
+**File**: `src/components/sinap/hub-operations.tsx`
+
+- Changed the cash flow grid from `grid-cols-1 sm:grid-cols-3` to `grid-cols-2 sm:grid-cols-4`
+- Added a new "Citas hoy" card as the first card in the grid:
+  - Purple accent (`#534AB7`) to distinguish from the financial cards
+  - Shows `kpiData.citasHoy` (today's total appointment count from DB)
+  - Calendar icon in the top-right corner
+  - "Programadas" subtitle
+  - Loading state shows "—" while KPI data is being fetched
+- Existing cards (Ingresos, Egresos, Flujo neto) unchanged
+
+### 4. Verified Grow module is DB-connected ✅
+
+**File**: `src/components/sinap/grow-marketing.tsx`
+
+Already fully connected:
+- Patient segments: fetched from `/api/analytics` → `db.patient.groupBy({ by: ['segment'] })`
+- Funnel data: derived from segment counts in `/api/analytics` (Lead → Primera cita → Recurrente → VIP)
+- Campaigns: returned as empty array from `/api/analytics` (no Campaign model in Prisma schema — by design)
+- No hardcoded/mock data found
+
+### 5. Verified Sight module is DB-connected ✅
+
+**File**: `src/components/sinap/sight-analytics.tsx`
+
+Already fully connected:
+- KPIs (ocupacion, currentMonthRevenue, noShowRate): fetched from `/api/dashboard/kpi`
+- Weekly appointments chart: `data.weeklyAppointments` from KPI endpoint
+- Monthly revenue chart: `data.monthlyRevenue` from KPI endpoint
+- All data comes from real DB queries (appointment counts, invoice aggregates, etc.)
+- Alert panel uses `kpiData.noShowRate` from DB for the no-show alert description
+- Static alerts (low Thursday occupancy, new patient increase, billing trend) are AI-style proactive insights — not from a table but acceptable since there's no Alert model in the schema
+
+## Verification
+
+- ✅ Build: `npx next build` completes successfully
+- ✅ Lint: 0 errors (4 pre-existing warnings in settings-pages.tsx)
+- ✅ Dev server: running without errors
+- ✅ No Prisma schema changes needed
+- ✅ No new dependencies added
+
+## Flow Diagram
+
+```
+Hub Operations Data Flow (after changes):
+
+1. Component mounts → resolve clinicId (if needed via /api/clinic)
+2. fetchStaff() → GET /api/doctors?clinicId=xxx
+   → Maps doctors to StaffMember[] with todayAppointments: 0 (placeholder)
+3. fetchKpi() → GET /api/dashboard/kpi?clinicId=xxx
+   → Returns: kpi.citasHoy, kpi.totalFacturado, currentMonthRevenue, noShowRate, doctorAppointments, weeklyAppointments, monthlyRevenue
+   → Stores all in kpiData state
+4. useEffect on kpiData.doctorAppointments change:
+   → Map doctorId → todayCount from doctorAppointments
+   → Update staffMembers: setStaffMembers(prev => prev.map(s => ({ ...s, todayAppointments: apptMap.get(s.id) || 0 })))
+5. UI renders:
+   → "Citas hoy" card shows kpiData.citasHoy
+   → "Ingresos/Egresos/Flujo neto" cards show financial data
+   → Staff list shows each doctor's name, specialty, and real todayAppointments count
+```

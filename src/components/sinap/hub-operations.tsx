@@ -57,7 +57,12 @@ export function HubOperations() {
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([])
   const [inventoryAlerts] = useState<InventoryAlert[]>(defaultInventoryAlerts)
   const [isLoadingStaff, setIsLoadingStaff] = useState(true)
-  const [kpiData, setKpiData] = useState<{ totalFacturado: number; currentMonthRevenue: number }>({ totalFacturado: 0, currentMonthRevenue: 0 })
+  const [kpiData, setKpiData] = useState<{
+    totalFacturado: number
+    currentMonthRevenue: number
+    citasHoy: number
+    doctorAppointments: Array<{ doctorId: string; doctorName: string; todayCount: number }>
+  }>({ totalFacturado: 0, currentMonthRevenue: 0, citasHoy: 0, doctorAppointments: [] })
   const [isLoadingKpi, setIsLoadingKpi] = useState(true)
 
   // Resolve clinicId on mount if needed
@@ -114,6 +119,8 @@ export function HubOperations() {
         setKpiData({
           totalFacturado: data.kpi?.totalFacturado || 0,
           currentMonthRevenue: data.currentMonthRevenue || 0,
+          citasHoy: data.kpi?.citasHoy || 0,
+          doctorAppointments: data.doctorAppointments || [],
         })
       }
     } catch (err) {
@@ -130,6 +137,18 @@ export function HubOperations() {
   useEffect(() => {
     fetchKpi()
   }, [fetchKpi])
+
+  // When both staff and doctorAppointments are available, merge counts
+  useEffect(() => {
+    if (staffMembers.length === 0 || kpiData.doctorAppointments.length === 0) return
+    const apptMap = new Map(kpiData.doctorAppointments.map(d => [d.doctorId, d.todayCount]))
+    setStaffMembers(prev =>
+      prev.map(s => ({
+        ...s,
+        todayAppointments: apptMap.get(s.id) || 0,
+      }))
+    )
+  }, [kpiData.doctorAppointments])
 
   const income = kpiData.currentMonthRevenue || kpiData.totalFacturado
   const expenses = Math.round(income * 0.42) // Approximate expenses as ~42% of revenue for demo
@@ -149,7 +168,32 @@ export function HubOperations() {
       animate="visible"
     >
       {/* Cash flow summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <motion.div variants={itemVariants}>
+          <Card className="border-[#EEEDFE] bg-white hover:shadow-md transition-shadow">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-[#888780] font-medium uppercase tracking-wide">
+                    Citas hoy
+                  </p>
+                  <p className="text-3xl font-medium text-[#534AB7] mt-1 tracking-[-0.03em]">
+                    {isLoadingKpi ? '—' : kpiData.citasHoy}
+                  </p>
+                </div>
+                <motion.div
+                  className="h-10 w-10 rounded-lg bg-[#EEEDFE] flex items-center justify-center"
+                  whileHover={{ scale: 1.1, rotate: 5 }}
+                >
+                  <Calendar className="h-5 w-5 text-[#534AB7]" />
+                </motion.div>
+              </div>
+              <p className="text-xs text-[#534AB7] mt-2 font-medium">
+                Programadas
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
         <motion.div variants={itemVariants}>
           <Card className="border-[#E1F5EE] bg-white hover:shadow-md transition-shadow">
             <CardContent className="p-5">
