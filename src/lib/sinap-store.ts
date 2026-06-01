@@ -21,6 +21,22 @@ interface DoctorProfile {
   phone: string
 }
 
+export interface DoctorItem {
+  id: string
+  clinicId: string
+  name: string
+  email?: string | null
+  phone?: string | null
+  specialty?: string | null
+  license?: string | null
+  color: string
+  isActive: boolean
+  workDays: string
+  workStart: string
+  workEnd: string
+  slotMinutes: number
+}
+
 interface ClinicProfile {
   name: string
   rfc: string
@@ -99,6 +115,14 @@ interface SinapStore {
   setServices: (s: ServiceItem[]) => void
   schedule: ScheduleConfig
   setSchedule: (s: Partial<ScheduleConfig>) => void
+  // Doctors (multi-doctor for clinic mode)
+  doctors: DoctorItem[]
+  setDoctors: (doctors: DoctorItem[]) => void
+  addDoctor: (doctor: DoctorItem) => void
+  updateDoctor: (id: string, updates: Partial<DoctorItem>) => void
+  removeDoctor: (id: string) => void
+  isLoadingDoctors: boolean
+  setIsLoadingDoctors: (v: boolean) => void
   // Event Bus
   recentEvents: SinapEvent[]
   addRecentEvent: (event: SinapEvent) => void
@@ -223,6 +247,16 @@ export const useSinapStore = create<SinapStore>()(
         slotMinutes: 30,
       },
       setSchedule: (s) => set((prev) => ({ schedule: { ...prev.schedule, ...s } })),
+      // Doctors
+      doctors: [],
+      setDoctors: (doctors) => set({ doctors }),
+      addDoctor: (doctor) => set((s) => ({ doctors: [...s.doctors, doctor] })),
+      updateDoctor: (id, updates) => set((s) => ({
+        doctors: s.doctors.map((d) => d.id === id ? { ...d, ...updates } : d),
+      })),
+      removeDoctor: (id) => set((s) => ({ doctors: s.doctors.filter((d) => d.id !== id) })),
+      isLoadingDoctors: false,
+      setIsLoadingDoctors: (v) => set({ isLoadingDoctors: v }),
       // Event Bus
       recentEvents: defaultRecentEvents,
       addRecentEvent: (event) => set((s) => ({ recentEvents: [event, ...s.recentEvents].slice(0, 50) })),
@@ -239,6 +273,7 @@ export const useSinapStore = create<SinapStore>()(
         onboardingComplete: false,
         isLoggedIn: false,
         isDemoMode: false,
+        doctors: [],
       }),
     }),
     {
@@ -258,6 +293,7 @@ export const useSinapStore = create<SinapStore>()(
         services: state.services,
         schedule: state.schedule,
         activeModule: state.activeModule,
+        doctors: state.doctors,
       }),
     }
   )

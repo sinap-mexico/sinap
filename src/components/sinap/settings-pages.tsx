@@ -1,8 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useSinapStore, type FeatureFlagState, type SinapModule } from '@/lib/sinap-store'
-import { clinic } from '@/lib/mock-data'
+import { useState, useEffect } from 'react'
+import { useSinapStore, type FeatureFlagState, type SinapModule, type DoctorItem } from '@/lib/sinap-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -35,6 +34,11 @@ import {
   MessageSquare,
   Calendar,
   Database,
+  Users,
+  Stethoscope,
+  Loader2,
+  Edit2,
+  X,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -90,9 +94,132 @@ const tabVariants = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.2 } },
 }
 
+const DOCTOR_COLORS = [
+  '#534AB7', '#1D9E75', '#E53E3E', '#D97706', '#2563EB',
+  '#7C3AED', '#059669', '#DC2626', '#CA8A04', '#4F46E5',
+]
+
+const DAY_LABELS: Record<string, string> = {
+  '1': 'Lun', '2': 'Mar', '3': 'Mie', '4': 'Jue', '5': 'Vie', '6': 'Sab', '0': 'Dom',
+}
+
 export function SettingsPages() {
   const store = useSinapStore()
   const [activeTab, setActiveTab] = useState('perfil')
+
+  // Doctors state
+  const [showDoctorForm, setShowDoctorForm] = useState(false)
+  const [editingDoctor, setEditingDoctor] = useState<DoctorItem | null>(null)
+  const [doctorForm, setDoctorForm] = useState({
+    name: '', email: '', phone: '', specialty: '', license: '',
+    color: '#534AB7', workDays: '1,2,3,4,5', workStart: '09:00', workEnd: '18:00', slotMinutes: 30,
+  })
+  const [isSavingDoctor, setIsSavingDoctor] = useState(false)
+  const [doctorError, setDoctorError] = useState('')
+
+  const clinicId = 'demo' // TODO: get from auth context
+
+  const fetchDoctors = async () => {
+    store.setIsLoadingDoctors(true)
+    try {
+      const res = await fetch(`/api/doctors?clinicId=${clinicId}`)
+      if (res.ok) {
+        const data = await res.json()
+        store.setDoctors(data.doctors)
+      }
+    } catch {
+      // silently fail
+    } finally {
+      store.setIsLoadingDoctors(false)
+    }
+  }
+
+  const handleSaveDoctor = async () => {
+    if (!doctorForm.name.trim()) {
+      setDoctorError('El nombre es requerido')
+      return
+    }
+    setIsSavingDoctor(true)
+    setDoctorError('')
+    try {
+      if (editingDoctor) {
+        // Update existing
+        const res = await fetch(`/api/doctors/${editingDoctor.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(doctorForm),
+        })
+        if (!res.ok) {
+          const data = await res.json()
+          setDoctorError(data.error || 'Error al actualizar')
+          return
+        }
+        const data = await res.json()
+        store.updateDoctor(editingDoctor.id, data.doctor)
+      } else {
+        // Create new
+        const res = await fetch('/api/doctors', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clinicId, ...doctorForm }),
+        })
+        if (!res.ok) {
+          const data = await res.json()
+          setDoctorError(data.error || 'Error al crear')
+          return
+        }
+        const data = await res.json()
+        store.addDoctor(data.doctor)
+      }
+      setShowDoctorForm(false)
+      setEditingDoctor(null)
+      setDoctorForm({ name: '', email: '', phone: '', specialty: '', license: '', color: '#534AB7', workDays: '1,2,3,4,5', workStart: '09:00', workEnd: '18:00', slotMinutes: 30 })
+    } catch {
+      setDoctorError('Error de conexion')
+    } finally {
+      setIsSavingDoctor(false)
+    }
+  }
+
+  const handleDeleteDoctor = async (id: string) => {
+    try {
+      await fetch(`/api/doctors/${id}`, { method: 'DELETE' })
+      store.removeDoctor(id)
+    } catch {
+      // silently fail
+    }
+  }
+
+  const startEditDoctor = (doc: DoctorItem) => {
+    setEditingDoctor(doc)
+    setDoctorForm({
+      name: doc.name, email: doc.email || '', phone: doc.phone || '',
+      specialty: doc.specialty || '', license: doc.license || '',
+      color: doc.color, workDays: doc.workDays, workStart: doc.workStart,
+      workEnd: doc.workEnd, slotMinutes: doc.slotMinutes,
+    })
+    setShowDoctorForm(true)
+    setDoctorError('')
+  }
+
+  const cancelDoctorForm = () => {
+    setShowDoctorForm(false)
+    setEditingDoctor(null)
+    setDoctorForm({ name: '', email: '', phone: '', specialty: '', license: '', color: '#534AB7', workDays: '1,2,3,4,5', workStart: '09:00', workEnd: '18:00', slotMinutes: 30 })
+    setDoctorError('')
+  }
+
+  const toggleWorkDay = (day: string) => {
+    const days = doctorForm.workDays.split(',').filter(Boolean)
+    const newDays = days.includes(day) ? days.filter(d => d !== day) : [...days, day].sort((a, b) => parseInt(a) - parseInt(b))
+    setDoctorForm(prev => ({ ...prev, workDays: newDays.join(',') }))
+  }
+
+  // Fetch doctors on mount
+  useEffect(() => {
+    fetchDoctors()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const [doctorName, setDoctorName] = useState(store.doctorProfile.name)
   const [doctorEmail, setDoctorEmail] = useState(store.doctorProfile.email)
@@ -172,6 +299,10 @@ export function SettingsPages() {
           <TabsTrigger value="servicios" className="text-xs h-7 px-3">
             <Briefcase className="h-3.5 w-3.5 mr-1" />
             Servicios
+          </TabsTrigger>
+          <TabsTrigger value="equipo" className="text-xs h-7 px-3">
+            <Users className="h-3.5 w-3.5 mr-1" />
+            Equipo Medico
           </TabsTrigger>
           <TabsTrigger value="horarios" className="text-xs h-7 px-3">
             <Clock className="h-3.5 w-3.5 mr-1" />
@@ -383,6 +514,229 @@ export function SettingsPages() {
                     Guardar servicios
                   </Button>
                 </motion.div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </TabsContent>
+
+        {/* Equipo Medico */}
+        <TabsContent value="equipo">
+          <motion.div variants={tabVariants} initial="hidden" animate="visible">
+            <Card className="border-[#E1F5EE] bg-white">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Stethoscope className="h-5 w-5 text-[#534AB7]" />
+                    <CardTitle className="text-sm font-medium tracking-[-0.03em]">
+                      Equipo medico
+                    </CardTitle>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge className="bg-[#EEEDFE] text-[#534AB7] border-0 text-[10px]">
+                      {store.doctors.filter(d => d.isActive).length} doctor(es)
+                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs border-[#1D9E75] text-[#1D9E75]"
+                      onClick={() => { cancelDoctorForm(); setShowDoctorForm(true) }}
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Agregar doctor
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Doctor form */}
+                <AnimatePresence>
+                  {showDoctorForm && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="p-4 rounded-xl bg-[#F8F7F3] border border-[#E1F5EE] space-y-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-medium text-[#2C2C2A]">
+                            {editingDoctor ? 'Editar doctor' : 'Nuevo doctor'}
+                          </p>
+                          <button onClick={cancelDoctorForm} className="p-1 text-[#888780] hover:text-[#2C2C2A]">
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        {doctorError && (
+                          <div className="p-2 rounded-lg bg-[#FEE2E2] text-xs text-[#E53E3E] flex items-center gap-2">
+                            <AlertTriangle className="h-3 w-3 shrink-0" />
+                            {doctorError}
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-[#888780]">Nombre completo *</Label>
+                            <Input className="h-8 text-xs bg-white border-[#E1F5EE] focus:border-[#534AB7]" value={doctorForm.name} onChange={e => setDoctorForm(p => ({ ...p, name: e.target.value }))} placeholder="Dr. Juan Perez" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-[#888780]">Especialidad</Label>
+                            <Input className="h-8 text-xs bg-white border-[#E1F5EE] focus:border-[#534AB7]" value={doctorForm.specialty} onChange={e => setDoctorForm(p => ({ ...p, specialty: e.target.value }))} placeholder="Dermatologia" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-[#888780]">Cedula profesional</Label>
+                            <Input className="h-8 text-xs bg-white border-[#E1F5EE] font-mono focus:border-[#534AB7]" value={doctorForm.license} onChange={e => setDoctorForm(p => ({ ...p, license: e.target.value }))} placeholder="12345678" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-[#888780]">Correo</Label>
+                            <Input className="h-8 text-xs bg-white border-[#E1F5EE] focus:border-[#534AB7]" value={doctorForm.email} onChange={e => setDoctorForm(p => ({ ...p, email: e.target.value }))} placeholder="doctor@clinica.mx" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-[#888780]">Telefono</Label>
+                            <Input className="h-8 text-xs bg-white border-[#E1F5EE] focus:border-[#534AB7]" value={doctorForm.phone} onChange={e => setDoctorForm(p => ({ ...p, phone: e.target.value }))} placeholder="+52 55 1234 5678" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-[#888780]">Color en agenda</Label>
+                            <div className="flex gap-1.5 flex-wrap">
+                              {DOCTOR_COLORS.map(c => (
+                                <button
+                                  key={c}
+                                  onClick={() => setDoctorForm(p => ({ ...p, color: c }))}
+                                  className={`h-6 w-6 rounded-full transition-all ${doctorForm.color === c ? 'ring-2 ring-offset-2 ring-[#2C2C2A] scale-110' : 'hover:scale-110'}`}
+                                  style={{ backgroundColor: c }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <Separator className="bg-[#E1F5EE]" />
+
+                        <div>
+                          <Label className="text-xs text-[#888780] mb-2 block">Dias de consulta</Label>
+                          <div className="flex gap-1.5">
+                            {Object.entries(DAY_LABELS).map(([key, label]) => (
+                              <button
+                                key={key}
+                                onClick={() => toggleWorkDay(key)}
+                                className={`h-8 w-12 rounded-lg text-[10px] font-medium transition-all ${
+                                  doctorForm.workDays.split(',').includes(key)
+                                    ? 'text-white'
+                                    : 'bg-white text-[#888780] hover:bg-[#EEEDFE]'
+                                }`}
+                                style={doctorForm.workDays.split(',').includes(key) ? { backgroundColor: doctorForm.color } : undefined}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-[#888780]">Inicio</Label>
+                            <Input type="time" className="h-8 text-xs bg-white border-[#E1F5EE]" value={doctorForm.workStart} onChange={e => setDoctorForm(p => ({ ...p, workStart: e.target.value }))} />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-[#888780]">Fin</Label>
+                            <Input type="time" className="h-8 text-xs bg-white border-[#E1F5EE]" value={doctorForm.workEnd} onChange={e => setDoctorForm(p => ({ ...p, workEnd: e.target.value }))} />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-[#888780]">Duracion cita</Label>
+                            <Select value={String(doctorForm.slotMinutes)} onValueChange={v => setDoctorForm(p => ({ ...p, slotMinutes: parseInt(v) }))}>
+                              <SelectTrigger className="h-8 text-xs bg-white border-[#E1F5EE]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="15">15 min</SelectItem>
+                                <SelectItem value="30">30 min</SelectItem>
+                                <SelectItem value="45">45 min</SelectItem>
+                                <SelectItem value="60">60 min</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <motion.div whileTap={{ scale: 0.97 }} className="flex-1">
+                            <Button
+                              className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white h-9 text-sm w-full"
+                              onClick={handleSaveDoctor}
+                              disabled={isSavingDoctor}
+                            >
+                              {isSavingDoctor ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+                              {editingDoctor ? 'Guardar cambios' : 'Agregar doctor'}
+                            </Button>
+                          </motion.div>
+                          <Button variant="outline" className="h-9 text-sm" onClick={cancelDoctorForm}>Cancelar</Button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Doctor list */}
+                <div className="space-y-2">
+                  {store.doctors.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Stethoscope className="h-8 w-8 text-[#888780]/40 mx-auto mb-2" />
+                      <p className="text-sm text-[#888780]">No hay doctores registrados</p>
+                      <p className="text-xs text-[#888780]/70 mt-1">Agrega tu primer doctor para empezar a usar la agenda</p>
+                    </div>
+                  ) : (
+                    store.doctors.map((doc, i) => (
+                      <motion.div
+                        key={doc.id}
+                        className={`flex items-center gap-3 p-3 rounded-lg transition-all ${
+                          doc.isActive ? 'bg-[#F8F7F3] hover:bg-[#F1EFE8]' : 'bg-[#F1EFE8]/50 opacity-60'
+                        }`}
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.05 }}
+                      >
+                        <div
+                          className="h-10 w-10 rounded-full flex items-center justify-center shrink-0"
+                          style={{ backgroundColor: doc.color + '20' }}
+                        >
+                          <span className="text-sm font-medium" style={{ color: doc.color }}>
+                            {doc.name.split(' ').filter(w => w.length > 2).map(w => w[0]).join('').slice(0, 2)}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-[#2C2C2A] truncate">{doc.name}</p>
+                            {!doc.isActive && (
+                              <Badge className="bg-[#F1EFE8] text-[#888780] border-0 text-[9px]">Inactivo</Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5">
+                            {doc.specialty && <span className="text-xs text-[#888780]">{doc.specialty}</span>}
+                            <span className="text-[10px] text-[#888780]">
+                              {doc.workStart} - {doc.workEnd}
+                            </span>
+                            <span className="text-[10px] text-[#888780]">
+                              {doc.workDays.split(',').map(d => DAY_LABELS[d] || d).join(', ')}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => startEditDoctor(doc)}
+                            className="p-1.5 text-[#888780] hover:text-[#534AB7] transition-colors"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteDoctor(doc.id)}
+                            className="p-1.5 text-[#888780] hover:text-[#E53E3E] transition-colors"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </motion.div>
+                    ))
+                  )}
+                </div>
               </CardContent>
             </Card>
           </motion.div>
