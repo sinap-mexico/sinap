@@ -246,7 +246,7 @@ export function DeskInbox() {
   const quickReplies = getQuickReplies(selectedConversation?.intent)
 
   return (
-    <div className="flex gap-4 h-full">
+    <div className="flex gap-4" style={{ height: 'calc(100vh - 7rem)' }}>
       {/* Left panel - Conversation list */}
       <motion.div
         className="h-full"

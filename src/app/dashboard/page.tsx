@@ -19,10 +19,7 @@ import { Loader2 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
-// Modules that fill the full viewport height (they manage their own scroll internally)
-const FULL_HEIGHT_MODULES = ['desk', 'bill']
-
-function ModuleContent({ module, fullHeight }: { module: string; fullHeight: boolean }) {
+function ModuleContent({ module }: { module: string }) {
   return (
     <AnimatePresence mode="wait">
       <motion.div
@@ -31,7 +28,6 @@ function ModuleContent({ module, fullHeight }: { module: string; fullHeight: boo
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -8 }}
         transition={{ duration: 0.2, ease: 'easeOut' }}
-        className={fullHeight ? 'h-full' : undefined}
       >
         {module === 'os' && <OsOverview />}
         {module === 'agenda' && <AgendaCalendar />}
@@ -53,8 +49,6 @@ export default function SinapDashboard() {
   const router = useRouter()
   const [isMobile, setIsMobile] = useState(false)
   const [mounted, setMounted] = useState(false)
-
-  const needsFullHeight = FULL_HEIGHT_MODULES.includes(activeModule)
 
   useEffect(() => {
     setMounted(true)
@@ -116,11 +110,10 @@ export default function SinapDashboard() {
         {/* Header */}
         <SinapHeader />
 
-        {/* Content area — overflow-hidden for full-height modules (Desk, Bill) so h-full chain works,
-            overflow-y-auto for scrolling modules (OS, Grow, etc.) */}
-        <div className={`flex-1 ${needsFullHeight ? 'overflow-hidden' : 'overflow-y-auto sinap-scroll'}`}>
-          <main className={`p-4 lg:p-6 ${needsFullHeight ? 'h-full' : ''}`}>
-            <ModuleContent module={activeModule} fullHeight={needsFullHeight} />
+        {/* Content area — native scroll for all modules; Desk & Bill use calc(100vh) internally */}
+        <div className="flex-1 overflow-y-auto sinap-scroll">
+          <main className="p-4 lg:p-6">
+            <ModuleContent module={activeModule} />
           </main>
         </div>
       </div>
