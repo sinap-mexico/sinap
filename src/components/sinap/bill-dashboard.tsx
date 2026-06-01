@@ -223,8 +223,7 @@ export function BillDashboard() {
 
   return (
     <motion.div
-      className="flex flex-col gap-6"
-      style={{ height: 'calc(100vh - 10rem)' }}
+      className="flex flex-col gap-6 h-full"
       variants={containerVariants}
       initial="hidden"
       animate="visible"
