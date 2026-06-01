@@ -108,3 +108,132 @@ Existing User Login:
 Demo Mode:
   Demo → set cookie → navigateToDemo() → /dashboard → middleware allows via cookie → onboardingComplete=true → dashboard
 ```
+
+---
+
+# Task 3: Comprehensive Seed Script for Demo Data
+
+## Summary
+Created a comprehensive, idempotent seed script that populates the database with realistic demo data for the Sinap platform. The seed went from creating only 4 entity types (clinic, doctor, user, 6 services) to creating 12 entity types with 97 records total, making the platform look alive and impressive.
+
+## Changes Made
+
+### 1. Rewrote `prisma/seed.ts` (full rewrite on top of existing)
+
+**Date Helpers** — Added three helper functions:
+- `today(hour, minute)` → today at specific time
+- `daysAgo(n, hour, minute)` → n days ago at specific time
+- `tomorrow(hour, minute)` → tomorrow at specific time
+
+**Section 1: Clinic** — Kept existing upsert for Clínica San Ángel (no changes)
+
+**Section 2: Doctors** — Added second doctor:
+- Dra. Carmen Vega, Dermatología estética, color #534AB7
+- Schedule: Tue-Sat (2,3,4,5,6), 10:00-19:00, 45min slots
+- Fixed ID: `demo-doctor-2`
+
+**Section 3: Demo User** — Kept existing upsert (demo@sinap.health / demo1234)
+
+**Section 4: Services** — Kept existing 6 services with fixed IDs (`svc-consulta-general`, etc.)
+
+**Section 5: ServiceDoctor Pivots** (NEW) — Links all 6 services to both doctors (12 records)
+- Uses `@@unique([serviceId, doctorId])` compound key for upsert
+
+**Section 6: Patients** (NEW) — 8 patients with realistic Mexican data:
+1. María García López — VIP, referral, 12 visits, $28,500 spent, melanoma follow-up
+2. Carlos Mendoza Rivera — Active, WhatsApp, 6 visits, $9,800, acne treatment
+3. Ana Sofía Hernández — Inactive, Instagram, 2 visits, $3,000, cosmetic consultation
+4. Roberto Jiménez Salazar — VIP, referral, 18 visits, $52,000, multiple skin neoplasms
+5. Laura Patricia Morales — Churned, Facebook, 3 visits, $4,500, complaint about wait time
+6. Fernando Díaz Vega — New, walk-in, 1 visit, $1,200, first consultation
+7. Isabel Reyes Castillo — Active, WhatsApp, 5 visits, $7,300, atopic dermatitis
+8. Miguel Ángel Torres — Churned, Instagram, 2 visits, $3,800, cosmetic + cryotherapy
+
+Each patient has: fullName, firstName, lastName, phone (MX +52 55), email, birthDate, gender, segment, source, totalVisits, totalSpent, ltv, lastVisitDate, firstContactDate, allergies (some), notes (clinical), rfc, address, sentiment, preferredChannel, preferredTime
+
+**Section 7: Appointments** (NEW) — 12 appointments across today and past week:
+- 2 confirmed (today), 1 scheduled (today), 4 completed, 2 cancelled, 1 no-show, 1 confirmed (tomorrow), 1 completed (6 days ago)
+- Cancelled appointments have `cancelReason`
+- Spread across both doctors and various services
+- Channels: whatsapp, instagram, facebook, walk_in
+
+**Section 8: Invoices** (NEW) — 9 invoices with CFDI 4.0 fields:
+- 4 timbrada (with UUID, serie, folio, fechaTimbrado, paidAt)
+- 2 pending (unpaid)
+- 1 cancelled
+- 1 error (with errorMessage about invalid RFC)
+- Amounts: $696 - $6,032 MXN
+- CFDI fields: formaPago, metodoPago, usoCFDI, tipoComprobante, concepto
+
+**Section 9: Conversations & Messages** (NEW) — 6 conversations with 20 total messages:
+1. María García (WhatsApp) — scheduling follow-up, 4 messages, AI responses
+2. Ana Sofía (Instagram) — inquiry about pricing, 3 messages, AI response
+3. Laura Patricia (Messenger) — complaint, 4 messages, routed to human
+4. Fernando Díaz (WhatsApp) — reschedule request, 3 messages, AI response
+5. Carlos Mendoza (WhatsApp) — scheduling, 4 messages, AI responses
+6. Miguel Ángel Torres (Instagram) — promo inquiry, 2 messages, marketing agent AI response
+
+All conversations marked `isMock: true`. AI responses have `aiGenerated: true` and `confidence` scores.
+
+**Section 10: Feature Flags** (NEW) — 12 flags with "assist" default mode:
+- desk-auto-reply=assist, desk-appointment=assist
+- flow-soap=assist, flow-preconsulta=on
+- bill-auto-cfdi=assist, bill-reminders=off
+- grow-reactivation=assist, grow-segments=on
+- sight-alerts=on, sight-reports=assist
+- hub-scheduling=off, hub-inventory=off
+
+Uses `@@unique([clinicId, module, feature])` compound key for upsert.
+
+**Section 11: SOAP Notes** (NEW) — 2 notes:
+1. Approved note (demo-soap-1): María García, melanoma in situ treatment, doctor signed
+2. Draft note (demo-soap-2): Carlos Mendoza, acne treatment, AI-generated awaiting approval
+
+Both have realistic dermatology content: subjective, objective, assessment, plan, vitals (JSON), diagnosis, prescriptions (JSON).
+
+**Section 12: Event Bus** (NEW) — 5 recent events:
+1. cita_agendada — desk→grow, processed
+2. factura_generada — bill→desk, processed
+3. soap_borrador_listo — flow→desk, pending
+4. cita_completada — desk→bill, processed
+5. paciente_nuevo — desk→grow, processed
+
+### 2. Added `prisma.seed` config to `package.json`
+```json
+"prisma": {
+  "seed": "npx tsx prisma/seed.ts"
+}
+```
+
+## Implementation Details
+
+- **Idempotent**: All records use `upsert` with fixed IDs (`demo-*` prefix) so the seed can be run multiple times safely
+- **Dynamic dates**: Uses `today()`, `daysAgo(n)`, `tomorrow()` for date-relative data
+- **Progress logging**: Each section logs progress with emoji markers and summary counts
+- **No conflicts**: `update: {}` on upserts means existing data is preserved on re-runs
+
+## Verification
+
+- ✅ Seed runs successfully: `npx tsx prisma/seed.ts`
+- ✅ Idempotent: second run completes without errors
+- ✅ Lint: 0 errors (4 pre-existing warnings in settings-pages.tsx)
+- ✅ Dev server: running without errors
+
+## Data Summary
+
+| Entity | Count |
+|--------|-------|
+| Clinics | 1 |
+| Doctors | 2 |
+| Users | 1 |
+| Services | 6 |
+| ServiceDoctor | 12 |
+| Patients | 8 |
+| Appointments | 12 |
+| Invoices | 9 |
+| Conversations | 6 |
+| Messages | 20 |
+| Feature Flags | 12 |
+| SOAP Notes | 2 |
+| Event Bus | 5 |
+| **Total Records** | **97** |
