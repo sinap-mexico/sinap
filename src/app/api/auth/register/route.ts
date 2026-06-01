@@ -59,6 +59,7 @@ export async function POST(req: Request) {
       id: user.id,
       email: user.email,
       name: user.name,
+      clinicId,
     }, { status: 201 })
   } catch (error) {
     console.error("Register error:", error)

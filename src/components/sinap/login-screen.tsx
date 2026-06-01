@@ -189,7 +189,7 @@ const staggerItem = {
 
 export function LoginScreen() {
   const router = useRouter()
-  const { setOnboardingComplete, setIsDemoMode } = useSinapStore()
+  const { setOnboardingComplete, setIsDemoMode, setClinicId } = useSinapStore()
   const [isRegister, setIsRegister] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -211,12 +211,17 @@ export function LoginScreen() {
     setTimeout(() => setShakeError(false), 500)
   }, [])
 
-  // Use window.location.href instead of router.push to avoid "Failed to fetch" errors
-  // when NextAuth can't establish a session (no database available on Vercel)
+  // Navigate to dashboard for existing user (login) — onboarding already done
   const navigateToDashboard = useCallback(() => {
     setOnboardingComplete(true)
     window.location.href = '/dashboard'
   }, [setOnboardingComplete])
+
+  // Navigate to dashboard for new user (register) — onboarding needed
+  const navigateToOnboarding = useCallback(() => {
+    // Do NOT set onboardingComplete — the dashboard will show the onboarding flow
+    window.location.href = '/dashboard'
+  }, [])
 
   const navigateToDemo = useCallback(() => {
     setOnboardingComplete(true)
@@ -299,7 +304,11 @@ export function LoginScreen() {
       // Auto sign in after registration
       const result = await signIn('credentials', { email, password, redirect: false })
       if (result?.ok) {
-        navigateToDashboard()
+        // Store clinicId from register response so onboarding can use it
+        if (data.clinicId) {
+          setClinicId(data.clinicId)
+        }
+        navigateToOnboarding()
       } else {
         setError('Cuenta creada. Intenta iniciar sesión manualmente.')
       }
@@ -313,6 +322,8 @@ export function LoginScreen() {
 
   const handleDemoLogin = async () => {
     setIsLoading(true)
+    // Set demo mode cookie so middleware allows dashboard access
+    document.cookie = 'sinap-demo=true; path=/; max-age=86400; SameSite=Lax'
     // Bypass NextAuth entirely for demo mode — avoids redirect loops
     // NextAuth requires a database connection which may not be available
     navigateToDemo()

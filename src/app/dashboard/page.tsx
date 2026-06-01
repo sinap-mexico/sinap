@@ -16,7 +16,7 @@ import { HubOperations } from '@/components/sinap/hub-operations'
 import { SettingsPages } from '@/components/sinap/settings-pages'
 import { OnboardingFlow } from '@/components/sinap/onboarding-flow'
 import { Loader2 } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 // Modules that need full viewport height (no scroll on parent)
@@ -49,18 +49,50 @@ function ModuleContent({ module }: { module: string }) {
 
 export default function SinapDashboard() {
   const { data: session, status } = useSession()
-  const { activeModule, onboardingComplete, isDemoMode } = useSinapStore()
+  const { activeModule, onboardingComplete, isDemoMode, setClinicId, setOnboardingComplete } = useSinapStore()
   const router = useRouter()
   const [isMobile, setIsMobile] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const sessionHydratedRef = useRef(false)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- standard SSR hydration pattern
     setMounted(true)
     const check = () => setIsMobile(window.innerWidth < 1024)
     check()
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
   }, [])
+
+  // Hydrate Zustand from session data when session is available
+  useEffect(() => {
+    if (status !== 'authenticated' || !session?.user || sessionHydratedRef.current) return
+
+    sessionHydratedRef.current = true
+    const sessionUser = session.user as any
+
+    // Set clinicId from session if not already set in store
+    if (sessionUser.clinicId) {
+      setClinicId(sessionUser.clinicId)
+    }
+
+    // If onboarding is not complete in Zustand but user has a session with clinicId,
+    // check if the clinic already has doctors (meaning onboarding was done before)
+    if (!onboardingComplete && sessionUser.clinicId) {
+      // Check if clinic has doctors via API
+      fetch(`/api/doctors?clinicId=${sessionUser.clinicId}`)
+        .then(res => res.ok ? res.json() : { doctors: [] })
+        .then(data => {
+          if (data.doctors && data.doctors.length > 0) {
+            // Clinic has doctors — onboarding was completed before
+            setOnboardingComplete(true)
+          }
+        })
+        .catch(() => {
+          // If API fails, don't block the user
+        })
+    }
+  }, [status, session, onboardingComplete, setClinicId, setOnboardingComplete])
 
   // Redirect to login ONLY via useEffect to avoid render-time redirects that cause loops
   // User is authenticated if: they have a NextAuth session OR they are in demo mode

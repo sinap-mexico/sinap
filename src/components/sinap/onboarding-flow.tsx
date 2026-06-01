@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useSession } from 'next-auth/react'
 import { useSinapStore } from '@/lib/sinap-store'
 import { defaultServicesBySpecialty } from '@/lib/mock-data'
 import { Button } from '@/components/ui/button'
@@ -33,6 +34,8 @@ import {
   Globe,
   MessageSquare,
   Smartphone,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -69,6 +72,7 @@ const stepVariants = {
 
 export function OnboardingFlow() {
   const store = useSinapStore()
+  const { data: session } = useSession()
   const [step, setStep] = useState(0)
   const [direction, setDirection] = useState(1)
   const [accountType, setAccountType] = useState<'solo' | 'clinic' | ''>('')
@@ -85,6 +89,8 @@ export function OnboardingFlow() {
   const [services, setServices] = useState<{ name: string; duration: number; price: number; category: string }[]>([])
   const [aiMode, setAiMode] = useState<'full' | 'assist' | 'manual' | ''>('')
   const [metaStep, setMetaStep] = useState(0)
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   const progress = ((step + 1) / TOTAL_STEPS) * 100
 
@@ -102,7 +108,7 @@ export function OnboardingFlow() {
     }
   }
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (step === 0 && accountType) {
       store.setClinicMode(accountType)
     }
@@ -148,7 +154,76 @@ export function OnboardingFlow() {
       })))
     }
     if (step === 7) {
-      store.setOnboardingComplete(true)
+      setSaveError('')
+      setIsSaving(true)
+      try {
+        // Get userId from session or store
+        const userId = (session?.user as any)?.id || ''
+        const existingClinicId = store.clinicId || (session?.user as any)?.clinicId || ''
+
+        // If demo mode or no userId, just complete onboarding locally
+        if (store.isDemoMode || !userId) {
+          store.setOnboardingComplete(true)
+          setIsSaving(false)
+          return
+        }
+
+        const response = await fetch('/api/onboarding', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            clinicId: existingClinicId || undefined,
+            accountType,
+            personalData: {
+              name: personalData.name,
+              specialty: personalData.specialty,
+              license: personalData.license,
+              email: personalData.email,
+              phone: personalData.phone,
+            },
+            clinicData: {
+              name: clinicData.name,
+              rfc: clinicData.rfc,
+              address: clinicData.address,
+              city: clinicData.city,
+              state: clinicData.state,
+            },
+            schedule: {
+              workDays: workDays.join(','),
+              workStart,
+              workEnd,
+              slotMinutes,
+            },
+            services: services.map((s) => ({
+              name: s.name,
+              duration: s.duration,
+              price: s.price,
+              category: s.category,
+            })),
+            aiMode,
+          }),
+        })
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          setSaveError(data.error || 'Error al guardar la configuracion')
+          setIsSaving(false)
+          return
+        }
+
+        // Update Zustand with server-generated IDs
+        if (data.clinicId) store.setClinicId(data.clinicId)
+        if (data.clinicSlug) store.setClinicSlug(data.clinicSlug)
+
+        store.setOnboardingComplete(true)
+      } catch (err) {
+        console.error('Onboarding save error:', err)
+        setSaveError('Error de conexion. Intenta de nuevo.')
+      } finally {
+        setIsSaving(false)
+      }
       return
     }
     setDirection(1)
@@ -608,6 +683,16 @@ export function OnboardingFlow() {
                 <p className="text-sm text-[#888780] mb-6 max-w-sm mx-auto">
                   Tu plataforma Sinap esta configurada y lista para usar. Puedes ajustar cualquier configuracion despues.
                 </p>
+                {saveError && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200/80 text-red-700 text-sm flex items-center gap-2 max-w-sm mx-auto"
+                  >
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    {saveError}
+                  </motion.div>
+                )}
                 <div className="flex items-center justify-center gap-6 text-xs text-[#888780]">
                   <div className="flex items-center gap-1">
                     <Zap className="h-3.5 w-3.5 text-[#534AB7]" />
@@ -641,10 +726,16 @@ export function OnboardingFlow() {
               <Button
                 className="bg-[#1D9E75] hover:bg-[#1D9E75]/90 text-white text-sm font-medium h-10"
                 onClick={handleNext}
-                disabled={!canNext()}
+                disabled={!canNext() || isSaving}
               >
-                {step === 7 ? 'Ir al dashboard' : 'Siguiente'}
-                <ArrowRight className="h-4 w-4 ml-1" />
+                {isSaving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    {step === 7 ? 'Ir al dashboard' : 'Siguiente'}
+                    <ArrowRight className="h-4 w-4 ml-1" />
+                  </>
+                )}
               </Button>
             </motion.div>
           </div>
