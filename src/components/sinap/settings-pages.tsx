@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useSinapStore, type FeatureFlagState, type SinapModule, type DoctorItem } from '@/lib/sinap-store'
+import { useSinapStore, type FeatureFlagState, type SinapModule, type DoctorItem, type ServiceItem } from '@/lib/sinap-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -119,6 +119,39 @@ export function SettingsPages() {
 
   const clinicId = store.clinicId
 
+  // Resolve clinicId on mount if needed (same pattern as other modules)
+  useEffect(() => {
+    if (clinicId) return
+    const resolveClinic = async () => {
+      try {
+        const res = await fetch('/api/clinic')
+        if (res.ok) {
+          const data = await res.json()
+          if (data.clinic?.id) {
+            store.setClinicId(data.clinic.id)
+            // Also hydrate clinic profile from DB
+            if (data.clinic) {
+              store.setClinicProfile({
+                name: data.clinic.name || store.clinicProfile.name,
+                rfc: data.clinic.rfc || store.clinicProfile.rfc,
+                address: data.clinic.address || store.clinicProfile.address,
+                city: data.clinic.city || store.clinicProfile.city,
+                state: data.clinic.state || store.clinicProfile.state,
+                phone: data.clinic.phone || store.clinicProfile.phone,
+                email: data.clinic.email || store.clinicProfile.email,
+              })
+              store.setClinicName(data.clinic.name || store.clinicName)
+            }
+          }
+        }
+      } catch {
+        // Keep defaults
+      }
+    }
+    resolveClinic()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const fetchDoctors = useCallback(async () => {
     if (!clinicId) return
     store.setIsLoadingDoctors(true)
@@ -221,11 +254,97 @@ export function SettingsPages() {
     fetchDoctors()
   }, [fetchDoctors])
 
+  // Fetch services from DB on mount
+  useEffect(() => {
+    if (!clinicId) return
+    const fetchServices = async () => {
+      try {
+        const res = await fetch(`/api/services?clinicId=${clinicId}&includeInactive=true`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.services && data.services.length > 0) {
+            const dbServices: ServiceItem[] = data.services.map((s: { id: string; name: string; duration: number; price: number; category: string | null; isActive: boolean }) => ({
+              id: s.id,
+              name: s.name,
+              duration: s.duration,
+              price: s.price,
+              category: s.category || 'Otro',
+              isActive: s.isActive,
+            }))
+            setLocalServices(dbServices)
+            store.setServices(dbServices)
+          }
+        }
+      } catch {
+        // Keep local defaults
+      }
+    }
+    fetchServices()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clinicId])
+
+  // Fetch feature flags from DB
+  useEffect(() => {
+    if (!clinicId) return
+    const fetchFlags = async () => {
+      try {
+        const res = await fetch(`/api/feature-flags?clinicId=${clinicId}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.flags && data.flags.length > 0) {
+            // Merge DB flags into store (DB is source of truth)
+            data.flags.forEach((dbFlag: { module: string; feature: string; state: string }) => {
+              const storeFlag = store.featureFlags.find(
+                f => f.module === dbFlag.module && f.id.endsWith(dbFlag.feature)
+              )
+              if (storeFlag && storeFlag.state !== dbFlag.state) {
+                store.setFeatureFlag(storeFlag.id, dbFlag.state as FeatureFlagState)
+              }
+            })
+          }
+        }
+      } catch {
+        // Keep defaults
+      }
+    }
+    fetchFlags()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clinicId])
+
   const [doctorName, setDoctorName] = useState(store.doctorProfile.name)
   const [doctorEmail, setDoctorEmail] = useState(store.doctorProfile.email)
   const [doctorPhone, setDoctorPhone] = useState(store.doctorProfile.phone)
   const [doctorSpecialty, setDoctorSpecialty] = useState(store.doctorProfile.specialty)
   const [doctorLicense, setDoctorLicense] = useState(store.doctorProfile.license)
+
+  // Hydrate profile and schedule from first active doctor when doctors load
+  useEffect(() => {
+    const activeDoctor = store.doctors.find(d => d.isActive)
+    if (activeDoctor) {
+      setDoctorName(activeDoctor.name)
+      setDoctorEmail(activeDoctor.email || '')
+      setDoctorPhone(activeDoctor.phone || '')
+      setDoctorSpecialty(activeDoctor.specialty || '')
+      setDoctorLicense(activeDoctor.license || '')
+      setWorkStart(activeDoctor.workStart)
+      setWorkEnd(activeDoctor.workEnd)
+      setSlotMinutes(activeDoctor.slotMinutes)
+      // Also update store profile
+      store.setDoctorProfile({
+        name: activeDoctor.name,
+        email: activeDoctor.email || '',
+        phone: activeDoctor.phone || '',
+        specialty: activeDoctor.specialty || '',
+        license: activeDoctor.license || '',
+      })
+      store.setSchedule({
+        workStart: activeDoctor.workStart,
+        workEnd: activeDoctor.workEnd,
+        slotMinutes: activeDoctor.slotMinutes,
+      })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.doctors.length > 0])
 
   const [clinicName, setClinicName] = useState(store.clinicProfile.name)
   const [clinicRfc, setClinicRfc] = useState(store.clinicProfile.rfc)
@@ -236,10 +355,18 @@ export function SettingsPages() {
   const [clinicEmail, setClinicEmail] = useState(store.clinicProfile.email)
 
   const [localServices, setLocalServices] = useState(store.services)
+  const [isSavingServices, setIsSavingServices] = useState(false)
+  const [servicesError, setServicesError] = useState('')
 
   const [workStart, setWorkStart] = useState(store.schedule.workStart)
   const [workEnd, setWorkEnd] = useState(store.schedule.workEnd)
   const [slotMinutes, setSlotMinutes] = useState(store.schedule.slotMinutes)
+  const [isSavingSchedule, setIsSavingSchedule] = useState(false)
+
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [profileSaved, setProfileSaved] = useState(false)
+  const [isSavingClinic, setIsSavingClinic] = useState(false)
+  const [clinicSaved, setClinicSaved] = useState(false)
 
   const grouped = store.featureFlags.reduce(
     (acc, flag) => {
@@ -250,32 +377,220 @@ export function SettingsPages() {
     {} as Record<string, typeof store.featureFlags>
   )
 
-  const handleSaveProfile = () => {
-    store.setDoctorProfile({ name: doctorName, email: doctorEmail, phone: doctorPhone, specialty: doctorSpecialty, license: doctorLicense })
+  const handleSaveProfile = async () => {
+    setIsSavingProfile(true)
+    setProfileSaved(false)
+    try {
+      // Update the first doctor linked to this clinic (or create if none)
+      // For solo mode, update the clinic's owner doctor profile
+      const doctors = store.doctors.filter(d => d.isActive)
+      if (doctors.length > 0 && clinicId) {
+        const doc = doctors[0]
+        await fetch(`/api/doctors/${doc.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: doctorName,
+            email: doctorEmail,
+            phone: doctorPhone,
+            specialty: doctorSpecialty,
+            license: doctorLicense,
+          }),
+        })
+        // Refresh doctors from DB
+        fetchDoctors()
+      }
+      // Also update Zustand for immediate UI feedback
+      store.setDoctorProfile({ name: doctorName, email: doctorEmail, phone: doctorPhone, specialty: doctorSpecialty, license: doctorLicense })
+      setProfileSaved(true)
+      setTimeout(() => setProfileSaved(false), 2000)
+    } catch {
+      // Fallback to local save
+      store.setDoctorProfile({ name: doctorName, email: doctorEmail, phone: doctorPhone, specialty: doctorSpecialty, license: doctorLicense })
+    } finally {
+      setIsSavingProfile(false)
+    }
   }
 
-  const handleSaveClinic = () => {
-    store.setClinicProfile({ name: clinicName, rfc: clinicRfc, address: clinicAddress, city: clinicCity, state: clinicState, phone: clinicPhone, email: clinicEmail })
-    store.setClinicName(clinicName)
+  const handleSaveClinic = async () => {
+    setIsSavingClinic(true)
+    setClinicSaved(false)
+    try {
+      if (clinicId) {
+        const res = await fetch('/api/clinic', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clinicId,
+            name: clinicName,
+            rfc: clinicRfc,
+            address: clinicAddress,
+            city: clinicCity,
+            state: clinicState,
+            phone: clinicPhone,
+            email: clinicEmail,
+          }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          // Also update store with returned data
+          if (data.clinic) {
+            store.setClinicProfile({
+              name: data.clinic.name || clinicName,
+              rfc: data.clinic.rfc || clinicRfc,
+              address: data.clinic.address || clinicAddress,
+              city: data.clinic.city || clinicCity,
+              state: data.clinic.state || clinicState,
+              phone: data.clinic.phone || clinicPhone,
+              email: data.clinic.email || clinicEmail,
+            })
+            store.setClinicName(data.clinic.name || clinicName)
+          }
+        }
+      }
+      // Fallback: also save to Zustand
+      store.setClinicProfile({ name: clinicName, rfc: clinicRfc, address: clinicAddress, city: clinicCity, state: clinicState, phone: clinicPhone, email: clinicEmail })
+      store.setClinicName(clinicName)
+      setClinicSaved(true)
+      setTimeout(() => setClinicSaved(false), 2000)
+    } catch {
+      // Fallback to local save
+      store.setClinicProfile({ name: clinicName, rfc: clinicRfc, address: clinicAddress, city: clinicCity, state: clinicState, phone: clinicPhone, email: clinicEmail })
+      store.setClinicName(clinicName)
+    } finally {
+      setIsSavingClinic(false)
+    }
   }
 
-  const handleSaveSchedule = () => {
-    store.setSchedule({ workStart, workEnd, slotMinutes })
+  const handleSaveSchedule = async () => {
+    setIsSavingSchedule(true)
+    try {
+      // Save schedule to the first active doctor (solo mode) or all doctors
+      const activeDoctors = store.doctors.filter(d => d.isActive)
+      if (activeDoctors.length > 0) {
+        await Promise.all(
+          activeDoctors.map(doc =>
+            fetch(`/api/doctors/${doc.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ workStart, workEnd, slotMinutes }),
+            })
+          )
+        )
+        fetchDoctors()
+      }
+      store.setSchedule({ workStart, workEnd, slotMinutes })
+    } catch {
+      store.setSchedule({ workStart, workEnd, slotMinutes })
+    } finally {
+      setIsSavingSchedule(false)
+    }
   }
 
-  const toggleServiceActive = (id: string) => {
-    setLocalServices(prev => prev.map(s => s.id === id ? { ...s, isActive: !s.isActive } : s))
+  const toggleServiceActive = async (id: string) => {
+    const svc = localServices.find(s => s.id === id)
+    if (!svc) return
+
+    const newActive = !svc.isActive
+    // Optimistic update
+    setLocalServices(prev => prev.map(s => s.id === id ? { ...s, isActive: newActive } : s))
+
+    // If it's a real DB service (not a temp one starting with 'svc')
+    if (!id.startsWith('svc')) {
+      try {
+        await fetch(`/api/services/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isActive: newActive }),
+        })
+      } catch {
+        // Revert on error
+        setLocalServices(prev => prev.map(s => s.id === id ? { ...s, isActive: !newActive } : s))
+      }
+    }
   }
 
-  const handleSaveServices = () => {
-    store.setServices(localServices)
+  const handleSaveServices = async () => {
+    setIsSavingServices(true)
+    setServicesError('')
+    try {
+      if (!clinicId) {
+        store.setServices(localServices)
+        return
+      }
+
+      // Separate new (temp IDs starting with 'svc') vs existing services
+      const newServices = localServices.filter(s => s.id.startsWith('svc') && s.name.trim())
+      const existingServices = localServices.filter(s => !s.id.startsWith('svc'))
+
+      // Create new services
+      const createPromises = newServices.map(s =>
+        fetch('/api/services', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clinicId,
+            name: s.name,
+            duration: s.duration,
+            price: s.price,
+            category: s.category,
+          }),
+        })
+      )
+
+      // Update existing services
+      const updatePromises = existingServices.map(s =>
+        fetch(`/api/services/${s.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: s.name,
+            duration: s.duration,
+            price: s.price,
+            category: s.category,
+            isActive: s.isActive,
+          }),
+        })
+      )
+
+      await Promise.all([...createPromises, ...updatePromises])
+
+      // Re-fetch from DB to get real IDs
+      const res = await fetch(`/api/services?clinicId=${clinicId}&includeInactive=true`)
+      if (res.ok) {
+        const data = await res.json()
+        const dbServices: ServiceItem[] = data.services.map((s: { id: string; name: string; duration: number; price: number; category: string | null; isActive: boolean }) => ({
+          id: s.id,
+          name: s.name,
+          duration: s.duration,
+          price: s.price,
+          category: s.category || 'Otro',
+          isActive: s.isActive,
+        }))
+        setLocalServices(dbServices)
+        store.setServices(dbServices)
+      }
+    } catch {
+      setServicesError('Error al guardar servicios')
+      store.setServices(localServices)
+    } finally {
+      setIsSavingServices(false)
+    }
   }
 
   const addNewService = () => {
     setLocalServices(prev => [...prev, { id: `svc${Date.now()}`, name: '', duration: 30, price: 0, category: 'Consulta', isActive: true }])
   }
 
-  const removeService = (id: string) => {
+  const removeService = async (id: string) => {
+    // If it's a real DB service, soft-delete via API
+    if (!id.startsWith('svc')) {
+      try {
+        await fetch(`/api/services/${id}`, { method: 'DELETE' })
+      } catch {
+        // continue removing from local state anyway
+      }
+    }
     setLocalServices(prev => prev.filter(s => s.id !== id))
   }
 
@@ -373,9 +688,9 @@ export function SettingsPages() {
                   </div>
                 </div>
                 <motion.div whileTap={{ scale: 0.97 }}>
-                  <Button className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white h-9 text-sm" onClick={handleSaveProfile}>
-                    <Save className="h-4 w-4 mr-1" />
-                    Guardar cambios
+                  <Button className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white h-9 text-sm" onClick={handleSaveProfile} disabled={isSavingProfile}>
+                    {isSavingProfile ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : profileSaved ? <CheckCircle className="h-4 w-4 mr-1" /> : <Save className="h-4 w-4 mr-1" />}
+                    {isSavingProfile ? 'Guardando...' : profileSaved ? 'Guardado' : 'Guardar cambios'}
                   </Button>
                 </motion.div>
               </CardContent>
@@ -441,9 +756,9 @@ export function SettingsPages() {
                   </div>
                 </div>
                 <motion.div whileTap={{ scale: 0.97 }}>
-                  <Button className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white h-9 text-sm" onClick={handleSaveClinic}>
-                    <Save className="h-4 w-4 mr-1" />
-                    Guardar cambios
+                  <Button className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white h-9 text-sm" onClick={handleSaveClinic} disabled={isSavingClinic}>
+                    {isSavingClinic ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : clinicSaved ? <CheckCircle className="h-4 w-4 mr-1" /> : <Save className="h-4 w-4 mr-1" />}
+                    {isSavingClinic ? 'Guardando...' : clinicSaved ? 'Guardado' : 'Guardar cambios'}
                   </Button>
                 </motion.div>
               </CardContent>
@@ -470,6 +785,12 @@ export function SettingsPages() {
                 </div>
               </CardHeader>
               <CardContent>
+                {servicesError && (
+                  <div className="mb-3 p-2 rounded-lg bg-[#FEE2E2] text-xs text-[#E53E3E] flex items-center gap-2">
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                    {servicesError}
+                  </div>
+                )}
                 <div className="space-y-3 max-h-[500px] overflow-y-auto sinap-scroll">
                   {localServices.map((svc, i) => (
                     <motion.div
@@ -509,9 +830,9 @@ export function SettingsPages() {
                   ))}
                 </div>
                 <motion.div whileTap={{ scale: 0.97 }}>
-                  <Button className="mt-4 bg-[#534AB7] hover:bg-[#534AB7]/90 text-white h-9 text-sm" onClick={handleSaveServices}>
-                    <Save className="h-4 w-4 mr-1" />
-                    Guardar servicios
+                  <Button className="mt-4 bg-[#534AB7] hover:bg-[#534AB7]/90 text-white h-9 text-sm" onClick={handleSaveServices} disabled={isSavingServices}>
+                    {isSavingServices ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+                    {isSavingServices ? 'Guardando...' : 'Guardar servicios'}
                   </Button>
                 </motion.div>
               </CardContent>
@@ -790,9 +1111,9 @@ export function SettingsPages() {
                   <p className="text-xs text-[#888780]">Las excepciones de horario se configuraran desde la agenda.</p>
                 </div>
                 <motion.div whileTap={{ scale: 0.97 }}>
-                  <Button className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white h-9 text-sm" onClick={handleSaveSchedule}>
-                    <Save className="h-4 w-4 mr-1" />
-                    Guardar horario
+                  <Button className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white h-9 text-sm" onClick={handleSaveSchedule} disabled={isSavingSchedule}>
+                    {isSavingSchedule ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+                    {isSavingSchedule ? 'Guardando...' : 'Guardar horario'}
                   </Button>
                 </motion.div>
               </CardContent>
@@ -854,7 +1175,22 @@ export function SettingsPages() {
                                 <p className="text-sm font-medium text-[#2C2C2A]">{flag.name}</p>
                                 <p className="text-xs text-[#888780] mt-0.5">{flag.description}</p>
                               </div>
-                              <TriToggle state={flag.state} onStateChange={(s) => store.setFeatureFlag(flag.id, s)} />
+                              <TriToggle state={flag.state} onStateChange={(s) => {
+                                store.setFeatureFlag(flag.id, s)
+                                // Persist to DB
+                                if (clinicId) {
+                                  fetch('/api/feature-flags', {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      clinicId,
+                                      module: flag.module,
+                                      feature: flag.id.replace(`${flag.module}-`, ''),
+                                      state: s,
+                                    }),
+                                  }).catch(() => {})
+                                }
+                              }} />
                             </div>
                           ))}
                         </div>

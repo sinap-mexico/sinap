@@ -139,3 +139,31 @@ Stage Summary:
 - ZERO mock-data imports in active components (only onboarding uses defaultServicesBySpecialty)
 - 3 new API endpoints created, 1 enhanced
 - Build compiles successfully
+---
+Task ID: 1-8
+Agent: main
+Task: Conectar Settings a base de datos real (API endpoints + UI wiring)
+
+Work Log:
+- Created PUT /api/clinic endpoint for updating clinic profile (name, rfc, regimenFiscal, email, phone, address, city, state)
+- Created PUT/DELETE /api/services/[id] endpoints for full service CRUD (update fields, soft-delete)
+- Created GET/PUT/POST /api/feature-flags endpoints for persisting AI feature flags to DB (upsert by clinicId+module+feature)
+- Updated GET /api/services to support includeInactive param for settings page
+- Added regimenFiscal to GET /api/clinic response
+- Connected Settings > Perfil: saves doctor profile via PUT /api/doctors/[id]
+- Connected Settings > Clínica: saves clinic profile via PUT /api/clinic
+- Connected Settings > Servicios: fetches from DB, creates/updates/deletes via API
+- Connected Settings > Horarios: saves schedule to all active doctors via PUT /api/doctors/[id]
+- Connected Settings > IA: persists feature flag changes via PUT /api/feature-flags
+- Added clinicId resolution on mount (same pattern as other modules)
+- Added DB hydration for doctor profile and schedule when doctors load from DB
+- Added loading states (Loader2) and success feedback (CheckCircle) to all save buttons
+- Added error display for services tab
+- Exported ServiceItem type from sinap-store
+
+Stage Summary:
+- All Settings tabs now persist to database via API endpoints
+- New API routes: /api/clinic (PUT), /api/services/[id] (PUT, DELETE), /api/feature-flags (GET, PUT, POST)
+- Feature flags use upsert pattern with unique constraint on (clinicId, module, feature)
+- Services use soft-delete (isActive=false) pattern
+- Build passes successfully with all routes registered

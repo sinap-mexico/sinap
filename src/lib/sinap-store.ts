@@ -47,7 +47,7 @@ interface ClinicProfile {
   email: string
 }
 
-interface ServiceItem {
+export interface ServiceItem {
   id: string
   name: string
   duration: number

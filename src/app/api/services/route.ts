@@ -13,10 +13,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'clinicId es requerido' }, { status: 400 })
     }
 
+    const includeInactive = searchParams.get('includeInactive') === 'true'
+
     const services = await db.service.findMany({
       where: {
         clinicId,
-        isActive: true,
+        ...(includeInactive ? {} : { isActive: true }),
       },
       orderBy: { name: 'asc' },
     })
