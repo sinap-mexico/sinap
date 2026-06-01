@@ -578,7 +578,7 @@ export function DeskInbox() {
 
               {/* AI suggestion - prominent card */}
               <motion.div
-                className="bg-gradient-to-br from-[#534AB7] to-[#6C63F0] rounded-xl p-5 min-h-[200px] flex flex-col shadow-lg shadow-[#534AB7]/20"
+                className="bg-gradient-to-br from-[#534AB7] to-[#6C63F0] rounded-xl p-5 min-h-[260px] flex flex-col shadow-lg shadow-[#534AB7]/20"
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
@@ -591,7 +591,7 @@ export function DeskInbox() {
                     Sugerencia IA
                   </p>
                 </div>
-                <p className="text-sm text-white/90 leading-relaxed flex-1">
+                <p className="text-sm text-white/90 leading-relaxed">
                   {selectedConversation?.intent === 'Cotizacion'
                     ? 'El paciente pregunta por precio. Sugiere agendar primera cita con enlace de pago.'
                     : selectedConversation?.intent === 'Reactivacion'
@@ -600,7 +600,21 @@ export function DeskInbox() {
                     ? 'Confirma la cita y envia recordatorio con ubicacion de la clinica.'
                     : 'Responde de forma empatica y ofrece soluciones concretas.'}
                 </p>
-                <motion.div whileTap={{ scale: 0.95 }} className="mt-4">
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {getQuickReplies(selectedConversation?.intent).slice(0, 2).map((reply) => (
+                    <motion.button
+                      key={reply}
+                      className="shrink-0 text-[11px] px-3 py-1.5 rounded-full bg-white/15 text-white hover:bg-white/25 transition-colors whitespace-nowrap border border-white/20"
+                      onClick={() => handleQuickReply(reply)}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      {reply}
+                    </motion.button>
+                  ))}
+                </div>
+                <div className="flex-1" />
+                <motion.div whileTap={{ scale: 0.95 }} className="mt-3">
                   <Button
                     size="sm"
                     className="bg-white text-[#534AB7] hover:bg-white/90 text-xs h-9 w-full rounded-lg font-semibold shadow-sm"
