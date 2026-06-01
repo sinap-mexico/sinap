@@ -251,6 +251,22 @@ export function DeskInbox() {
     setMessageInput('')
     setIsTyping(true)
 
+    // Persist the doctor's inbound message (fire and forget)
+    fetch('/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversationId: selectedConversation.id,
+        clinicId: clinicId || 'demo',
+        direction: 'inbound',
+        content: userMsg.text,
+        senderType: 'doctor',
+        channel: selectedConversation.channel,
+      }),
+    }).catch(() => {
+      // Silently handle persistence errors — UI already updated
+    })
+
     try {
       const response = await fetch('/api/orchestrator', {
         method: 'POST',
@@ -258,7 +274,7 @@ export function DeskInbox() {
         body: JSON.stringify({
           message: userMsg.text,
           clinicId: clinicId || 'demo',
-          patientId: selectedConversation.patientId,
+          conversationId: selectedConversation.id,
           conversationHistory: selectedConversation.messages.map(m => ({
             direction: m.direction,
             text: m.text,
@@ -286,6 +302,24 @@ export function DeskInbox() {
 
       setConvList(prev => prev.map(c => c.id === finalConv.id ? finalConv : c))
       setSelectedConversation(finalConv)
+
+      // Persist the AI response message (fire and forget)
+      fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversationId: selectedConversation.id,
+          clinicId: clinicId || 'demo',
+          direction: 'outbound',
+          content: aiMsg.text,
+          senderType: 'agent',
+          agentName: data.agent || 'Sinap Desk',
+          aiGenerated: true,
+          channel: selectedConversation.channel,
+        }),
+      }).catch(() => {
+        // Silently handle persistence errors — UI already updated
+      })
 
       eventBus.emit(
         'demo',

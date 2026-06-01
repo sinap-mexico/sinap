@@ -509,3 +509,126 @@ SOAP Note Lifecycle (after changes):
    → Merges with local Zustand notes
    → Displays in sidebar list
 ```
+
+---
+
+# Task 6: Persist Desk Messages to Database
+
+## Summary
+Made the Desk module persist messages to the database. Previously, when a doctor sent a message in the Desk inbox, it was only saved in React state (lost on refresh). When the AI responded via `/api/orchestrator`, neither the inbound message nor the AI response was saved to the `Message` table. The conversation's `lastMessageAt` was also never updated. Now all messages are persisted to the database via a new `/api/messages` endpoint with fire-and-forget calls from the Desk component, and the orchestrator updates conversation metadata when `conversationId` is provided.
+
+## Changes Made
+
+### 1. Created `/api/messages` endpoint
+
+**File**: `src/app/api/messages/route.ts` (NEW)
+
+**POST** — Create a message and update conversation:
+- Required fields: `conversationId`, `clinicId`, `direction`, `content`
+- Optional fields: `senderType` (default 'patient'), `senderId`, `agentName`, `aiGenerated`, `channel` (default from conversation), `messageType` (default 'text')
+- Validates direction is 'inbound' or 'outbound'
+- Looks up conversation to get default channel
+- Creates the `Message` record in DB
+- Updates conversation's `lastMessageAt` to `now()`
+- If direction is 'inbound' and conversation has no `currentAgent`, infers agent from content via keyword matching:
+  - 'cita', 'agendar', 'horario' → 'reception'
+  - 'factura', 'pago', 'cfdi' → 'billing'
+  - 'sintoma', 'dolor', 'soap' → 'clinical'
+  - 'campana', 'marketing', 'reactivar' → 'marketing'
+- Returns the created message with status 201
+
+**GET** — List messages for a conversation:
+- Query: `conversationId` (required)
+- Returns messages ordered by `createdAt` asc
+
+### 2. Updated Desk component to persist messages
+
+**File**: `src/components/sinap/desk-inbox.tsx`
+
+In the `handleSendMessage` function:
+
+**Doctor's message persistence** (fire-and-forget):
+- After adding the user message to local state, fires `POST /api/messages` with:
+  - `conversationId`, `clinicId`, `direction: 'inbound'`, `content`, `senderType: 'doctor'`, `channel`
+- Uses `.catch(() => {})` to silently handle errors — UI is already updated
+
+**AI response persistence** (fire-and-forget):
+- After receiving the AI response from `/api/orchestrator` and updating local state, fires `POST /api/messages` with:
+  - `conversationId`, `clinicId`, `direction: 'outbound'`, `content`, `senderType: 'agent'`, `agentName`, `aiGenerated: true`, `channel`
+- Uses `.catch(() => {})` to silently handle errors — UI is already updated
+
+**Orchestrator call updated**:
+- Now passes `conversationId` (instead of `patientId`) to the orchestrator so it can update conversation metadata server-side
+
+Both persistence calls are non-blocking — the UI updates immediately and DB writes happen in the background.
+
+### 3. Updated `/api/orchestrator` to save messages and update conversation metadata
+
+**File**: `src/app/api/orchestrator/route.ts`
+
+After generating the AI response:
+
+- Added `conversationId` to the destructured request body
+- Added `db` import from `@/lib/db`
+- Added `agentToCurrentAgent` mapping: desk→reception, flow→clinical, bill→billing, grow→marketing
+
+**When `conversationId` is provided** (Desk component flow):
+- The Desk component handles message creation via fire-and-forget `POST /api/messages`
+- The orchestrator only updates conversation metadata: `lastMessageAt` and `currentAgent`
+- This avoids duplicate message records (client already creates them)
+
+**When `patientId` + `clinicId` are provided but no `conversationId`** (direct API calls):
+- Looks up or creates an active conversation for that patient
+- Saves both the inbound message and the outbound AI response to the `Message` table
+- Updates the conversation's `lastMessageAt` and `currentAgent`
+
+- DB persistence failure does NOT fail the overall request (graceful degradation with try/catch)
+
+## Design Decisions
+
+- **No duplicate messages**: The Desk component creates Message records via fire-and-forget `POST /api/messages`. The orchestrator does NOT create Message records when `conversationId` is provided (to avoid duplicates). It only updates conversation metadata.
+- **Non-blocking persistence**: The fire-and-forget pattern ensures the UI updates immediately without waiting for DB writes.
+- **Server-side fallback**: When the orchestrator is called directly (without `conversationId` but with `patientId` + `clinicId`), it handles full persistence server-side.
+- All new messages are marked `isMock: true` since they come from the demo/simulation UI.
+- No Prisma schema changes needed — all fields already existed on the `Message` and `Conversation` models.
+
+## Verification
+
+- ✅ Build: `npx next build` completes successfully
+- ✅ Lint: 0 errors (4 pre-existing warnings in settings-pages.tsx)
+- ✅ New API route visible in build output: `/api/messages`
+- ✅ Dev server: running without errors
+- ✅ No Prisma schema changes needed
+
+## Flow Diagram
+
+```
+Desk Message Persistence Flow (after changes):
+
+1. Doctor types message → handleSendMessage()
+   → Add to local state (immediate UI update)
+   → Fire-and-forget: POST /api/messages { conversationId, clinicId, direction: 'inbound', content, senderType: 'doctor', channel }
+     → Creates Message record in DB
+     → Updates conversation.lastMessageAt
+     → Infers currentAgent from content keywords (if not set)
+
+2. Call orchestrator → POST /api/orchestrator { message, clinicId, conversationId, conversationHistory }
+   → Generate AI response
+   → Server-side: update conversation.lastMessageAt and currentAgent (no message creation — Desk handles that)
+   → Return AI response to client
+
+3. Client receives AI response
+   → Add to local state (immediate UI update)
+   → Fire-and-forget: POST /api/messages { conversationId, clinicId, direction: 'outbound', content, senderType: 'agent', agentName, aiGenerated: true, channel }
+     → Creates Message record in DB
+     → Updates conversation.lastMessageAt
+
+Direct API Call Flow (no Desk component):
+
+1. POST /api/orchestrator { message, patientId, clinicId }
+   → Generate AI response
+   → Server-side: look up or create conversation
+   → Server-side: create inbound + outbound Message records
+   → Server-side: update conversation.lastMessageAt and currentAgent
+   → Return AI response
+```

@@ -1,5 +1,6 @@
 import ZAI from 'z-ai-web-dev-sdk'
 import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
 
 type AgentName = 'desk' | 'flow' | 'bill' | 'grow'
 
@@ -78,9 +79,17 @@ const agentLabels: Record<AgentName, string> = {
   grow: 'Sinap Grow',
 }
 
+// Map agent names to conversation currentAgent values
+const agentToCurrentAgent: Record<AgentName, string> = {
+  desk: 'reception',
+  flow: 'clinical',
+  bill: 'billing',
+  grow: 'marketing',
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { message, clinicId, patientId, conversationHistory, targetAgent } = await req.json()
+    const { message, clinicId, patientId, conversationId, conversationHistory, targetAgent } = await req.json()
 
     const agent: AgentName = (targetAgent as AgentName) || routeToAgent(message || '')
     const systemPrompt = agentSystemPrompts[agent] || agentSystemPrompts.desk
@@ -102,8 +111,104 @@ export async function POST(req: NextRequest) {
       max_tokens: 400,
     })
 
+    const aiResponse = completion.choices[0]?.message?.content
+
+    // Persist messages to DB
+    if (db) {
+      try {
+        if (conversationId) {
+          // conversationId provided — the Desk component handles message creation
+          // via fire-and-forget POST /api/messages. We only update conversation metadata
+          // here to avoid duplicate message records.
+          await db.conversation.update({
+            where: { id: conversationId },
+            data: {
+              lastMessageAt: new Date(),
+              currentAgent: agentToCurrentAgent[agent] || 'reception',
+            },
+          })
+        } else if (patientId && clinicId) {
+          // No conversationId but patientId + clinicId — this is a direct API call
+          // (not from the Desk component). We handle full persistence here.
+          let convChannel = 'whatsapp'
+          let resolvedClinicId = clinicId as string
+          let convId: string
+
+          const existingConv = await db.conversation.findFirst({
+            where: { patientId, clinicId, status: 'active' },
+            select: { id: true, channel: true },
+          })
+
+          if (existingConv) {
+            convId = existingConv.id
+            convChannel = existingConv.channel
+          } else {
+            // Create a new conversation for this patient
+            const newConv = await db.conversation.create({
+              data: {
+                clinicId,
+                patientId,
+                channel: 'whatsapp',
+                status: 'active',
+                currentAgent: agentToCurrentAgent[agent] || 'reception',
+                isMock: true,
+              },
+            })
+            convId = newConv.id
+            convChannel = newConv.channel
+          }
+
+          // Save inbound message (user/patient message)
+          await db.message.create({
+            data: {
+              clinicId: resolvedClinicId,
+              conversationId: convId,
+              direction: 'inbound',
+              channel: convChannel,
+              senderType: 'patient',
+              content: message,
+              messageType: 'text',
+              agentName: null,
+              aiGenerated: false,
+              isMock: true,
+            },
+          })
+
+          // Save outbound message (AI response)
+          if (aiResponse) {
+            await db.message.create({
+              data: {
+                clinicId: resolvedClinicId,
+                conversationId: convId,
+                direction: 'outbound',
+                channel: convChannel,
+                senderType: 'agent',
+                content: aiResponse,
+                messageType: 'text',
+                agentName: agentLabels[agent],
+                aiGenerated: true,
+                isMock: true,
+              },
+            })
+          }
+
+          // Update conversation's lastMessageAt and currentAgent
+          await db.conversation.update({
+            where: { id: convId },
+            data: {
+              lastMessageAt: new Date(),
+              currentAgent: agentToCurrentAgent[agent] || 'reception',
+            },
+          })
+        }
+      } catch (dbError) {
+        // DB persistence failure should NOT fail the overall request
+        console.error('Orchestrator DB save error:', dbError)
+      }
+    }
+
     return NextResponse.json({
-      response: completion.choices[0]?.message?.content,
+      response: aiResponse,
       agent: agentLabels[agent],
       routedAgent: agent,
     })
