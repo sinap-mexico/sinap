@@ -44,8 +44,9 @@ export async function POST(req: NextRequest) {
     const {
       clinicId, patientId, appointmentId,
       concepto, subtotal, iva, total,
-      formaPago, metodoPago, usoCFDI,
+      formaPago, metodoPago, usoCFDI, tipoComprobante,
       cfdiUuid, facturamaId, pdfUrl, xmlUrl,
+      serie, folio,
       status, paymentStatus, errorMessage,
     } = body
 
@@ -64,11 +65,14 @@ export async function POST(req: NextRequest) {
         total: total || 0,
         formaPago: formaPago || '01',
         metodoPago: metodoPago || 'PUE',
+        tipoComprobante: tipoComprobante || 'I',
         usoCFDI: usoCFDI || 'G01',
         cfdiUuid: cfdiUuid || null,
         facturamaId: facturamaId || null,
         pdfUrl: pdfUrl || null,
         xmlUrl: xmlUrl || null,
+        serie: serie || null,
+        folio: folio || null,
         status: status || 'pending',
         paymentStatus: paymentStatus || 'unpaid',
         errorMessage: errorMessage || null,

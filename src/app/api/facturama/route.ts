@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
 
 // Facturama API integration for CFDI 4.0
 // Sandbox: https://apisandbox.facturama.mx
 // Production: https://api.facturama.mx
 
-const FACTURAMA_BASE = process.env.FACTURAMA_SANDBOX === 'true'
-  ? 'https://apisandbox.facturama.mx'
-  : 'https://api.facturama.mx'
-
-const FACTURAMA_USER = process.env.FACTURAMA_USER || 'sinap_sandbox'
-const FACTURAMA_PASSWORD = process.env.FACTURAMA_PASSWORD || 'sandbox_pass'
-
-const isSandbox = process.env.FACTURAMA_SANDBOX === 'true'
+const ENV_FACTURAMA_USER = process.env.FACTURAMA_USER || 'sinap_sandbox'
+const ENV_FACTURAMA_PASSWORD = process.env.FACTURAMA_PASSWORD || 'sandbox_pass'
+const ENV_FACTURAMA_SANDBOX = process.env.FACTURAMA_SANDBOX === 'true'
 
 interface CFDIConcept {
   ClaveProdServ: string
@@ -170,9 +166,7 @@ function generateMockCFDI(params: {
   }
 }
 
-async function facturamaRequest(endpoint: string, method: string, body?: unknown) {
-  const auth = Buffer.from(`${FACTURAMA_USER}:${FACTURAMA_PASSWORD}`).toString('base64')
-
+async function facturamaRequest(endpoint: string, method: string, auth: string, baseUrl: string, body?: unknown) {
   const options: RequestInit = {
     method,
     headers: {
@@ -185,7 +179,7 @@ async function facturamaRequest(endpoint: string, method: string, body?: unknown
     options.body = JSON.stringify(body)
   }
 
-  const response = await fetch(`${FACTURAMA_BASE}${endpoint}`, options)
+  const response = await fetch(`${baseUrl}${endpoint}`, options)
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ message: 'Error desconocido de Facturama' }))
@@ -193,6 +187,88 @@ async function facturamaRequest(endpoint: string, method: string, body?: unknown
   }
 
   return response.json()
+}
+
+/** Resolve Facturama credentials: DB clinic → env vars → mock/sandbox */
+async function resolveFacturamaConfig(clinicId: string): Promise<{
+  userId: string
+  token: string
+  isSandbox: boolean
+  isMock: boolean
+  rfc: string | null
+  name: string | null
+  regimenFiscal: string | null
+} | null> {
+  // 1. Try DB lookup
+  if (db) {
+    try {
+      const clinic = await db.clinic.findUnique({
+        where: { id: clinicId },
+        select: {
+          facturamaUserId: true,
+          facturamaToken: true,
+          facturamaSandbox: true,
+          rfc: true,
+          name: true,
+          regimenFiscal: true,
+        },
+      })
+
+      if (clinic) {
+        // If clinic has real credentials, use them
+        if (clinic.facturamaUserId && clinic.facturamaToken) {
+          return {
+            userId: clinic.facturamaUserId,
+            token: clinic.facturamaToken,
+            isSandbox: clinic.facturamaSandbox,
+            isMock: false,
+            rfc: clinic.rfc,
+            name: clinic.name,
+            regimenFiscal: clinic.regimenFiscal,
+          }
+        }
+
+        // If clinic is in sandbox mode (no real creds), use sandbox
+        if (clinic.facturamaSandbox) {
+          return {
+            userId: ENV_FACTURAMA_USER,
+            token: ENV_FACTURAMA_PASSWORD,
+            isSandbox: true,
+            isMock: true,
+            rfc: clinic.rfc,
+            name: clinic.name,
+            regimenFiscal: clinic.regimenFiscal,
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to look up clinic facturama config:', err)
+    }
+  }
+
+  // 2. Fall back to environment variables
+  if (ENV_FACTURAMA_USER !== 'sinap_sandbox' || ENV_FACTURAMA_PASSWORD !== 'sandbox_pass') {
+    return {
+      userId: ENV_FACTURAMA_USER,
+      token: ENV_FACTURAMA_PASSWORD,
+      isSandbox: ENV_FACTURAMA_SANDBOX,
+      isMock: ENV_FACTURAMA_SANDBOX,
+      rfc: null,
+      name: null,
+      regimenFiscal: null,
+    }
+  }
+
+  // 3. No credentials available — mock/sandbox mode
+  return {
+    userId: ENV_FACTURAMA_USER,
+    token: ENV_FACTURAMA_PASSWORD,
+    isSandbox: true,
+    isMock: true,
+    rfc: null,
+    name: null,
+    regimenFiscal: null,
+  }
 }
 
 // POST — Generate CFDI 4.0
@@ -208,11 +284,11 @@ export async function POST(req: NextRequest) {
       formaPago = '01',
       metodoPago = 'PUE',
       usoCFDI = 'G01',
-      rfcReceptor = 'XAXX010101000',
-      nombreReceptor = 'Publico en general',
-      rfcEmisor = 'CSA230515ABC',
-      nombreEmisor = 'Clinica San Angel',
-      regimenFiscal = '612',
+      rfcReceptor: bodyRfcReceptor,
+      nombreReceptor: bodyNombreReceptor,
+      rfcEmisor: bodyRfcEmisor,
+      nombreEmisor: bodyNombreEmisor,
+      regimenFiscal: bodyRegimenFiscal,
       lugarExpedicion = '01000',
     } = await req.json()
 
@@ -223,8 +299,45 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // If no real Facturama credentials, return mock CFDI
-    if (isSandbox && FACTURAMA_USER === 'sinap_sandbox') {
+    // Resolve Facturama credentials from DB → env → mock
+    const config = await resolveFacturamaConfig(clinicId)
+
+    if (!config) {
+      return NextResponse.json(
+        { error: 'No se pudo resolver la configuración de Facturama' },
+        { status: 500 }
+      )
+    }
+
+    // Look up patient from DB if patientId provided
+    let dbPatientRfc: string | null = null
+    let dbPatientName: string | null = null
+    if (db && patientId) {
+      try {
+        const patient = await db.patient.findUnique({
+          where: { id: patientId },
+          select: { rfc: true, fullName: true },
+        })
+        if (patient) {
+          dbPatientRfc = patient.rfc
+          dbPatientName = patient.fullName
+        }
+      } catch (err) {
+        console.error('Failed to look up patient:', err)
+      }
+    }
+
+    // Resolve emisor: DB clinic → request body → defaults
+    const rfcEmisor = config.rfc || bodyRfcEmisor || 'CSA230515ABC'
+    const nombreEmisor = config.name || bodyNombreEmisor || 'Clinica San Angel'
+    const regimenFiscal = config.regimenFiscal || bodyRegimenFiscal || '612'
+
+    // Resolve receptor: DB patient → request body → generic
+    const rfcReceptor = dbPatientRfc || bodyRfcReceptor || 'XAXX010101000'
+    const nombreReceptor = dbPatientName || bodyNombreReceptor || 'Publico en general'
+
+    // If mock/sandbox mode (no real credentials), return simulated CFDI
+    if (config.isMock) {
       const mockResult = generateMockCFDI({
         concepto: concept,
         subtotal,
@@ -256,10 +369,21 @@ export async function POST(req: NextRequest) {
         // Event emission is non-critical
       }
 
-      return NextResponse.json(mockResult)
+      return NextResponse.json({
+        ...mockResult,
+        facturamaId: `sim-${Date.now()}`,
+        tipoComprobante: 'I',
+        usoCFDI,
+        serie: 'A',
+      })
     }
 
     // Real Facturama integration
+    const baseUrl = config.isSandbox
+      ? 'https://apisandbox.facturama.mx'
+      : 'https://api.facturama.mx'
+    const auth = Buffer.from(`${config.userId}:${config.token}`).toString('base64')
+
     const cfdiPayload = generateCFDIPayload({
       rfcEmisor,
       nombreEmisor,
@@ -275,7 +399,7 @@ export async function POST(req: NextRequest) {
       lugarExpedicion,
     })
 
-    const result = await facturamaRequest('/api-lite/cfdis', 'POST', cfdiPayload)
+    const result = await facturamaRequest('/api-lite/cfdis', 'POST', auth, baseUrl, cfdiPayload)
 
     // Emit event
     try {
@@ -307,6 +431,10 @@ export async function POST(req: NextRequest) {
       status: 'timbrada',
       total: cfdiPayload.Total,
       isSimulated: false,
+      facturamaId: result.Id || result.uuid,
+      tipoComprobante: 'I',
+      usoCFDI,
+      serie: 'A',
     })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Error desconocido'
@@ -325,8 +453,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'clinicId es requerido' }, { status: 400 })
     }
 
-    // If sandbox with default creds, return mock list
-    if (isSandbox && FACTURAMA_USER === 'sinap_sandbox') {
+    // Resolve credentials to determine mode
+    const config = await resolveFacturamaConfig(clinicId)
+
+    if (!config || config.isMock) {
       return NextResponse.json({
         cfdiList: [],
         isSimulated: true,
@@ -335,7 +465,12 @@ export async function GET(req: NextRequest) {
     }
 
     // Real Facturama list
-    const result = await facturamaRequest('/api-lite/cfdis', 'GET')
+    const baseUrl = config.isSandbox
+      ? 'https://apisandbox.facturama.mx'
+      : 'https://api.facturama.mx'
+    const auth = Buffer.from(`${config.userId}:${config.token}`).toString('base64')
+
+    const result = await facturamaRequest('/api-lite/cfdis', 'GET', auth, baseUrl)
     return NextResponse.json({ cfdiList: result, isSimulated: false })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Error desconocido'
@@ -356,8 +491,10 @@ export async function DELETE(req: NextRequest) {
       )
     }
 
-    // If sandbox with default creds, return mock cancellation
-    if (isSandbox && FACTURAMA_USER === 'sinap_sandbox') {
+    // Resolve credentials to determine mode
+    const config = await resolveFacturamaConfig(clinicId)
+
+    if (!config || config.isMock) {
       return NextResponse.json({
         status: 'cancelled',
         cfdiUuid,
@@ -367,9 +504,16 @@ export async function DELETE(req: NextRequest) {
     }
 
     // Real Facturama cancellation
+    const baseUrl = config.isSandbox
+      ? 'https://apisandbox.facturama.mx'
+      : 'https://api.facturama.mx'
+    const auth = Buffer.from(`${config.userId}:${config.token}`).toString('base64')
+
     const result = await facturamaRequest(
       `/api-lite/cfdis/${cfdiUuid}?motive=${motive}`,
-      'DELETE'
+      'DELETE',
+      auth,
+      baseUrl
     )
 
     return NextResponse.json({

@@ -1,39 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
-// GET /api/clinic?slug=xxx
+// GET /api/clinic?slug=xxx | ?clinicId=xxx
 export async function GET(req: NextRequest) {
   try {
     if (!db) return NextResponse.json({ error: 'Base de datos no disponible' }, { status: 503 })
 
     const { searchParams } = new URL(req.url)
     const slug = searchParams.get('slug')
+    const clinicIdParam = searchParams.get('clinicId')
 
     let clinic
 
-    if (slug) {
+    const includeCounts = {
+      _count: {
+        select: {
+          doctors: { where: { isActive: true } },
+          patients: true,
+        },
+      },
+    }
+
+    if (clinicIdParam) {
+      // Look up by ID
+      clinic = await db.clinic.findUnique({
+        where: { id: clinicIdParam },
+        include: includeCounts,
+      })
+    } else if (slug) {
       clinic = await db.clinic.findUnique({
         where: { slug },
-        include: {
-          _count: {
-            select: {
-              doctors: { where: { isActive: true } },
-              patients: true,
-            },
-          },
-        },
+        include: includeCounts,
       })
     } else {
-      // No slug provided — return the first clinic (demo mode)
+      // No slug or clinicId provided — return the first clinic (demo mode)
       clinic = await db.clinic.findFirst({
-        include: {
-          _count: {
-            select: {
-              doctors: { where: { isActive: true } },
-              patients: true,
-            },
-          },
-        },
+        include: includeCounts,
       })
     }
 
@@ -60,6 +62,11 @@ export async function GET(req: NextRequest) {
         primaryColor: clinic.primaryColor,
         personaName: clinic.personaName,
         logoUrl: clinic.logoUrl,
+        // Facturama config
+        facturamaUserId: clinic.facturamaUserId,
+        facturamaToken: clinic.facturamaToken,
+        facturamaSandbox: clinic.facturamaSandbox,
+        // Counts
         doctorsCount: clinic._count.doctors,
         patientsCount: clinic._count.patients,
       },

@@ -79,6 +79,15 @@ interface PatientOption {
   rfc?: string | null
 }
 
+interface ClinicBillingConfig {
+  rfc: string | null
+  regimenFiscal: string | null
+  name: string | null
+  facturamaUserId: string | null
+  facturamaToken: string | null
+  facturamaSandbox: boolean
+}
+
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: { opacity: 1, transition: { staggerChildren: 0.08 } },
@@ -101,6 +110,16 @@ export function BillDashboard() {
   const [isCancelling, setIsCancelling] = useState(false)
   const [cfdiStep, setCfdiStep] = useState(0)
 
+  // Clinic billing config from DB
+  const [clinicBilling, setClinicBilling] = useState<ClinicBillingConfig | null>(null)
+  const [isLoadingBilling, setIsLoadingBilling] = useState(true)
+
+  // Derived: facturamaConnected based on DB data
+  const facturamaConnected = clinicBilling
+    ? !!(clinicBilling.facturamaToken || clinicBilling.facturamaSandbox)
+    : false
+  const facturamaMode = clinicBilling?.facturamaSandbox ? 'sandbox' : clinicBilling?.facturamaToken ? 'producción' : 'desconectado'
+
   // CFDI form state
   const [formPatient, setFormPatient] = useState('')
   const [formConcept, setFormConcept] = useState('')
@@ -109,26 +128,61 @@ export function BillDashboard() {
   const [formMetodoPago, setFormMetodoPago] = useState('PUE')
   const [formUsoCFDI, setFormUsoCFDI] = useState('G01')
 
-  const facturamaConnected = process.env.NODE_ENV === 'development'
-  const facturamaMode = 'sandbox'
-
-  // Resolve clinicId on mount if needed
+  // Resolve clinicId on mount if needed, and fetch billing config
   useEffect(() => {
-    async function resolveClinicId() {
-      if (clinicId) return
+    async function resolveClinicAndBilling() {
+      if (!clinicId) {
+        // Try to resolve clinicId first
+        try {
+          const res = await fetch(`/api/clinic?slug=${encodeURIComponent(clinicSlug)}`)
+          if (res.ok) {
+            const data = await res.json()
+            if (data.clinic?.id) {
+              setClinicId(data.clinic.id)
+              // Also store billing config from this response
+              setClinicBilling({
+                rfc: data.clinic.rfc || null,
+                regimenFiscal: data.clinic.regimenFiscal || null,
+                name: data.clinic.name || null,
+                facturamaUserId: data.clinic.facturamaUserId || null,
+                facturamaToken: data.clinic.facturamaToken || null,
+                facturamaSandbox: data.clinic.facturamaSandbox ?? true,
+              })
+              setIsLoadingBilling(false)
+              return
+            }
+          }
+        } catch (err) {
+          console.error('Failed to resolve clinicId:', err)
+        }
+        setIsLoadingBilling(false)
+        return
+      }
+
+      // clinicId is already available — fetch billing config
+      setIsLoadingBilling(true)
       try {
-        const res = await fetch(`/api/clinic?slug=${encodeURIComponent(clinicSlug)}`)
+        const res = await fetch(`/api/clinic?clinicId=${encodeURIComponent(clinicId)}`)
         if (res.ok) {
           const data = await res.json()
-          if (data.clinic?.id) {
-            setClinicId(data.clinic.id)
+          if (data.clinic) {
+            setClinicBilling({
+              rfc: data.clinic.rfc || null,
+              regimenFiscal: data.clinic.regimenFiscal || null,
+              name: data.clinic.name || null,
+              facturamaUserId: data.clinic.facturamaUserId || null,
+              facturamaToken: data.clinic.facturamaToken || null,
+              facturamaSandbox: data.clinic.facturamaSandbox ?? true,
+            })
           }
         }
       } catch (err) {
-        console.error('Failed to resolve clinicId:', err)
+        console.error('Failed to fetch clinic billing config:', err)
+      } finally {
+        setIsLoadingBilling(false)
       }
     }
-    resolveClinicId()
+    resolveClinicAndBilling()
   }, [clinicId, clinicSlug, setClinicId])
 
   // Fetch invoices from API
@@ -200,6 +254,11 @@ export function BillDashboard() {
     .filter((i) => i.status === 'pendiente' || i.status === 'pending')
     .reduce((sum, i) => sum + i.total, 0)
 
+  // Use DB-driven emisor info, fallback to store profile, fallback to defaults
+  const emisorRfc = clinicBilling?.rfc || clinicProfile.rfc || 'CSA230515ABC'
+  const emisorName = clinicBilling?.name || clinicProfile.name || 'Clínica San Ángel'
+  const emisorRegimenFiscal = clinicBilling?.regimenFiscal || '612'
+
   const handleGenerateCFDI = async () => {
     if (!formPatient || !formConcept || !formSubtotal) return
 
@@ -208,6 +267,8 @@ export function BillDashboard() {
       const patient = patients.find(p => p.id === formPatient)
       const subtotal = parseFloat(formSubtotal)
 
+      // Send clinicId + patientId so the API can look up credentials from DB
+      // The API will look up the patient's RFC from the DB as well
       const response = await fetch('/api/facturama', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -220,17 +281,19 @@ export function BillDashboard() {
           formaPago: formFormaPago,
           metodoPago: formMetodoPago,
           usoCFDI: formUsoCFDI,
-          rfcReceptor: patient?.fullName === 'Publico en general' ? 'XAXX010101000' : 'XAXX010101000',
-          nombreReceptor: patient?.fullName || 'Publico en general',
-          rfcEmisor: clinicProfile.rfc,
-          nombreEmisor: clinicProfile.name,
+          // Fallback values in case DB lookup fails
+          rfcReceptor: patient?.rfc || 'XAXX010101000',
+          nombreReceptor: patient?.fullName || 'Público en general',
+          rfcEmisor: emisorRfc,
+          nombreEmisor: emisorName,
+          regimenFiscal: emisorRegimenFiscal,
         }),
       })
 
       const data = await response.json()
 
       if (response.ok && data.cfdiUuid) {
-        // Also create the invoice in our DB
+        // Create the invoice in our DB with all CFDI fields
         await fetch('/api/invoices', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -239,15 +302,17 @@ export function BillDashboard() {
             patientId: formPatient,
             concepto: formConcept,
             subtotal,
-            iva: subtotal * 0.16,
+            iva: data.iva || subtotal * 0.16,
             total: data.total || subtotal * 1.16,
             formaPago: formFormaPago,
             metodoPago: formMetodoPago,
             usoCFDI: formUsoCFDI,
+            tipoComprobante: data.tipoComprobante || 'I',
             cfdiUuid: data.cfdiUuid,
             facturamaId: data.facturamaId,
             pdfUrl: data.pdfUrl,
             xmlUrl: data.xmlUrl,
+            serie: data.serie || 'A',
             status: 'timbrada',
             paymentStatus: 'unpaid',
           }),
@@ -256,7 +321,7 @@ export function BillDashboard() {
         const newInvoice: CFDIInvoice = {
           id: `inv${Date.now()}`,
           uuid: data.cfdiUuid,
-          patientName: patient?.fullName || 'Publico en general',
+          patientName: patient?.fullName || 'Público en general',
           concept: formConcept,
           total: data.total,
           status: 'timbrada',
@@ -283,6 +348,7 @@ export function BillDashboard() {
             formaPago: formFormaPago,
             metodoPago: formMetodoPago,
             usoCFDI: formUsoCFDI,
+            tipoComprobante: 'I',
             status: 'error',
             paymentStatus: 'unpaid',
             errorMessage: data.error || 'Error al timbrar CFDI',
@@ -292,7 +358,7 @@ export function BillDashboard() {
         const errorInvoice: CFDIInvoice = {
           id: `inv${Date.now()}`,
           uuid: 'ERROR',
-          patientName: patient?.fullName || 'Publico en general',
+          patientName: patient?.fullName || 'Público en general',
           concept: formConcept,
           total: subtotal * 1.16,
           status: 'error',
@@ -454,9 +520,21 @@ export function BillDashboard() {
                 Facturas recientes
               </CardTitle>
               <div className="flex items-center gap-2">
-                <Badge className={`text-[10px] border-0 ${facturamaConnected ? 'bg-amber-100 text-amber-700' : 'bg-[#FEE2E2] text-[#E53E3E]'}`}>
-                  {facturamaConnected ? (
-                    <><Database className="h-3 w-3 mr-1" />Facturama {facturamaMode}</>
+                <Badge className={`text-[10px] border-0 ${
+                  facturamaConnected
+                    ? clinicBilling?.facturamaToken
+                      ? 'bg-[#E1F5EE] text-[#1D9E75]'
+                      : 'bg-amber-100 text-amber-700'
+                    : 'bg-[#FEE2E2] text-[#E53E3E]'
+                }`}>
+                  {isLoadingBilling ? (
+                    <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Cargando...</>
+                  ) : facturamaConnected ? (
+                    clinicBilling?.facturamaToken ? (
+                      <><Database className="h-3 w-3 mr-1" />Facturama {facturamaMode}</>
+                    ) : (
+                      <><Sparkles className="h-3 w-3 mr-1" />Facturama sandbox</>
+                    )
                   ) : (
                     <><WifiOff className="h-3 w-3 mr-1" />Desconectado</>
                   )}
@@ -612,12 +690,14 @@ export function BillDashboard() {
           </div>
 
           <div className="space-y-4">
-            <div className="p-3 rounded-lg bg-[#FEF3C7] flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-[#D97706] shrink-0" />
-              <p className="text-xs text-[#D97706]">
-                Modo sandbox. Los CFDIs generados no son fiscales.
-              </p>
-            </div>
+            {facturamaConnected && !clinicBilling?.facturamaToken && (
+              <div className="p-3 rounded-lg bg-[#FEF3C7] flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-[#D97706] shrink-0" />
+                <p className="text-xs text-[#D97706]">
+                  Modo sandbox. Los CFDIs generados no son fiscales.
+                </p>
+              </div>
+            )}
 
             {cfdiStep === 0 && (
               <div className="space-y-2">
@@ -632,6 +712,14 @@ export function BillDashboard() {
                     ))}
                   </SelectContent>
                 </Select>
+                {formPatient && (() => {
+                  const sel = patients.find(p => p.id === formPatient)
+                  return sel?.rfc ? (
+                    <p className="text-[10px] text-[#888780]">RFC del paciente: <span className="text-[#2C2C2A] font-medium">{sel.rfc}</span></p>
+                  ) : (
+                    <p className="text-[10px] text-[#D97706]">Sin RFC registrado — se usará XAXX010101000</p>
+                  )
+                })()}
               </div>
             )}
 
@@ -705,8 +793,8 @@ export function BillDashboard() {
             )}
 
             <div className="p-3 rounded-lg bg-[#F1EFE8] text-xs text-[#888780] space-y-1">
-              <p><span className="font-medium text-[#2C2C2A]">Emisor:</span> {clinicProfile.name} | RFC: {clinicProfile.rfc}</p>
-              <p><span className="font-medium text-[#2C2C2A]">Receptor:</span> {formPatient ? patients.find(p => p.id === formPatient)?.fullName : 'Seleccionar paciente'}</p>
+              <p><span className="font-medium text-[#2C2C2A]">Emisor:</span> {emisorName} | RFC: {emisorRfc} | Régimen: {emisorRegimenFiscal}</p>
+              <p><span className="font-medium text-[#2C2C2A]">Receptor:</span> {formPatient ? patients.find(p => p.id === formPatient)?.fullName : 'Seleccionar paciente'}{formPatient && patients.find(p => p.id === formPatient)?.rfc ? ` | RFC: ${patients.find(p => p.id === formPatient)?.rfc}` : ''}</p>
             </div>
           </div>
           <DialogFooter className="gap-2">

@@ -237,3 +237,123 @@ Both have realistic dermatology content: subjective, objective, assessment, plan
 | SOAP Notes | 2 |
 | Event Bus | 5 |
 | **Total Records** | **97** |
+
+---
+
+# Task 4: Connect Bill Module to Database for CFDI Generation
+
+## Summary
+Made the Bill module truly connected to the database for CFDI generation. Previously, Facturama credentials were read from `process.env` only, the RFC del emisor was hardcoded as `CSA230515ABC`, the connection check was `process.env.NODE_ENV === 'development'` (wrong logic), and the patient's RFC was not fetched from the DB. All of these issues are now resolved with a DB-driven approach that still supports sandbox/mock mode for demos.
+
+## Changes Made
+
+### 1. Updated `/api/clinic` to support `clinicId` query param and return Facturama fields
+
+**File**: `src/app/api/clinic/route.ts`
+
+- Added support for `?clinicId=xxx` query param (looks up by ID instead of slug)
+- Priority order: `clinicId` → `slug` → `findFirst` (demo mode)
+- Response now includes Facturama config fields: `facturamaUserId`, `facturamaToken`, `facturamaSandbox`
+- Refactored to extract shared `includeCounts` object to reduce duplication
+
+### 2. Rewrote `/api/facturama` to read credentials from DB
+
+**File**: `src/app/api/facturama/route.ts`
+
+Major changes:
+- **Added `resolveFacturamaConfig(clinicId)` function** that resolves Facturama credentials in a 3-tier cascade:
+  1. **DB clinic lookup**: If clinic has `facturamaUserId` + `facturamaToken`, use those (real mode or sandbox per `facturamaSandbox`)
+  2. **Environment variables**: Fall back to `FACTURAMA_USER`/`FACTURAMA_PASSWORD` if they differ from defaults
+  3. **Mock/sandbox mode**: If neither DB nor env has real credentials, use simulated CFDI generation
+
+- **POST handler** now:
+  - Calls `resolveFacturamaConfig(clinicId)` to get credentials and clinic billing info (rfc, name, regimenFiscal)
+  - Looks up patient by `patientId` from DB to get `rfc` and `fullName`
+  - Resolves emisor RFC/name/regimen from: DB clinic → request body → defaults
+  - Resolves receptor RFC/name from: DB patient → request body → generic "XAXX010101000"
+  - In mock mode, returns simulated CFDI with additional fields: `facturamaId`, `tipoComprobante`, `usoCFDI`, `serie`
+  - In real mode, uses DB credentials for Facturama API auth (with sandbox URL if `facturamaSandbox`)
+
+- **GET handler** now uses `resolveFacturamaConfig` instead of hardcoded env vars
+
+- **DELETE handler** now uses `resolveFacturamaConfig` instead of hardcoded env vars
+
+- **`facturamaRequest`** now takes `auth` and `baseUrl` as parameters instead of using module-level constants
+
+### 3. Rewrote `BillDashboard` component for DB-driven billing
+
+**File**: `src/components/sinap/bill-dashboard.tsx`
+
+- **Added `ClinicBillingConfig` interface** with rfc, regimenFiscal, name, facturamaUserId, facturamaToken, facturamaSandbox
+- **Added `clinicBilling` state** and `isLoadingBilling` state
+- **Replaced hardcoded `facturamaConnected = process.env.NODE_ENV === 'development'`** with DB-driven check:
+  - `facturamaConnected = clinicBilling ? !!(clinicBilling.facturamaToken || clinicBilling.facturamaSandbox) : false`
+  - `facturamaMode` shows "sandbox", "producción", or "desconectado"
+- **Fetches clinic billing config** via `/api/clinic?clinicId=xxx` on mount (or `/api/clinic?slug=xxx` if clinicId not yet resolved)
+- **Status badge** now shows 3 states with distinct colors:
+  - Green (producción): `facturamaToken` is set → real Facturama connection
+  - Amber (sandbox): No `facturamaToken` but `facturamaSandbox` is true → simulated mode
+  - Red (desconectado): Neither available
+- **CFDI dialog** shows sandbox warning only when in sandbox mode (not when connected to production)
+- **Patient step** now shows RFC info: displays patient RFC if available, or warning "Sin RFC registrado"
+- **Emisor info** in dialog summary now includes Régimen Fiscal: `Emisor: {name} | RFC: {rfc} | Régimen: {regimen}`
+- **Receptor info** shows RFC when patient is selected
+
+### 4. Updated CFDI generation to use clinic/patient data from DB
+
+In `handleGenerateCFDI`:
+- Uses `clinicBilling?.rfc` → `clinicProfile.rfc` → `'CSA230515ABC'` for emisor RFC (cascading fallback)
+- Uses `clinicBilling?.name` → `clinicProfile.name` → default for emisor name
+- Uses `clinicBilling?.regimenFiscal` → `'612'` for regimen fiscal
+- Sends `patientId` so the `/api/facturama` POST handler can look up patient RFC from DB
+- Sends fallback values in case DB lookup fails on the API side
+
+### 5. Updated invoice creation with all CFDI fields
+
+**File**: `src/app/api/invoices/route.ts`
+
+- Added support for `tipoComprobante` field (defaults to 'I')
+- Added support for `serie` field
+- Added support for `folio` field
+- All CFDI fields are now persisted: `cfdiUuid`, `facturamaId`, `pdfUrl`, `xmlUrl`, `formaPago`, `metodoPago`, `usoCFDI`, `tipoComprobante`, `subtotal`, `iva`, `total`, `concepto`, `serie`, `folio`
+
+**File**: `src/components/sinap/bill-dashboard.tsx` (in `handleGenerateCFDI`)
+
+- Invoice POST now includes: `tipoComprobante`, `serie` from CFDI response
+- Error invoice POST also includes `tipoComprobante: 'I'`
+
+## Verification
+
+- ✅ Lint: 0 errors (4 pre-existing warnings in settings-pages.tsx)
+- ✅ Dev server: running without errors
+- ✅ No Prisma schema changes needed (all fields already existed: `facturamaUserId`, `facturamaToken`, `facturamaSandbox` on Clinic; `rfc` on Patient; `serie`, `folio`, `tipoComprobante` on Invoice)
+
+## Flow Diagram
+
+```
+CFDI Generation Flow (after changes):
+
+1. BillDashboard mounts → fetch /api/clinic?clinicId=xxx
+   → Get clinic.facturamaToken, facturamaSandbox, rfc, name, regimenFiscal
+   → Determine facturamaConnected badge state
+
+2. User fills CFDI form → clicks "Generar CFDI"
+   → POST /api/facturama with { clinicId, patientId, concept, subtotal, formaPago, metodoPago, usoCFDI, rfcEmisor, nombreEmisor, regimenFiscal }
+
+3. /api/facturama POST handler:
+   → resolveFacturamaConfig(clinicId)
+     → DB clinic.facturamaUserId + facturamaToken? → use real Facturama
+     → DB clinic.facturamaSandbox? → use sandbox/mock
+     → Env vars? → use those
+     → Otherwise → mock mode
+   → Look up patient by patientId → get rfc, fullName
+   → Resolve emisor: DB clinic rfc → body rfcEmisor → default
+   → Resolve receptor: DB patient rfc → body rfcReceptor → XAXX010101000
+   → If mock: generateMockCFDI() → return simulated UUID
+   → If real: call Facturama API → return real CFDI UUID
+
+4. On success → POST /api/invoices with full CFDI data
+   → Persist: cfdiUuid, facturamaId, pdfUrl, xmlUrl, formaPago, metodoPago, usoCFDI, tipoComprobante, serie, subtotal, iva, total, concepto
+
+5. Update local invoice list in UI
+```
