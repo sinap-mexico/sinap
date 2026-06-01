@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSinapStore, type FeatureFlagState, type SinapModule, type DoctorItem } from '@/lib/sinap-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -117,9 +117,10 @@ export function SettingsPages() {
   const [isSavingDoctor, setIsSavingDoctor] = useState(false)
   const [doctorError, setDoctorError] = useState('')
 
-  const clinicId = 'demo' // TODO: get from auth context
+  const clinicId = store.clinicId
 
-  const fetchDoctors = async () => {
+  const fetchDoctors = useCallback(async () => {
+    if (!clinicId) return
     store.setIsLoadingDoctors(true)
     try {
       const res = await fetch(`/api/doctors?clinicId=${clinicId}`)
@@ -132,7 +133,7 @@ export function SettingsPages() {
     } finally {
       store.setIsLoadingDoctors(false)
     }
-  }
+  }, [clinicId])
 
   const handleSaveDoctor = async () => {
     if (!doctorForm.name.trim()) {
@@ -215,11 +216,10 @@ export function SettingsPages() {
     setDoctorForm(prev => ({ ...prev, workDays: newDays.join(',') }))
   }
 
-  // Fetch doctors on mount
+  // Fetch doctors on mount and when clinicId changes
   useEffect(() => {
     fetchDoctors()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [fetchDoctors])
 
   const [doctorName, setDoctorName] = useState(store.doctorProfile.name)
   const [doctorEmail, setDoctorEmail] = useState(store.doctorProfile.email)

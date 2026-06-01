@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -9,7 +9,6 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { appointments, patients } from '@/lib/mock-data'
 import { useSinapStore, type FeatureFlagState, type SoapNoteItem } from '@/lib/sinap-store'
 import { eventBus } from '@/lib/event-bus'
 import {
@@ -19,12 +18,9 @@ import {
   Sparkles,
   FileText,
   Clock,
-  User,
   Stethoscope,
   Loader2,
-  MessageSquare,
   Send,
-  ChevronRight,
   AlertCircle,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -60,6 +56,19 @@ interface PreConsultaQuestion {
 
 type FlowTab = 'preconsulta' | 'soap'
 
+interface FlowAppointment {
+  id: string
+  patientId: string
+  patientName: string
+  time: string
+  duration: number
+  status: string
+  type: string
+  doctorId?: string
+  doctorName?: string
+  serviceId?: string
+}
+
 const soapSections = [
   { key: 'subjective', label: 'Subjetivo', badge: 'S', color: '#1D9E75', bgColor: '#E1F5EE', borderColor: 'border-l-[#1D9E75]' },
   { key: 'objective', label: 'Objetivo', badge: 'O', color: '#1D9E75', bgColor: '#E1F5EE', borderColor: 'border-l-[#1D9E75]' },
@@ -68,16 +77,16 @@ const soapSections = [
 ] as const
 
 export function FlowClinical() {
-  const { featureFlags, setFeatureFlag, soapNotes, addSoapNote, updateSoapNote, doctorProfile } = useSinapStore()
+  const { featureFlags, setFeatureFlag, soapNotes, addSoapNote, updateSoapNote, doctorProfile, clinicId, setClinicId, clinicSlug } = useSinapStore()
   const soapFlag = featureFlags.find((f) => f.id === 'flow-soap')
   const preconsultaFlag = featureFlags.find((f) => f.id === 'flow-preconsulta')
 
-  const pendingPreconsultas = appointments.filter(
-    (a) => a.status === 'pending' || a.status === 'confirmed'
-  ).slice(0, 5)
+  // Appointments from API
+  const [pendingPreconsultas, setPendingPreconsultas] = useState<FlowAppointment[]>([])
+  const [isLoadingAppointments, setIsLoadingAppointments] = useState(true)
 
   const [activeTab, setActiveTab] = useState<FlowTab>('preconsulta')
-  const [selectedPatient, setSelectedPatient] = useState(pendingPreconsultas[0])
+  const [selectedPatient, setSelectedPatient] = useState<FlowAppointment | null>(null)
 
   // Pre-consulta state
   const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false)
@@ -95,6 +104,65 @@ export function FlowClinical() {
   // Selected SOAP note for viewing
   const [selectedSoapNote, setSelectedSoapNote] = useState<SoapNoteItem | null>(soapNotes[0] || null)
 
+  // Resolve clinicId on mount if needed
+  useEffect(() => {
+    async function resolveClinicId() {
+      if (clinicId) return
+      try {
+        const res = await fetch(`/api/clinic?slug=${encodeURIComponent(clinicSlug)}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.clinic?.id) {
+            setClinicId(data.clinic.id)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to resolve clinicId:', err)
+      }
+    }
+    resolveClinicId()
+  }, [clinicId, clinicSlug, setClinicId])
+
+  // Fetch appointments from API
+  useEffect(() => {
+    if (!clinicId) return
+    async function fetchAppointments() {
+      setIsLoadingAppointments(true)
+      try {
+        const res = await fetch(`/api/appointments?clinicId=${clinicId}&includeHistory=true`)
+        if (res.ok) {
+          const data = await res.json()
+          const mapped: FlowAppointment[] = (data.appointments || [])
+            .filter((a: Record<string, unknown>) => {
+              const s = a.status as string
+              return s === 'pending' || s === 'confirmed' || s === 'scheduled'
+            })
+            .map((a: Record<string, unknown>) => ({
+              id: a.id as string,
+              patientId: a.patientId as string,
+              patientName: (a.patient as Record<string, unknown>)?.fullName as string || 'Paciente',
+              time: a.startTime as string || '',
+              duration: (a.service as Record<string, unknown>)?.duration as number || 30,
+              status: a.status as string,
+              type: (a.service as Record<string, unknown>)?.name as string || 'Consulta',
+              doctorId: a.doctorId as string,
+              doctorName: (a.doctor as Record<string, unknown>)?.name as string,
+              serviceId: a.serviceId as string,
+            }))
+          setPendingPreconsultas(mapped.slice(0, 10))
+          if (mapped.length > 0 && !selectedPatient) {
+            setSelectedPatient(mapped[0])
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch appointments:', err)
+      } finally {
+        setIsLoadingAppointments(false)
+      }
+    }
+    fetchAppointments()
+  }, [clinicId])
+
   const handleStartPreConsulta = useCallback(async () => {
     if (!selectedPatient) return
 
@@ -109,7 +177,7 @@ export function FlowClinical() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           patientId: selectedPatient.patientId,
-          clinicId: 'demo',
+          clinicId: clinicId || 'demo',
           specialty: doctorProfile.specialty,
           appointmentType: selectedPatient.type,
         }),
@@ -135,7 +203,7 @@ export function FlowClinical() {
     } finally {
       setIsGeneratingQuestions(false)
     }
-  }, [selectedPatient, doctorProfile.specialty])
+  }, [selectedPatient, doctorProfile.specialty, clinicId])
 
   const handleAnswerQuestion = () => {
     if (!currentAnswer.trim()) return
@@ -163,8 +231,8 @@ export function FlowClinical() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          patientId: selectedPatient?.patientId || 'p1',
-          clinicId: 'demo',
+          patientId: selectedPatient?.patientId || '',
+          clinicId: clinicId || 'demo',
           specialty: doctorProfile.specialty,
           preConsultaResponses: responses,
         }),
@@ -175,7 +243,7 @@ export function FlowClinical() {
       if (data.subjective) {
         const newNote: SoapNoteItem = {
           id: `soap_${Date.now()}`,
-          patientId: selectedPatient?.patientId || 'p1',
+          patientId: selectedPatient?.patientId || '',
           patientName: selectedPatient?.patientName || 'Paciente',
           subjective: data.subjective,
           objective: data.objective,
@@ -297,43 +365,54 @@ export function FlowClinical() {
               <Separator className="bg-[#E1F5EE]" />
               <ScrollArea className="max-h-[calc(100vh-380px)]">
                 <div className="p-3 space-y-2">
-                  {pendingPreconsultas.map((apt, i) => (
-                    <motion.button
-                      key={apt.id}
-                      onClick={() => {
-                        setSelectedPatient(apt)
-                        setPreConsultaQuestions([])
-                        setPreConsultaComplete(false)
-                        setCurrentQuestionIndex(0)
-                      }}
-                      className={`w-full text-left p-3 rounded-lg transition-all duration-200 ${
-                        selectedPatient?.id === apt.id
-                          ? 'bg-[#E1F5EE] border border-[#1D9E75]/30'
-                          : 'hover:bg-[#F1EFE8]'
-                      }`}
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.05 }}
-                      whileHover={{ x: 2 }}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-[#2C2C2A]">
-                          {apt.patientName}
-                        </span>
-                        <span className="text-[10px] text-[#888780]">{apt.time}</span>
-                      </div>
-                      <p className="text-xs text-[#888780] mt-0.5">{apt.type}</p>
-                      <Badge
-                        className={`mt-1.5 text-[9px] border-0 ${
-                          apt.status === 'confirmed'
-                            ? 'bg-[#E1F5EE] text-[#1D9E75]'
-                            : 'bg-[#FEF3C7] text-[#D97706]'
+                  {isLoadingAppointments ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-5 w-5 animate-spin text-[#534AB7]" />
+                    </div>
+                  ) : pendingPreconsultas.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-8 text-center">
+                      <Clock className="h-8 w-8 text-[#888780]/30 mb-2" />
+                      <p className="text-xs text-[#888780]">No hay citas pendientes</p>
+                    </div>
+                  ) : (
+                    pendingPreconsultas.map((apt, i) => (
+                      <motion.button
+                        key={apt.id}
+                        onClick={() => {
+                          setSelectedPatient(apt)
+                          setPreConsultaQuestions([])
+                          setPreConsultaComplete(false)
+                          setCurrentQuestionIndex(0)
+                        }}
+                        className={`w-full text-left p-3 rounded-lg transition-all duration-200 ${
+                          selectedPatient?.id === apt.id
+                            ? 'bg-[#E1F5EE] border border-[#1D9E75]/30'
+                            : 'hover:bg-[#F1EFE8]'
                         }`}
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.05 }}
+                        whileHover={{ x: 2 }}
                       >
-                        {apt.status === 'confirmed' ? 'Confirmada' : 'Pendiente'}
-                      </Badge>
-                    </motion.button>
-                  ))}
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-[#2C2C2A]">
+                            {apt.patientName}
+                          </span>
+                          <span className="text-[10px] text-[#888780]">{apt.time}</span>
+                        </div>
+                        <p className="text-xs text-[#888780] mt-0.5">{apt.type}</p>
+                        <Badge
+                          className={`mt-1.5 text-[9px] border-0 ${
+                            apt.status === 'confirmed'
+                              ? 'bg-[#E1F5EE] text-[#1D9E75]'
+                              : 'bg-[#FEF3C7] text-[#D97706]'
+                          }`}
+                        >
+                          {apt.status === 'confirmed' ? 'Confirmada' : 'Pendiente'}
+                        </Badge>
+                      </motion.button>
+                    ))
+                  )}
                 </div>
               </ScrollArea>
               <div className="p-3 border-t border-[#E1F5EE]">
@@ -538,49 +617,56 @@ export function FlowClinical() {
               <Separator className="bg-[#E1F5EE]" />
               <ScrollArea className="max-h-[calc(100vh-380px)]">
                 <div className="p-3 space-y-2">
-                  {soapNotes.map((note, i) => (
-                    <motion.button
-                      key={note.id}
-                      onClick={() => setSelectedSoapNote(note)}
-                      className={`w-full text-left p-3 rounded-lg transition-all duration-200 ${
-                        selectedSoapNote?.id === note.id
-                          ? 'bg-[#EEEDFE] border border-[#534AB7]/20'
-                          : 'hover:bg-[#F1EFE8]'
-                      }`}
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.05 }}
-                      whileHover={{ x: 2 }}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-[#2C2C2A] truncate">
-                          {note.patientName}
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-[#888780] mt-0.5">
-                        {new Date(note.createdAt).toLocaleDateString('es-MX')}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-1.5">
-                        <Badge
-                          className={`text-[9px] border-0 ${
-                            note.status === 'approved'
-                              ? 'bg-[#E1F5EE] text-[#1D9E75]'
-                              : note.status === 'signed'
-                              ? 'bg-[#534AB7] text-white'
-                              : 'bg-[#FEF3C7] text-[#D97706]'
-                          }`}
-                        >
-                          {note.status === 'approved' ? 'Aprobada' : note.status === 'signed' ? 'Firmada' : 'Borrador'}
-                        </Badge>
-                        {note.aiGenerated && (
-                          <Badge className="text-[9px] border-0 bg-[#EEEDFE] text-[#534AB7]">
-                            <Sparkles className="h-2.5 w-2.5 mr-0.5" />
-                            IA
+                  {soapNotes.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-8 text-center">
+                      <FileText className="h-8 w-8 text-[#888780]/30 mb-2" />
+                      <p className="text-xs text-[#888780]">Sin notas SOAP</p>
+                    </div>
+                  ) : (
+                    soapNotes.map((note, i) => (
+                      <motion.button
+                        key={note.id}
+                        onClick={() => setSelectedSoapNote(note)}
+                        className={`w-full text-left p-3 rounded-lg transition-all duration-200 ${
+                          selectedSoapNote?.id === note.id
+                            ? 'bg-[#EEEDFE] border border-[#534AB7]/20'
+                            : 'hover:bg-[#F1EFE8]'
+                        }`}
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.05 }}
+                        whileHover={{ x: 2 }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-[#2C2C2A] truncate">
+                            {note.patientName}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-[#888780] mt-0.5">
+                          {new Date(note.createdAt).toLocaleDateString('es-MX')}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          <Badge
+                            className={`text-[9px] border-0 ${
+                              note.status === 'approved'
+                                ? 'bg-[#E1F5EE] text-[#1D9E75]'
+                                : note.status === 'signed'
+                                ? 'bg-[#534AB7] text-white'
+                                : 'bg-[#FEF3C7] text-[#D97706]'
+                            }`}
+                          >
+                            {note.status === 'approved' ? 'Aprobada' : note.status === 'signed' ? 'Firmada' : 'Borrador'}
                           </Badge>
-                        )}
-                      </div>
-                    </motion.button>
-                  ))}
+                          {note.aiGenerated && (
+                            <Badge className="text-[9px] border-0 bg-[#EEEDFE] text-[#534AB7]">
+                              <Sparkles className="h-2.5 w-2.5 mr-0.5" />
+                              IA
+                            </Badge>
+                          )}
+                        </div>
+                      </motion.button>
+                    ))
+                  )}
                 </div>
               </ScrollArea>
             </Card>

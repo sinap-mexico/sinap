@@ -133,6 +133,51 @@ export async function GET(req: NextRequest) {
       weeklyAppointments.push({ day: dayNames[i], count })
     }
 
+    // Monthly revenue — last 6 months for chart
+    const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+    const monthlyRevenue = []
+    const currentMonth = today.getMonth()
+
+    for (let i = 5; i >= 0; i--) {
+      const mIdx = (currentMonth - i + 12) % 12
+      const year = currentMonth - i < 0 ? today.getFullYear() - 1 : today.getFullYear()
+      const mStart = new Date(year, mIdx, 1)
+      const mEnd = new Date(year, mIdx + 1, 0, 23, 59, 59, 999)
+
+      const agg = await db.invoice.aggregate({
+        where: {
+          clinicId,
+          createdAt: { gte: mStart, lte: mEnd },
+          status: { notIn: ['cancelled', 'error'] },
+        },
+        _sum: { total: true },
+      })
+
+      monthlyRevenue.push({
+        month: monthNames[mIdx],
+        amount: Math.round(agg._sum.total || 0),
+      })
+    }
+
+    // No-show rate
+    const totalAppointments = await db.appointment.count({
+      where: {
+        clinicId,
+        date: { gte: monthStart, lte: monthEnd },
+      },
+    })
+    const noShowCount = await db.appointment.count({
+      where: {
+        clinicId,
+        date: { gte: monthStart, lte: monthEnd },
+        status: 'no_show',
+      },
+    })
+    const noShowRate = totalAppointments > 0 ? Math.round((noShowCount / totalAppointments) * 100) : 0
+
+    // Current month revenue for KPI card
+    const currentMonthRevenue = monthlyRevenue.length > 0 ? monthlyRevenue[monthlyRevenue.length - 1].amount : 0
+
     return NextResponse.json({
       kpi: {
         citasHoy,
@@ -143,6 +188,9 @@ export async function GET(req: NextRequest) {
         ocupacion,
       },
       weeklyAppointments,
+      monthlyRevenue,
+      noShowRate,
+      currentMonthRevenue,
     })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error'

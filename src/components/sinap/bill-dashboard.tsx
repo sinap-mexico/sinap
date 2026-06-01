@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -16,10 +16,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { invoices, kpiData, patients } from '@/lib/mock-data'
 import { useSinapStore } from '@/lib/sinap-store'
 import { eventBus } from '@/lib/event-bus'
-import { FORMA_PAGO, METODO_PAGO, USO_CFDI, REGIMEN_FISCAL_COMMON, HEALTH_PRODUCT_CODES, UNIT_CODES } from '@/lib/facturama'
+import { FORMA_PAGO, METODO_PAGO, USO_CFDI } from '@/lib/facturama'
 import {
   Receipt,
   DollarSign,
@@ -30,7 +29,6 @@ import {
   XCircle,
   Loader2,
   Database,
-  Wifi,
   WifiOff,
   X,
   FileText,
@@ -39,9 +37,6 @@ import {
   TrendingDown,
   Download,
   FileDown,
-  Search,
-  Filter,
-  Eye,
   Sparkles,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -50,6 +45,7 @@ function InvoiceStatusBadge({ status }: { status: string }) {
   const config: Record<string, { color: string; bg: string; icon: React.ReactNode }> = {
     timbrada: { color: '#1D9E75', bg: '#E1F5EE', icon: <CheckCircle2 className="h-3 w-3" /> },
     pendiente: { color: '#D97706', bg: '#FEF3C7', icon: <Clock className="h-3 w-3" /> },
+    pending: { color: '#D97706', bg: '#FEF3C7', icon: <Clock className="h-3 w-3" /> },
     error: { color: '#E53E3E', bg: '#FEE2E2', icon: <XCircle className="h-3 w-3" /> },
     cancelled: { color: '#888780', bg: '#F1EFE8', icon: <XCircle className="h-3 w-3" /> },
   }
@@ -77,6 +73,12 @@ interface CFDIInvoice {
   isSimulated?: boolean
 }
 
+interface PatientOption {
+  id: string
+  fullName: string
+  rfc?: string | null
+}
+
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: { opacity: 1, transition: { staggerChildren: 0.08 } },
@@ -88,8 +90,11 @@ const itemVariants = {
 }
 
 export function BillDashboard() {
-  const { clinicProfile } = useSinapStore()
-  const [invoiceList, setInvoiceList] = useState<CFDIInvoice[]>(invoices.map(i => ({ ...i, isSimulated: true })))
+  const { clinicProfile, clinicId, setClinicId, clinicSlug } = useSinapStore()
+  const [invoiceList, setInvoiceList] = useState<CFDIInvoice[]>([])
+  const [patients, setPatients] = useState<PatientOption[]>([])
+  const [isLoadingInvoices, setIsLoadingInvoices] = useState(true)
+  const [isLoadingPatients, setIsLoadingPatients] = useState(true)
   const [showCFDIDialog, setShowCFDIDialog] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<CFDIInvoice | null>(null)
@@ -107,14 +112,92 @@ export function BillDashboard() {
   const facturamaConnected = process.env.NODE_ENV === 'development'
   const facturamaMode = 'sandbox'
 
+  // Resolve clinicId on mount if needed
+  useEffect(() => {
+    async function resolveClinicId() {
+      if (clinicId) return
+      try {
+        const res = await fetch(`/api/clinic?slug=${encodeURIComponent(clinicSlug)}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.clinic?.id) {
+            setClinicId(data.clinic.id)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to resolve clinicId:', err)
+      }
+    }
+    resolveClinicId()
+  }, [clinicId, clinicSlug, setClinicId])
+
+  // Fetch invoices from API
+  const fetchInvoices = useCallback(async () => {
+    if (!clinicId) return
+    setIsLoadingInvoices(true)
+    try {
+      const res = await fetch(`/api/invoices?clinicId=${clinicId}`)
+      if (res.ok) {
+        const data = await res.json()
+        const mapped: CFDIInvoice[] = (data.invoices || []).map((inv: Record<string, unknown>) => ({
+          id: inv.id as string,
+          uuid: (inv.cfdiUuid as string) || 'PENDING',
+          patientName: (inv.patient as Record<string, unknown>)?.fullName as string || 'Desconocido',
+          concept: (inv.concepto as string) || '',
+          total: (inv.total as number) || 0,
+          status: (inv.status as string) || 'pending',
+          date: inv.createdAt ? new Date(inv.createdAt as string).toISOString().split('T')[0] : '',
+          paymentMethod: (inv.formaPago as string) === '01' ? 'Efectivo' : (inv.formaPago as string) === '03' ? 'Transferencia' : 'Tarjeta',
+          isSimulated: false,
+        }))
+        setInvoiceList(mapped)
+      }
+    } catch (err) {
+      console.error('Failed to fetch invoices:', err)
+    } finally {
+      setIsLoadingInvoices(false)
+    }
+  }, [clinicId])
+
+  // Fetch patients from API
+  const fetchPatients = useCallback(async () => {
+    if (!clinicId) return
+    setIsLoadingPatients(true)
+    try {
+      const res = await fetch(`/api/patients?clinicId=${clinicId}`)
+      if (res.ok) {
+        const data = await res.json()
+        setPatients(
+          (data.patients || []).map((p: Record<string, unknown>) => ({
+            id: p.id as string,
+            fullName: p.fullName as string,
+            rfc: p.rfc as string | null,
+          }))
+        )
+      }
+    } catch (err) {
+      console.error('Failed to fetch patients:', err)
+    } finally {
+      setIsLoadingPatients(false)
+    }
+  }, [clinicId])
+
+  useEffect(() => {
+    fetchInvoices()
+  }, [fetchInvoices])
+
+  useEffect(() => {
+    fetchPatients()
+  }, [fetchPatients])
+
   const timbradas = invoiceList.filter((i) => i.status === 'timbrada').length
-  const pendientes = invoiceList.filter((i) => i.status === 'pendiente').length
+  const pendientes = invoiceList.filter((i) => i.status === 'pendiente' || i.status === 'pending').length
   const errores = invoiceList.filter((i) => i.status === 'error').length
   const totalTimbrado = invoiceList
     .filter((i) => i.status === 'timbrada')
     .reduce((sum, i) => sum + i.total, 0)
   const totalPendiente = invoiceList
-    .filter((i) => i.status === 'pendiente')
+    .filter((i) => i.status === 'pendiente' || i.status === 'pending')
     .reduce((sum, i) => sum + i.total, 0)
 
   const handleGenerateCFDI = async () => {
@@ -129,7 +212,7 @@ export function BillDashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          clinicId: 'demo',
+          clinicId: clinicId || 'demo',
           patientId: formPatient,
           concept: formConcept,
           subtotal,
@@ -137,8 +220,8 @@ export function BillDashboard() {
           formaPago: formFormaPago,
           metodoPago: formMetodoPago,
           usoCFDI: formUsoCFDI,
-          rfcReceptor: patient?.name === 'Publico en general' ? 'XAXX010101000' : 'XAXX010101000',
-          nombreReceptor: patient?.name || 'Publico en general',
+          rfcReceptor: patient?.fullName === 'Publico en general' ? 'XAXX010101000' : 'XAXX010101000',
+          nombreReceptor: patient?.fullName || 'Publico en general',
           rfcEmisor: clinicProfile.rfc,
           nombreEmisor: clinicProfile.name,
         }),
@@ -147,10 +230,33 @@ export function BillDashboard() {
       const data = await response.json()
 
       if (response.ok && data.cfdiUuid) {
+        // Also create the invoice in our DB
+        await fetch('/api/invoices', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clinicId: clinicId,
+            patientId: formPatient,
+            concepto: formConcept,
+            subtotal,
+            iva: subtotal * 0.16,
+            total: data.total || subtotal * 1.16,
+            formaPago: formFormaPago,
+            metodoPago: formMetodoPago,
+            usoCFDI: formUsoCFDI,
+            cfdiUuid: data.cfdiUuid,
+            facturamaId: data.facturamaId,
+            pdfUrl: data.pdfUrl,
+            xmlUrl: data.xmlUrl,
+            status: 'timbrada',
+            paymentStatus: 'unpaid',
+          }),
+        })
+
         const newInvoice: CFDIInvoice = {
           id: `inv${Date.now()}`,
           uuid: data.cfdiUuid,
-          patientName: patient?.name || 'Publico en general',
+          patientName: patient?.fullName || 'Publico en general',
           concept: formConcept,
           total: data.total,
           status: 'timbrada',
@@ -163,10 +269,30 @@ export function BillDashboard() {
         resetForm()
         setCfdiStep(0)
       } else {
+        // Create error invoice in DB
+        await fetch('/api/invoices', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clinicId: clinicId,
+            patientId: formPatient,
+            concepto: formConcept,
+            subtotal,
+            iva: subtotal * 0.16,
+            total: subtotal * 1.16,
+            formaPago: formFormaPago,
+            metodoPago: formMetodoPago,
+            usoCFDI: formUsoCFDI,
+            status: 'error',
+            paymentStatus: 'unpaid',
+            errorMessage: data.error || 'Error al timbrar CFDI',
+          }),
+        })
+
         const errorInvoice: CFDIInvoice = {
           id: `inv${Date.now()}`,
           uuid: 'ERROR',
-          patientName: patient?.name || 'Publico en general',
+          patientName: patient?.fullName || 'Publico en general',
           concept: formConcept,
           total: subtotal * 1.16,
           status: 'error',
@@ -193,7 +319,7 @@ export function BillDashboard() {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          clinicId: 'demo',
+          clinicId: clinicId || 'demo',
           cfdiUuid: cancelTarget.uuid,
           motive: '02',
         }),
@@ -239,7 +365,7 @@ export function BillDashboard() {
                     Facturas del mes
                   </p>
                   <p className="text-3xl font-medium text-[#2C2C2A] mt-1 tracking-[-0.03em]">
-                    {invoiceList.length}
+                    {isLoadingInvoices ? '—' : invoiceList.length}
                   </p>
                 </div>
                 <motion.div
@@ -271,7 +397,7 @@ export function BillDashboard() {
                     Total facturado
                   </p>
                   <p className="text-3xl font-medium text-[#2C2C2A] mt-1 tracking-[-0.03em]">
-                    ${totalTimbrado.toLocaleString('es-MX')}
+                    {isLoadingInvoices ? '—' : `$${totalTimbrado.toLocaleString('es-MX')}`}
                   </p>
                   <p className="text-[10px] text-[#888780]">MXN timbrado</p>
                 </div>
@@ -284,7 +410,7 @@ export function BillDashboard() {
               </div>
               <p className="text-xs text-[#1D9E75] mt-2 font-medium flex items-center gap-1">
                 <TrendingUp className="h-3 w-3" />
-                +15% vs mes anterior
+                {invoiceList.length > 0 ? `${timbradas} facturas timbradas` : 'Sin facturas aún'}
               </p>
             </CardContent>
           </Card>
@@ -299,7 +425,7 @@ export function BillDashboard() {
                     Pendientes de cobro
                   </p>
                   <p className="text-3xl font-medium text-[#2C2C2A] mt-1 tracking-[-0.03em]">
-                    ${totalPendiente.toLocaleString('es-MX')}
+                    {isLoadingInvoices ? '—' : `$${totalPendiente.toLocaleString('es-MX')}`}
                   </p>
                   <p className="text-[10px] text-[#888780]">MXN / {pendientes} facturas</p>
                 </div>
@@ -350,92 +476,104 @@ export function BillDashboard() {
           <CardContent className="flex-1 min-h-0 p-0">
             <ScrollArea className="h-full">
               <div className="overflow-x-auto px-6 pb-4">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-[#E1F5EE]">
-                      <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
-                        UUID
-                      </th>
-                      <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
-                        Paciente
-                      </th>
-                      <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
-                        Concepto
-                      </th>
-                      <th className="text-right text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
-                        Total
-                      </th>
-                      <th className="text-center text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
-                        Estado
-                      </th>
-                      <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
-                        Fecha
-                      </th>
-                      <th className="text-center text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
-                        Descargar
-                      </th>
-                      <th className="text-right text-[10px] text-[#888780] uppercase tracking-wide pb-2 font-medium">
-                        Acciones
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {invoiceList.map((inv) => (
-                      <tr
-                        key={inv.id}
-                        className="border-b border-[#E1F5EE]/50 hover:bg-[#F1EFE8] transition-colors group"
-                      >
-                        <td className="py-3 pr-4">
-                          <span className="text-xs font-mono text-[#534AB7]">
-                            {inv.uuid.slice(0, 8)}...
-                          </span>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <span className="text-sm text-[#2C2C2A]">{inv.patientName}</span>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <span className="text-xs text-[#888780]">{inv.concept}</span>
-                        </td>
-                        <td className="py-3 pr-4 text-right">
-                          <span className="text-sm font-medium text-[#2C2C2A]">
-                            ${inv.total.toLocaleString('es-MX')}
-                          </span>
-                        </td>
-                        <td className="py-3 pr-4 text-center">
-                          <InvoiceStatusBadge status={inv.status} />
-                        </td>
-                        <td className="py-3 pr-4">
-                          <span className="text-xs text-[#888780]">{inv.date}</span>
-                        </td>
-                        <td className="py-3 pr-4 text-center">
-                          {inv.status === 'timbrada' && (
-                            <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-[#534AB7]">
-                                <FileDown className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-[#1D9E75]">
-                                <Download className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          )}
-                        </td>
-                        <td className="py-3 text-right">
-                          {inv.status === 'timbrada' && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 text-xs text-[#E53E3E] hover:text-[#E53E3E] hover:bg-[#FEE2E2]"
-                              onClick={() => setCancelTarget(inv)}
-                            >
-                              <Trash2 className="h-3 w-3 mr-1" />
-                              Cancelar
-                            </Button>
-                          )}
-                        </td>
+                {isLoadingInvoices ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-6 w-6 animate-spin text-[#534AB7]" />
+                  </div>
+                ) : invoiceList.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <Receipt className="h-10 w-10 text-[#888780]/30 mb-3" />
+                    <p className="text-sm text-[#888780]">No hay facturas registradas</p>
+                    <p className="text-xs text-[#888780]/70 mt-1">Genera tu primer CFDI para comenzar</p>
+                  </div>
+                ) : (
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-[#E1F5EE]">
+                        <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
+                          UUID
+                        </th>
+                        <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
+                          Paciente
+                        </th>
+                        <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
+                          Concepto
+                        </th>
+                        <th className="text-right text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
+                          Total
+                        </th>
+                        <th className="text-center text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
+                          Estado
+                        </th>
+                        <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
+                          Fecha
+                        </th>
+                        <th className="text-center text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
+                          Descargar
+                        </th>
+                        <th className="text-right text-[10px] text-[#888780] uppercase tracking-wide pb-2 font-medium">
+                          Acciones
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {invoiceList.map((inv) => (
+                        <tr
+                          key={inv.id}
+                          className="border-b border-[#E1F5EE]/50 hover:bg-[#F1EFE8] transition-colors group"
+                        >
+                          <td className="py-3 pr-4">
+                            <span className="text-xs font-mono text-[#534AB7]">
+                              {inv.uuid.slice(0, 8)}...
+                            </span>
+                          </td>
+                          <td className="py-3 pr-4">
+                            <span className="text-sm text-[#2C2C2A]">{inv.patientName}</span>
+                          </td>
+                          <td className="py-3 pr-4">
+                            <span className="text-xs text-[#888780]">{inv.concept}</span>
+                          </td>
+                          <td className="py-3 pr-4 text-right">
+                            <span className="text-sm font-medium text-[#2C2C2A]">
+                              ${inv.total.toLocaleString('es-MX')}
+                            </span>
+                          </td>
+                          <td className="py-3 pr-4 text-center">
+                            <InvoiceStatusBadge status={inv.status} />
+                          </td>
+                          <td className="py-3 pr-4">
+                            <span className="text-xs text-[#888780]">{inv.date}</span>
+                          </td>
+                          <td className="py-3 pr-4 text-center">
+                            {inv.status === 'timbrada' && (
+                              <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-[#534AB7]">
+                                  <FileDown className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-[#1D9E75]">
+                                  <Download className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 text-right">
+                            {inv.status === 'timbrada' && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs text-[#E53E3E] hover:text-[#E53E3E] hover:bg-[#FEE2E2]"
+                                onClick={() => setCancelTarget(inv)}
+                              >
+                                <Trash2 className="h-3 w-3 mr-1" />
+                                Cancelar
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </ScrollArea>
           </CardContent>
@@ -486,11 +624,11 @@ export function BillDashboard() {
                 <Label className="text-xs text-[#888780]">Paciente</Label>
                 <Select value={formPatient} onValueChange={setFormPatient}>
                   <SelectTrigger className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7]">
-                    <SelectValue placeholder="Seleccionar paciente..." />
+                    <SelectValue placeholder={isLoadingPatients ? 'Cargando...' : 'Seleccionar paciente...'} />
                   </SelectTrigger>
                   <SelectContent>
                     {patients.map(p => (
-                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      <SelectItem key={p.id} value={p.id}>{p.fullName}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -568,7 +706,7 @@ export function BillDashboard() {
 
             <div className="p-3 rounded-lg bg-[#F1EFE8] text-xs text-[#888780] space-y-1">
               <p><span className="font-medium text-[#2C2C2A]">Emisor:</span> {clinicProfile.name} | RFC: {clinicProfile.rfc}</p>
-              <p><span className="font-medium text-[#2C2C2A]">Receptor:</span> {formPatient ? patients.find(p => p.id === formPatient)?.name : 'Seleccionar paciente'}</p>
+              <p><span className="font-medium text-[#2C2C2A]">Receptor:</span> {formPatient ? patients.find(p => p.id === formPatient)?.fullName : 'Seleccionar paciente'}</p>
             </div>
           </div>
           <DialogFooter className="gap-2">

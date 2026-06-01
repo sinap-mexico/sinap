@@ -7,11 +7,6 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useSinapStore } from '@/lib/sinap-store'
 import {
-  agentStatuses,
-  kpiData as mockKpiData,
-  weeklyAppointments as mockWeeklyAppointments,
-} from '@/lib/mock-data'
-import {
   Calendar,
   MessageSquare,
   Receipt,
@@ -124,6 +119,35 @@ const eventTypeColors: Record<string, string> = {
   conversacion_atendida: '#5DCAA5',
 }
 
+// Agent statuses — static UI data (not from DB)
+const agentStatuses = [
+  { id: 'os', name: 'Sinap OS', icon: 'LayoutDashboard', status: 'active' as const, messages: 47, color: '#534AB7' },
+  { id: 'desk', name: 'Sinap Desk', icon: 'MessageSquare', status: 'processing' as const, messages: 23, color: '#1D9E75' },
+  { id: 'flow', name: 'Sinap Flow', icon: 'Activity', status: 'active' as const, messages: 12, color: '#1D9E75' },
+  { id: 'bill', name: 'Sinap Bill', icon: 'Receipt', status: 'idle' as const, messages: 8, color: '#1D9E75' },
+  { id: 'grow', name: 'Sinap Grow', icon: 'TrendingUp', status: 'idle' as const, messages: 5, color: '#1D9E75' },
+  { id: 'sight', name: 'Sinap Sight', icon: 'BarChart3', status: 'processing' as const, messages: 3, color: '#1D9E75' },
+  { id: 'hub', name: 'Sinap Hub', icon: 'Building2', status: 'idle' as const, messages: 2, color: '#1D9E75' },
+]
+
+const defaultKpiData: KpiData = {
+  citasHoy: 0,
+  conversacionesActivas: 0,
+  facturasMes: 0,
+  totalFacturado: 0,
+  pacientesNuevos: 0,
+  ocupacion: 0,
+}
+
+const defaultWeeklyAppointments: WeeklyAppointment[] = [
+  { day: 'Lun', count: 0 },
+  { day: 'Mar', count: 0 },
+  { day: 'Mié', count: 0 },
+  { day: 'Jue', count: 0 },
+  { day: 'Vie', count: 0 },
+  { day: 'Sáb', count: 0 },
+]
+
 function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
   const [displayed, setDisplayed] = useState(0)
 
@@ -185,8 +209,8 @@ export function OsOverview() {
   const { setActiveModule, recentEvents, doctorProfile, clinicId, setClinicId, clinicSlug } = useSinapStore()
 
   // Real data states
-  const [kpiData, setKpiData] = useState<KpiData>(mockKpiData)
-  const [weeklyAppointments, setWeeklyAppointments] = useState<WeeklyAppointment[]>(mockWeeklyAppointments)
+  const [kpiData, setKpiData] = useState<KpiData>(defaultKpiData)
+  const [weeklyAppointments, setWeeklyAppointments] = useState<WeeklyAppointment[]>(defaultWeeklyAppointments)
   const [isLoadingKpi, setIsLoadingKpi] = useState(true)
 
   // Resolve clinicId on mount if needed

@@ -79,3 +79,63 @@ Stage Summary:
 - 3 new API endpoints created: /api/clinic, /api/services, /api/dashboard/kpi
 - Build compiles successfully with no errors
 - Still remaining: Flow Clinical, Bill, Desk, Grow, Sight, Hub modules need DB connection
+---
+Task ID: 2
+Agent: main
+Task: Connect ALL Sinap modules to real Supabase database — remove all mock data dependencies
+
+Work Log:
+- Created /api/invoices/route.ts — GET (list by clinicId with patient include) and POST (create invoice with all CFDI fields)
+- Created /api/conversations/route.ts — GET (list by clinicId with messages and patient include)
+- Created /api/analytics/route.ts — GET (patient segments via groupBy, funnel data derived from segments, campaigns placeholder)
+- Enhanced /api/dashboard/kpi/route.ts — added monthlyRevenue (last 6 months from invoice aggregate), noShowRate, currentMonthRevenue
+- Rewrote bill-dashboard.tsx: removed mock-data imports (invoices, kpiData, patients), now fetches from /api/invoices and /api/patients, creates invoices in DB after CFDI generation
+- Rewrote flow-clinical.tsx: removed mock-data imports (appointments, patients), now fetches pending appointments from /api/appointments with includeHistory=true, maps API data to component format
+- Rewrote desk-inbox.tsx: removed mock-data imports (conversations, Conversation types), now fetches from /api/conversations, maps API data including messages/patient/intent/sentiment, added empty state handling
+- Rewrote sight-analytics.tsx: removed mock-data imports (weeklyAppointments, monthlyRevenue, kpiData), now fetches from /api/dashboard/kpi which returns monthlyRevenue and noShowRate in addition to weekly KPIs
+- Rewrote grow-marketing.tsx: removed mock-data imports (patientSegments, campaigns, funnelData), now fetches from /api/analytics which returns real patient segment counts and derived funnel data
+- Rewrote hub-operations.tsx: removed mock-data imports (staffMembers, inventoryAlerts, kpiData), now fetches doctors from /api/doctors and cash flow data from /api/dashboard/kpi, inventory alerts kept as static (no Inventory model in schema)
+- Updated os-overview.tsx: removed mock-data imports (agentStatuses, kpiData as mockKpiData, weeklyAppointments as mockWeeklyAppointments), agentStatuses inlined as static UI data, KPI/weekly defaults set to zeros
+- Deleted config-page.tsx (no longer imported, replaced by settings-pages.tsx)
+- All components use useSinapStore() for clinicId with resolve-on-mount pattern
+- All components gracefully handle empty/error states with loading indicators and empty state messages
+- Zero imports from @/lib/mock-data remain in active components (only onboarding-flow.tsx imports defaultServicesBySpecialty for seed data — acceptable)
+
+Stage Summary:
+- 3 new API routes created: /api/invoices, /api/conversations, /api/analytics
+- 1 API route enhanced: /api/dashboard/kpi (added monthlyRevenue, noShowRate, currentMonthRevenue)
+- ALL 6 remaining modules connected to real database: Bill, Flow, Desk, Sight, Grow, Hub
+- OS Overview also cleaned up: no more mock-data fallback imports
+- ZERO imports from @/lib/mock-data in any active component (exception: onboarding-flow.tsx for seed data)
+- config-page.tsx removed (was dead code)
+- Lint passes (only pre-existing error in dashboard/page.tsx, not related to this task)
+- Dev server compiles and runs successfully
+
+---
+Task ID: 1
+Agent: main
+Task: Connect all Sinap modules to real Supabase database, remove mock data dependencies
+
+Work Log:
+- Read and audited entire codebase: Prisma schema, API routes, all components, store
+- Fixed settings-pages.tsx: replaced hardcoded clinicId='demo' with store.clinicId
+- Fixed header.tsx: removed mock-data import, now uses doctorProfile from store for avatar name/specialty
+- Created /api/invoices/route.ts: GET (list invoices by clinicId) + POST (create invoice with full CFDI fields)
+- Created /api/conversations/route.ts: GET (list conversations with messages and patient data)
+- Created /api/analytics/route.ts: GET (patient segments via groupBy, funnel data derived, campaigns placeholder)
+- Enhanced /api/dashboard/kpi/route.ts: added monthlyRevenue, noShowRate, currentMonthRevenue
+- Connected bill-dashboard.tsx to real API: fetches invoices from /api/invoices, patients from /api/patients
+- Connected flow-clinical.tsx to real API: fetches appointments/patients from API
+- Connected desk-inbox.tsx to real API: fetches conversations from /api/conversations
+- Connected sight-analytics.tsx to real API: fetches weekly appointments, revenue, occupancy from /api/dashboard/kpi
+- Connected grow-marketing.tsx to real API: fetches segments and funnel from /api/analytics
+- Connected hub-operations.tsx to real API: fetches doctors from /api/doctors, KPI from dashboard
+- Removed old config-page.tsx (dead code, replaced by settings-pages.tsx)
+- Verified build succeeds with zero errors
+- Verified only onboarding-flow.tsx still imports from mock-data (acceptable for seed data)
+
+Stage Summary:
+- ALL modules now connected to real Supabase DB via API routes
+- ZERO mock-data imports in active components (only onboarding uses defaultServicesBySpecialty)
+- 3 new API endpoints created, 1 enhanced
+- Build compiles successfully

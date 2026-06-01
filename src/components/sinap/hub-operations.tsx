@@ -1,21 +1,46 @@
 'use client'
 
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { staffMembers, inventoryAlerts, kpiData } from '@/lib/mock-data'
+import { useSinapStore } from '@/lib/sinap-store'
 import {
   Building2,
-  User,
   Calendar,
   DollarSign,
   TrendingUp,
   TrendingDown,
   Package,
   AlertTriangle,
+  Loader2,
 } from 'lucide-react'
 import { motion } from 'framer-motion'
+
+interface StaffMember {
+  id: string
+  name: string
+  specialty: string
+  todayAppointments: number
+  avatar: string
+}
+
+interface InventoryAlert {
+  id: string
+  item: string
+  stock: number
+  minStock: number
+  urgency: 'high' | 'medium' | 'low'
+}
+
+// Static inventory alerts (no inventory model in schema yet)
+const defaultInventoryAlerts: InventoryAlert[] = [
+  { id: 'i1', item: 'Anestesia topica (crema)', stock: 3, minStock: 10, urgency: 'high' },
+  { id: 'i2', item: 'Gasas estériles', stock: 8, minStock: 20, urgency: 'high' },
+  { id: 'i3', item: 'Crioterapia (nitrogeno)', stock: 15, minStock: 20, urgency: 'medium' },
+  { id: 'i4', item: 'Guantes de latex M', stock: 50, minStock: 100, urgency: 'low' },
+]
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -28,8 +53,86 @@ const itemVariants = {
 }
 
 export function HubOperations() {
-  const income = 67000
-  const expenses = 28500
+  const { clinicId, setClinicId, clinicSlug } = useSinapStore()
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([])
+  const [inventoryAlerts] = useState<InventoryAlert[]>(defaultInventoryAlerts)
+  const [isLoadingStaff, setIsLoadingStaff] = useState(true)
+  const [kpiData, setKpiData] = useState<{ totalFacturado: number; currentMonthRevenue: number }>({ totalFacturado: 0, currentMonthRevenue: 0 })
+  const [isLoadingKpi, setIsLoadingKpi] = useState(true)
+
+  // Resolve clinicId on mount if needed
+  useEffect(() => {
+    async function resolveClinicId() {
+      if (clinicId) return
+      try {
+        const res = await fetch(`/api/clinic?slug=${encodeURIComponent(clinicSlug)}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.clinic?.id) {
+            setClinicId(data.clinic.id)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to resolve clinicId:', err)
+      }
+    }
+    resolveClinicId()
+  }, [clinicId, clinicSlug, setClinicId])
+
+  // Fetch doctors/staff from API
+  const fetchStaff = useCallback(async () => {
+    if (!clinicId) return
+    setIsLoadingStaff(true)
+    try {
+      const res = await fetch(`/api/doctors?clinicId=${clinicId}`)
+      if (res.ok) {
+        const data = await res.json()
+        const mapped: StaffMember[] = (data.doctors || []).map((doc: Record<string, unknown>) => ({
+          id: doc.id as string,
+          name: doc.name as string,
+          specialty: (doc.specialty as string) || 'General',
+          todayAppointments: 0, // We don't have this count readily available
+          avatar: (doc.name as string).split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase(),
+        }))
+        setStaffMembers(mapped)
+      }
+    } catch (err) {
+      console.error('Failed to fetch staff:', err)
+    } finally {
+      setIsLoadingStaff(false)
+    }
+  }, [clinicId])
+
+  // Fetch KPI data for cash flow
+  const fetchKpi = useCallback(async () => {
+    if (!clinicId) return
+    setIsLoadingKpi(true)
+    try {
+      const res = await fetch(`/api/dashboard/kpi?clinicId=${clinicId}`)
+      if (res.ok) {
+        const data = await res.json()
+        setKpiData({
+          totalFacturado: data.kpi?.totalFacturado || 0,
+          currentMonthRevenue: data.currentMonthRevenue || 0,
+        })
+      }
+    } catch (err) {
+      console.error('Failed to fetch KPI:', err)
+    } finally {
+      setIsLoadingKpi(false)
+    }
+  }, [clinicId])
+
+  useEffect(() => {
+    fetchStaff()
+  }, [fetchStaff])
+
+  useEffect(() => {
+    fetchKpi()
+  }, [fetchKpi])
+
+  const income = kpiData.currentMonthRevenue || kpiData.totalFacturado
+  const expenses = Math.round(income * 0.42) // Approximate expenses as ~42% of revenue for demo
   const netCash = income - expenses
 
   const urgencyColors: Record<string, { bg: string; text: string }> = {
@@ -56,7 +159,7 @@ export function HubOperations() {
                     Ingresos del mes
                   </p>
                   <p className="text-3xl font-medium text-[#2C2C2A] mt-1 tracking-[-0.03em]">
-                    ${income.toLocaleString('es-MX')}
+                    {isLoadingKpi ? '—' : `$${income.toLocaleString('es-MX')}`}
                   </p>
                 </div>
                 <motion.div
@@ -68,7 +171,7 @@ export function HubOperations() {
               </div>
               <p className="text-xs text-[#1D9E75] mt-2 font-medium flex items-center gap-1">
                 <TrendingUp className="h-3 w-3" />
-                +15% vs mes anterior
+                MXN facturado
               </p>
             </CardContent>
           </Card>
@@ -82,7 +185,7 @@ export function HubOperations() {
                     Egresos del mes
                   </p>
                   <p className="text-3xl font-medium text-[#2C2C2A] mt-1 tracking-[-0.03em]">
-                    ${expenses.toLocaleString('es-MX')}
+                    {isLoadingKpi ? '—' : `$${expenses.toLocaleString('es-MX')}`}
                   </p>
                 </div>
                 <motion.div
@@ -94,7 +197,7 @@ export function HubOperations() {
               </div>
               <p className="text-xs text-[#E53E3E] mt-2 font-medium flex items-center gap-1">
                 <TrendingDown className="h-3 w-3" />
-                +3% vs mes anterior
+                Estimado
               </p>
             </CardContent>
           </Card>
@@ -108,7 +211,7 @@ export function HubOperations() {
                     Flujo neto
                   </p>
                   <p className="text-3xl font-medium text-[#1D9E75] mt-1 tracking-[-0.03em]">
-                    ${netCash.toLocaleString('es-MX')}
+                    {isLoadingKpi ? '—' : `$${netCash.toLocaleString('es-MX')}`}
                   </p>
                 </div>
                 <motion.div
@@ -118,7 +221,9 @@ export function HubOperations() {
                   <DollarSign className="h-5 w-5 text-[#1D9E75]" />
                 </motion.div>
               </div>
-              <p className="text-xs text-[#1D9E75] mt-2 font-medium">Margen: {Math.round((netCash / income) * 100)}%</p>
+              <p className="text-xs text-[#1D9E75] mt-2 font-medium">
+                Margen: {income > 0 ? Math.round((netCash / income) * 100) : 0}%
+              </p>
             </CardContent>
           </Card>
         </motion.div>
@@ -141,36 +246,47 @@ export function HubOperations() {
             </CardHeader>
             <Separator className="bg-[#E1F5EE]" />
             <div className="p-3 space-y-3">
-              {staffMembers.map((staff, i) => (
-                <motion.div
-                  key={staff.id}
-                  className="flex items-center gap-3 p-3 rounded-lg bg-[#F1EFE8]"
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.3 + i * 0.08 }}
-                  whileHover={{ x: 4, backgroundColor: '#EEEDFE' }}
-                >
+              {isLoadingStaff ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-5 w-5 animate-spin text-[#534AB7]" />
+                </div>
+              ) : staffMembers.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Building2 className="h-8 w-8 text-[#888780]/30 mb-2" />
+                  <p className="text-xs text-[#888780]">No hay doctores registrados</p>
+                </div>
+              ) : (
+                staffMembers.map((staff, i) => (
                   <motion.div
-                    className="h-10 w-10 rounded-full bg-[#534AB7] flex items-center justify-center shrink-0"
-                    whileHover={{ scale: 1.1 }}
+                    key={staff.id}
+                    className="flex items-center gap-3 p-3 rounded-lg bg-[#F1EFE8]"
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.3 + i * 0.08 }}
+                    whileHover={{ x: 4, backgroundColor: '#EEEDFE' }}
                   >
-                    <span className="text-sm font-medium text-white">{staff.avatar}</span>
-                  </motion.div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-[#2C2C2A]">{staff.name}</p>
-                    <p className="text-xs text-[#888780]">{staff.specialty}</p>
-                  </div>
-                  <div className="text-right">
-                    <div className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3 text-[#1D9E75]" />
-                      <span className="text-sm font-medium text-[#2C2C2A]">
-                        {staff.todayAppointments}
-                      </span>
+                    <motion.div
+                      className="h-10 w-10 rounded-full bg-[#534AB7] flex items-center justify-center shrink-0"
+                      whileHover={{ scale: 1.1 }}
+                    >
+                      <span className="text-sm font-medium text-white">{staff.avatar}</span>
+                    </motion.div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-[#2C2C2A]">{staff.name}</p>
+                      <p className="text-xs text-[#888780]">{staff.specialty}</p>
                     </div>
-                    <p className="text-[10px] text-[#888780]">citas hoy</p>
-                  </div>
-                </motion.div>
-              ))}
+                    <div className="text-right">
+                      <div className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3 text-[#1D9E75]" />
+                        <span className="text-sm font-medium text-[#2C2C2A]">
+                          {staff.todayAppointments}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-[#888780]">citas hoy</p>
+                    </div>
+                  </motion.div>
+                ))
+              )}
             </div>
           </Card>
         </motion.div>

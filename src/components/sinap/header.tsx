@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useSinapStore, type SinapModule } from '@/lib/sinap-store'
 import { Bell, Menu, Calendar, CheckCircle2, MessageSquare, Receipt, UserPlus, X } from 'lucide-react'
-import { clinic } from '@/lib/mock-data'
+
 import { SinapLogo } from '@/components/sinap/sinap-logo'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -80,7 +80,7 @@ const mockNotifications = [
 ]
 
 export function SinapHeader() {
-  const { activeModule, clinicName, plan, clinicMode, setActiveModule } = useSinapStore()
+  const { activeModule, clinicName, plan, clinicMode, setActiveModule, doctorProfile } = useSinapStore()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const isNavVisible = (item: typeof navItems[number]) => {
@@ -212,15 +212,15 @@ export function SinapHeader() {
             <div className="relative">
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="bg-[#534AB7] text-white text-xs font-medium">
-                  AR
+                  {doctorProfile.name.split(' ').filter(w => w.length > 2).map(w => w[0]).join('').slice(0, 2)}
                 </AvatarFallback>
               </Avatar>
               {/* Online status indicator */}
               <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-[#1D9E75] border-2 border-white" />
             </div>
             <div className="hidden sm:block">
-              <p className="text-sm font-medium text-[#2C2C2A] leading-tight">{clinic.doctor.name}</p>
-              <p className="text-[11px] text-[#888780]">{clinic.doctor.specialty}</p>
+              <p className="text-sm font-medium text-[#2C2C2A] leading-tight">{doctorProfile.name}</p>
+              <p className="text-[11px] text-[#888780]">{doctorProfile.specialty}</p>
             </div>
           </div>
         </div>
