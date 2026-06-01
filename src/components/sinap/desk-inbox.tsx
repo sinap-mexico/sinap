@@ -465,7 +465,7 @@ export function DeskInbox() {
         </Card>
       </motion.div>
 
-      {/* Right panel - Conversation detail + AI suggestion (SPLIT LAYOUT) */}
+      {/* Right panel - Conversation detail + AI suggestion */}
       <motion.div
         className="hidden xl:flex h-full shrink-0"
         initial={{ opacity: 0, x: 20 }}
@@ -473,130 +473,100 @@ export function DeskInbox() {
         transition={{ duration: 0.3, delay: 0.2 }}
       >
         <Card className="border-[#E1F5EE] bg-white w-72 flex flex-col h-full overflow-hidden">
-          <CardHeader className="pb-3 shrink-0">
+          <CardHeader className="pb-2 pt-3 px-4 shrink-0">
             <CardTitle className="text-sm font-medium tracking-[-0.03em]">
               Detalle
             </CardTitle>
           </CardHeader>
           <Separator className="bg-[#E1F5EE] shrink-0" />
 
-          {/* Scrollable patient details - takes remaining space */}
-          <ScrollArea className="flex-1 min-h-0">
-            <div className="p-4 space-y-4">
-              {/* Patient info */}
-              <div className="bg-[#F8F7F3] rounded-lg p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <User className="h-4 w-4 text-[#888780]" />
-                  <span className="text-[10px] font-medium text-[#888780] uppercase tracking-wide">
-                    Paciente
+          {/* Patient details - compact, no scroll needed */}
+          <div className="flex-1 min-h-0 overflow-y-auto sinap-scroll px-3 py-3 space-y-2.5">
+            {/* Patient info - compact */}
+            <div className="bg-[#F8F7F3] rounded-lg px-3 py-2.5">
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 rounded-full bg-[#E1F5EE] flex items-center justify-center shrink-0">
+                  <span className="text-[11px] font-semibold text-[#1D9E75]">
+                    {selectedConversation?.patientName.split(' ').map((n) => n[0]).join('').slice(0, 2)}
                   </span>
                 </div>
-                <div className="flex items-center gap-2.5">
-                  <div className="h-9 w-9 rounded-full bg-[#E1F5EE] flex items-center justify-center">
-                    <span className="text-xs font-semibold text-[#1D9E75]">
-                      {selectedConversation?.patientName.split(' ').map((n) => n[0]).join('').slice(0, 2)}
-                    </span>
-                  </div>
-                  <p className="text-sm font-medium text-[#2C2C2A]">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-[#2C2C2A] truncate">
                     {selectedConversation?.patientName}
                   </p>
-                </div>
-              </div>
-
-              {/* Intent & Sentiment row */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-[#F8F7F3] rounded-lg p-3">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Tag className="h-3.5 w-3.5 text-[#888780]" />
-                    <span className="text-[10px] font-medium text-[#888780] uppercase tracking-wide">
-                      Intencion
-                    </span>
-                  </div>
-                  <Badge className="bg-[#EEEDFE] text-[#534AB7] border-0 text-xs">
-                    {selectedConversation?.intent}
-                  </Badge>
-                </div>
-                <div className="bg-[#F8F7F3] rounded-lg p-3">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Heart className="h-3.5 w-3.5 text-[#888780]" />
-                    <span className="text-[10px] font-medium text-[#888780] uppercase tracking-wide">
-                      Sentimiento
-                    </span>
-                  </div>
-                  <SentimentBadge sentiment={selectedConversation?.sentiment || 'neutral'} />
-                </div>
-              </div>
-
-              {/* Channel & Last activity row */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-[#F8F7F3] rounded-lg p-3">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Phone className="h-3.5 w-3.5 text-[#888780]" />
-                    <span className="text-[10px] font-medium text-[#888780] uppercase tracking-wide">
-                      Canal
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 mt-0.5">
                     <ChannelIcon channel={selectedConversation?.channel || 'whatsapp'} />
-                    <span className="text-xs text-[#2C2C2A]">
-                      {selectedConversation?.channel === 'whatsapp'
-                        ? 'WhatsApp'
-                        : selectedConversation?.channel === 'instagram'
-                        ? 'Instagram'
-                        : 'Facebook'}
-                    </span>
+                    <ChannelLabel channel={selectedConversation?.channel || 'whatsapp'} />
                   </div>
-                </div>
-                <div className="bg-[#F8F7F3] rounded-lg p-3">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Clock className="h-3.5 w-3.5 text-[#888780]" />
-                    <span className="text-[10px] font-medium text-[#888780] uppercase tracking-wide">
-                      Actividad
-                    </span>
-                  </div>
-                  <p className="text-xs font-medium text-[#2C2C2A]">{selectedConversation?.lastTime}</p>
-                </div>
-              </div>
-
-              {/* Quick actions */}
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Calendar className="h-4 w-4 text-[#888780]" />
-                  <span className="text-[10px] font-medium text-[#888780] uppercase tracking-wide">
-                    Acciones
-                  </span>
-                </div>
-                <div className="space-y-2">
-                  <Button variant="outline" className="w-full h-8 text-xs border-[#1D9E75] text-[#1D9E75] hover:bg-[#E1F5EE] justify-start">
-                    <Calendar className="h-3 w-3 mr-1.5" />
-                    Agendar cita
-                  </Button>
-                  <Button variant="outline" className="w-full h-8 text-xs border-[#534AB7] text-[#534AB7] hover:bg-[#EEEDFE] justify-start">
-                    <FileText className="h-3 w-3 mr-1.5" />
-                    Ver historial
-                  </Button>
                 </div>
               </div>
             </div>
-          </ScrollArea>
 
-          {/* AI suggestion - FIXED at bottom, OUTSIDE ScrollArea */}
-          <div className="shrink-0 p-4 pt-2 border-t border-[#E1F5EE]">
+            {/* Intent - FULL WIDTH so text doesn't truncate */}
+            <div className="bg-[#F8F7F3] rounded-lg px-3 py-2.5">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Tag className="h-3 w-3 text-[#888780]" />
+                <span className="text-[9px] font-medium text-[#888780] uppercase tracking-wide">
+                  Intencion
+                </span>
+              </div>
+              <Badge className="bg-[#EEEDFE] text-[#534AB7] border-0 text-[11px] leading-tight">
+                {selectedConversation?.intent}
+              </Badge>
+            </div>
+
+            {/* Sentiment & Activity row */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-[#F8F7F3] rounded-lg px-3 py-2.5">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <Heart className="h-3 w-3 text-[#888780]" />
+                  <span className="text-[9px] font-medium text-[#888780] uppercase tracking-wide">
+                    Sentimiento
+                  </span>
+                </div>
+                <SentimentBadge sentiment={selectedConversation?.sentiment || 'neutral'} />
+              </div>
+              <div className="bg-[#F8F7F3] rounded-lg px-3 py-2.5">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <Clock className="h-3 w-3 text-[#888780]" />
+                  <span className="text-[9px] font-medium text-[#888780] uppercase tracking-wide">
+                    Actividad
+                  </span>
+                </div>
+                <p className="text-xs font-medium text-[#2C2C2A]">{selectedConversation?.lastTime}</p>
+              </div>
+            </div>
+
+            {/* Quick actions - compact inline */}
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1 h-7 text-[10px] border-[#1D9E75] text-[#1D9E75] hover:bg-[#E1F5EE] justify-center px-2">
+                <Calendar className="h-3 w-3 mr-1" />
+                Agendar cita
+              </Button>
+              <Button variant="outline" className="flex-1 h-7 text-[10px] border-[#534AB7] text-[#534AB7] hover:bg-[#EEEDFE] justify-center px-2">
+                <FileText className="h-3 w-3 mr-1" />
+                Historial
+              </Button>
+            </div>
+          </div>
+
+          {/* AI suggestion - FIXED at bottom */}
+          <div className="shrink-0 px-3 pb-3 pt-1 border-t border-[#E1F5EE]">
             <motion.div
-              className="bg-gradient-to-br from-[#534AB7] to-[#6C63F0] rounded-xl p-4 shadow-lg shadow-[#534AB7]/20"
+              className="bg-gradient-to-br from-[#534AB7] to-[#6C63F0] rounded-xl p-3.5 shadow-lg shadow-[#534AB7]/20"
               initial={{ opacity: 0, y: 5 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
             >
-              <div className="flex items-center gap-2 mb-2">
-                <div className="h-7 w-7 rounded-lg bg-white/20 flex items-center justify-center">
-                  <Sparkles className="h-3.5 w-3.5 text-white" />
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className="h-6 w-6 rounded-md bg-white/20 flex items-center justify-center">
+                  <Sparkles className="h-3 w-3 text-white" />
                 </div>
-                <p className="text-sm font-semibold text-white tracking-wide">
+                <p className="text-xs font-semibold text-white tracking-wide">
                   Sugerencia IA
                 </p>
               </div>
-              <p className="text-xs text-white/90 leading-relaxed mb-3">
+              <p className="text-[11px] text-white/90 leading-relaxed mb-2.5">
                 {selectedConversation?.intent === 'Cotizacion'
                   ? 'El paciente pregunta por precio. Sugiere agendar primera cita con enlace de pago.'
                   : selectedConversation?.intent === 'Reactivacion'
@@ -605,11 +575,11 @@ export function DeskInbox() {
                   ? 'Confirma la cita y envia recordatorio con ubicacion de la clinica.'
                   : 'Responde de forma empatica y ofrece soluciones concretas.'}
               </p>
-              <div className="flex flex-wrap gap-1.5 mb-3">
+              <div className="flex flex-wrap gap-1.5 mb-2.5">
                 {getQuickReplies(selectedConversation?.intent).slice(0, 2).map((reply) => (
                   <motion.button
                     key={reply}
-                    className="shrink-0 text-[10px] px-2.5 py-1 rounded-full bg-white/15 text-white hover:bg-white/25 transition-colors whitespace-nowrap border border-white/20"
+                    className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-white/15 text-white hover:bg-white/25 transition-colors whitespace-nowrap border border-white/20"
                     onClick={() => handleQuickReply(reply)}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
@@ -621,10 +591,10 @@ export function DeskInbox() {
               <motion.div whileTap={{ scale: 0.95 }}>
                 <Button
                   size="sm"
-                  className="bg-white text-[#534AB7] hover:bg-white/90 text-xs h-8 w-full rounded-lg font-semibold shadow-sm"
+                  className="bg-white text-[#534AB7] hover:bg-white/90 text-[11px] h-7 w-full rounded-lg font-semibold shadow-sm"
                 >
                   Usar sugerencia
-                  <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                  <ChevronRight className="h-3 w-3 ml-0.5" />
                 </Button>
               </motion.div>
             </motion.div>
