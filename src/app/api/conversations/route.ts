@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getMockConversations, DEMO_CLINIC_ID } from '@/lib/mock-api'
 
 // GET /api/conversations?clinicId=xxx&status=xxx&channel=xxx
 export async function GET(req: NextRequest) {
   try {
-    if (!db) return NextResponse.json({ error: 'Base de datos no disponible' }, { status: 503 })
-
     const { searchParams } = new URL(req.url)
     const clinicId = searchParams.get('clinicId')
     const status = searchParams.get('status')
@@ -13,6 +12,14 @@ export async function GET(req: NextRequest) {
 
     if (!clinicId) {
       return NextResponse.json({ error: 'clinicId es requerido' }, { status: 400 })
+    }
+
+    // Fallback to mock data when DB is unavailable (demo mode)
+    if (!db) {
+      let conversations = getMockConversations(clinicId)
+      if (status) conversations = conversations.filter(c => c.status === status)
+      if (channel) conversations = conversations.filter(c => c.channel === channel)
+      return NextResponse.json({ conversations })
     }
 
     const where: Record<string, unknown> = { clinicId }

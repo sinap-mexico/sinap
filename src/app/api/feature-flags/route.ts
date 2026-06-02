@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getMockFeatureFlags } from '@/lib/mock-api'
 
 // GET /api/feature-flags?clinicId=xxx — Get all feature flags for a clinic
 export async function GET(req: NextRequest) {
   try {
-    if (!db) return NextResponse.json({ error: 'Base de datos no disponible' }, { status: 503 })
-
     const { searchParams } = new URL(req.url)
     const clinicId = searchParams.get('clinicId')
 
     if (!clinicId) {
       return NextResponse.json({ error: 'clinicId es requerido' }, { status: 400 })
+    }
+
+    // Fallback to mock data when DB is unavailable (demo mode)
+    if (!db) {
+      const flags = getMockFeatureFlags(clinicId)
+      return NextResponse.json({ flags })
     }
 
     const flags = await db.featureFlag.findMany({

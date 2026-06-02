@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getMockKPIs, DEMO_CLINIC_ID } from '@/lib/mock-api'
 
 // GET /api/dashboard/kpi?clinicId=xxx
 export async function GET(req: NextRequest) {
   try {
-    if (!db) return NextResponse.json({ error: 'Base de datos no disponible' }, { status: 503 })
-
     const { searchParams } = new URL(req.url)
     const clinicId = searchParams.get('clinicId')
 
     if (!clinicId) {
       return NextResponse.json({ error: 'clinicId es requerido' }, { status: 400 })
+    }
+
+    // Fallback to mock data when DB is unavailable (demo mode)
+    if (!db) {
+      const mockData = getMockKPIs(clinicId)
+      return NextResponse.json(mockData)
     }
 
     const today = new Date()

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { DEMO_CLINIC_ID } from '@/lib/mock-api'
 import bcrypt from 'bcryptjs'
 
 // ─── DATE HELPERS ──────────────────────────────────────────
@@ -25,10 +26,17 @@ function tomorrow(hour = 0, minute = 0): Date {
 }
 
 // POST /api/demo/seed — Seeds demo data if not already present
+// When DB is unavailable, returns mock clinicId so demo mode still works
 export async function POST() {
   try {
+    // If DB is not available, return mock clinicId so demo mode works
     if (!db) {
-      return NextResponse.json({ error: 'Base de datos no disponible' }, { status: 503 })
+      return NextResponse.json({
+        seeded: false,
+        message: 'Demo mode active (no database — using mock data)',
+        clinicId: DEMO_CLINIC_ID,
+        clinicSlug: 'clinica-san-angel-demo',
+      })
     }
 
     // Check if demo clinic already exists

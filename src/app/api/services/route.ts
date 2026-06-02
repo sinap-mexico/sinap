@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getMockServices } from '@/lib/mock-api'
 
 // GET /api/services?clinicId=xxx
 export async function GET(req: NextRequest) {
   try {
-    if (!db) return NextResponse.json({ error: 'Base de datos no disponible' }, { status: 503 })
-
     const { searchParams } = new URL(req.url)
     const clinicId = searchParams.get('clinicId')
 
@@ -14,6 +13,15 @@ export async function GET(req: NextRequest) {
     }
 
     const includeInactive = searchParams.get('includeInactive') === 'true'
+
+    // Fallback to mock data when DB is unavailable (demo mode)
+    if (!db) {
+      let services = getMockServices(clinicId)
+      if (!includeInactive) {
+        services = services.filter(s => s.isActive)
+      }
+      return NextResponse.json({ services })
+    }
 
     const services = await db.service.findMany({
       where: {

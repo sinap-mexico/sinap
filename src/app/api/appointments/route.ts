@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getMockAppointments } from '@/lib/mock-api'
 
 // GET /api/appointments?clinicId=xxx&date=2026-06-02&doctorId=xxx
 export async function GET(req: NextRequest) {
   try {
-    if (!db) return NextResponse.json({ error: 'Base de datos no disponible' }, { status: 503 })
-
     const { searchParams } = new URL(req.url)
     const clinicId = searchParams.get('clinicId')
     const date = searchParams.get('date')
@@ -14,6 +13,25 @@ export async function GET(req: NextRequest) {
 
     if (!clinicId) {
       return NextResponse.json({ error: 'clinicId es requerido' }, { status: 400 })
+    }
+
+    // Fallback to mock data when DB is unavailable (demo mode)
+    if (!db) {
+      let appointments = getMockAppointments(clinicId)
+      if (!includeHistory) {
+        appointments = appointments.filter(a => !['cancelled', 'no_show'].includes(a.status))
+      }
+      if (doctorId) {
+        appointments = appointments.filter(a => a.doctorId === doctorId)
+      }
+      if (date) {
+        const dateStr = new Date(date).toISOString().slice(0, 10)
+        appointments = appointments.filter(a => {
+          const aptDate = new Date(a.date as string).toISOString().slice(0, 10)
+          return aptDate === dateStr
+        })
+      }
+      return NextResponse.json({ appointments })
     }
 
     const where: Record<string, unknown> = { clinicId }

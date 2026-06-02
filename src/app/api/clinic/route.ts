@@ -1,14 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getMockClinic, DEMO_CLINIC_ID } from '@/lib/mock-api'
 
 // GET /api/clinic?slug=xxx | ?clinicId=xxx
 export async function GET(req: NextRequest) {
   try {
-    if (!db) return NextResponse.json({ error: 'Base de datos no disponible' }, { status: 503 })
-
     const { searchParams } = new URL(req.url)
     const slug = searchParams.get('slug')
     const clinicIdParam = searchParams.get('clinicId')
+
+    // Fallback to mock data when DB is unavailable (demo mode)
+    if (!db) {
+      const mockClinic = getMockClinic(clinicIdParam || DEMO_CLINIC_ID)
+      if (!mockClinic) {
+        return NextResponse.json({ error: 'Clínica no encontrada' }, { status: 404 })
+      }
+      return NextResponse.json({
+        clinic: {
+          id: mockClinic.id,
+          name: mockClinic.name,
+          slug: mockClinic.slug,
+          mode: mockClinic.mode,
+          rfc: mockClinic.rfc,
+          regimenFiscal: mockClinic.regimenFiscal,
+          email: mockClinic.email,
+          phone: mockClinic.phone,
+          address: mockClinic.address,
+          city: mockClinic.city,
+          state: mockClinic.state,
+          country: mockClinic.country,
+          plan: mockClinic.plan,
+          maxDoctors: mockClinic.maxDoctors,
+          primaryColor: mockClinic.primaryColor,
+          personaName: mockClinic.personaName,
+          logoUrl: mockClinic.logoUrl,
+          facturamaUserId: null,
+          facturamaToken: null,
+          facturamaSandbox: true,
+          doctorsCount: mockClinic.doctorsCount,
+          patientsCount: mockClinic.patientsCount,
+        },
+      })
+    }
 
     let clinic
 
