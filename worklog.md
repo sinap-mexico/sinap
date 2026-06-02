@@ -726,3 +726,24 @@ Hub Operations Data Flow (after changes):
    → "Ingresos/Egresos/Flujo neto" cards show financial data
    → Staff list shows each doctor's name, specialty, and real todayAppointments count
 ```
+
+---
+Task ID: 3
+Agent: main
+Task: Seed / Demo data — API endpoint + auto-seed on demo login + Staff seed
+
+Work Log:
+- Analyzed current module-to-DB connections: ALL modules (OS Overview, Agenda, Desk, Flow, Bill, Grow, Sight, Hub) already read from DB via API endpoints
+- Identified the core problem: demo login doesn't seed data — clicking "Entrar en modo demo" navigates to dashboard but DB may be empty
+- Created `/api/demo/seed` POST endpoint (idempotent) that seeds full demo data if demo clinic doesn't exist yet
+- Updated demo login flow in login-screen.tsx to call `/api/demo/seed` before navigating, and store clinicId from response
+- Added Staff model data to both `prisma/seed.ts` and the API seed endpoint (3 staff: receptionist, assistant, admin)
+- Ran `npx tsx prisma/seed.ts` on production Supabase DB — all data seeded successfully
+- Built and pushed commit `07045e9` to GitHub, Vercel auto-deploy triggered
+
+Stage Summary:
+- Demo mode now auto-seeds the database when a user clicks "Entrar en modo demo"
+- API endpoint is idempotent — only seeds if demo clinic doesn't already have doctors
+- Seed includes: 1 clinic, 2 doctors, 3 staff, 8 patients, 12 appointments, 9 invoices, 6 conversations (20 messages), 12 feature flags, 2 SOAP notes, 5 event bus entries
+- Login: demo@sinap.health / demo1234 (also works via NextAuth credentials)
+- All 7 modules confirmed reading from DB (no mock data remaining in active module code)
