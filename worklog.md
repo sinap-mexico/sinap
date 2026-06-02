@@ -747,3 +747,32 @@ Stage Summary:
 - Seed includes: 1 clinic, 2 doctors, 3 staff, 8 patients, 12 appointments, 9 invoices, 6 conversations (20 messages), 12 feature flags, 2 SOAP notes, 5 event bus entries
 - Login: demo@sinap.health / demo1234 (also works via NextAuth credentials)
 - All 7 modules confirmed reading from DB (no mock data remaining in active module code)
+---
+Task ID: 3
+Agent: Main Agent
+Task: Seed/Demo data for Sinap — fix empty Desk module
+
+Work Log:
+- Identified root cause: /api/demo/seed had early-exit bug — bailed out if clinic had doctors, skipping conversations/patients/etc.
+- Also found clinic slug mismatch: DB had slug "clinica-demo" but Zustand store expects "clinica-san-angel-demo"
+- Also found DB connection issue: Vercel can't reach Supabase direct connection (port 5432)
+- Fixed seed endpoint to be granular: checks each section independently, seeds only what's missing
+- Added "Cargar datos demo" button in Desk empty state for demo mode
+- Added auto-seed on dashboard load in demo mode
+- Seeded all demo data directly into Supabase via REST API:
+  - Updated clinic slug to "clinica-san-angel-demo", name to "Clínica San Ángel"
+  - Updated doctor to "Dr. Alejandro Ruiz", added "Dra. Carmen Vega"
+  - Created 8 patients, 12 appointments, 9 invoices, 6 conversations with 20 messages
+  - Created 2 SOAP notes, 5 events, 6 services, 3 staff, 7 additional feature flags
+- Built successfully (next build passes)
+- Committed locally (14c685c fix commit)
+- Could NOT push to GitHub (no SSH client, no auth token)
+- Could NOT deploy to Vercel (no auth token)
+- Could NOT update Vercel env vars (no token)
+
+Stage Summary:
+- Demo data is seeded in the Supabase DB ✅
+- Code fixes are committed locally ✅
+- BLOCKER: Vercel deployment can't connect to DB (DATABASE_URL needs to be changed to pooler URL)
+- BLOCKER: Code changes need to be pushed to GitHub and deployed
+- User needs to: (1) Fix DATABASE_URL in Vercel, (2) Push the code changes
