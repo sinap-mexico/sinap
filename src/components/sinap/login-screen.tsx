@@ -322,10 +322,22 @@ export function LoginScreen() {
 
   const handleDemoLogin = async () => {
     setIsLoading(true)
+    try {
+      // Seed demo data (idempotent — only seeds if not present)
+      const seedRes = await fetch('/api/demo/seed', { method: 'POST' })
+      const seedData = await seedRes.json()
+
+      if (seedData.clinicId) {
+        setClinicId(seedData.clinicId)
+      }
+    } catch (err) {
+      // Seed failure is non-blocking — demo mode still works
+      console.warn('Demo seed failed (non-blocking):', err)
+    }
+
     // Set demo mode cookie so middleware allows dashboard access
     document.cookie = 'sinap-demo=true; path=/; max-age=86400; SameSite=Lax'
     // Bypass NextAuth entirely for demo mode — avoids redirect loops
-    // NextAuth requires a database connection which may not be available
     navigateToDemo()
   }
 

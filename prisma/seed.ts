@@ -93,6 +93,23 @@ async function main() {
   console.log(`   ✅ ${doctor1.name}`)
   console.log(`   ✅ ${doctor2.name}\n`)
 
+  // ─── 2.5 STAFF ──────────────────────────────────────────
+  console.log('2️⃣.5 Creating staff...')
+  const staffData = [
+    { id: 'demo-staff-1', name: 'Patricia Mendoza', email: 'pmendoza@clinicasanangel.mx', phone: '+52 55 5555 0101', role: 'receptionist' },
+    { id: 'demo-staff-2', name: 'Rosa Elena Fuentes', email: 'rfuentes@clinicasanangel.mx', phone: '+52 55 5555 0202', role: 'assistant' },
+    { id: 'demo-staff-3', name: 'Lic. Daniela Ortega', email: 'dortega@clinicasanangel.mx', phone: '+52 55 5555 0303', role: 'admin' },
+  ]
+
+  for (const s of staffData) {
+    await prisma.staff.upsert({
+      where: { id: s.id },
+      update: {},
+      create: { ...s, clinicId: clinic.id },
+    })
+  }
+  console.log(`   ✅ ${staffData.length} staff members created\n`)
+
   // ─── 3. DEMO USER ──────────────────────────────────────
   console.log('3️⃣  Creating demo user...')
   const hashedPassword = await bcrypt.hash('demo1234', 12)
@@ -1181,6 +1198,7 @@ async function main() {
   console.log('📊 Summary:')
   console.log('   • 1 Clinic (Clinica San Angel)')
   console.log('   • 2 Doctors')
+  console.log('   • 3 Staff members')
   console.log(`   • ${patientsData.length} Patients`)
   console.log(`   • ${appointmentsData.length} Appointments`)
   console.log(`   • ${invoicesData.length} Invoices`)
