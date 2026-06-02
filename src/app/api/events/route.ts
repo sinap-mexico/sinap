@@ -48,22 +48,25 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET — Get pending events for an agent
+// GET — Get events for a clinic (recent activity)
 export async function GET(req: NextRequest) {
   try {
     if (!db) return NextResponse.json({ error: "Base de datos no disponible" }, { status: 503 })
     const { searchParams } = new URL(req.url)
     const clinicId = searchParams.get('clinicId')
     const agent = searchParams.get('agent')
+    const limit = parseInt(searchParams.get('limit') || '50', 10)
+    const statusFilter = searchParams.get('status') // If not provided, return all statuses
 
     if (!clinicId) {
       return NextResponse.json({ error: 'clinicId es requerido' }, { status: 400 })
     }
 
     try {
-      const where: Record<string, unknown> = {
-        clinicId,
-        status: 'pending',
+      const where: Record<string, unknown> = { clinicId }
+
+      if (statusFilter) {
+        where.status = statusFilter
       }
 
       if (agent) {
@@ -76,7 +79,7 @@ export async function GET(req: NextRequest) {
       const events = await db.eventBus.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        take: 50,
+        take: Math.min(limit, 100),
       })
 
       return NextResponse.json({ events })

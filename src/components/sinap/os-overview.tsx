@@ -119,16 +119,18 @@ const eventTypeColors: Record<string, string> = {
   conversacion_atendida: '#5DCAA5',
 }
 
-// Agent statuses — static UI data (not from DB)
-const agentStatuses = [
-  { id: 'os', name: 'Sinap OS', icon: 'LayoutDashboard', status: 'active' as const, messages: 47, color: '#534AB7' },
-  { id: 'desk', name: 'Sinap Desk', icon: 'MessageSquare', status: 'processing' as const, messages: 23, color: '#1D9E75' },
-  { id: 'flow', name: 'Sinap Flow', icon: 'Activity', status: 'active' as const, messages: 12, color: '#1D9E75' },
-  { id: 'bill', name: 'Sinap Bill', icon: 'Receipt', status: 'idle' as const, messages: 8, color: '#1D9E75' },
-  { id: 'grow', name: 'Sinap Grow', icon: 'TrendingUp', status: 'idle' as const, messages: 5, color: '#1D9E75' },
-  { id: 'sight', name: 'Sinap Sight', icon: 'BarChart3', status: 'processing' as const, messages: 3, color: '#1D9E75' },
-  { id: 'hub', name: 'Sinap Hub', icon: 'Building2', status: 'idle' as const, messages: 2, color: '#1D9E75' },
-]
+// Agent status logic — derived from real KPI data
+function deriveAgentStatuses(kpi: KpiData) {
+  return [
+    { id: 'os', name: 'Sinap OS', status: 'active' as const, messages: kpi.citasHoy + kpi.conversacionesActivas + kpi.facturasMes, color: '#534AB7' },
+    { id: 'desk', name: 'Sinap Desk', status: kpi.conversacionesActivas > 0 ? 'processing' as const : 'idle' as const, messages: kpi.conversacionesActivas, color: '#1D9E75' },
+    { id: 'flow', name: 'Sinap Flow', status: kpi.citasHoy > 0 ? 'active' as const : 'idle' as const, messages: kpi.citasHoy, color: '#1D9E75' },
+    { id: 'bill', name: 'Sinap Bill', status: kpi.facturasMes > 0 ? 'active' as const : 'idle' as const, messages: kpi.facturasMes, color: '#1D9E75' },
+    { id: 'grow', name: 'Sinap Grow', status: kpi.pacientesNuevos > 0 ? 'active' as const : 'idle' as const, messages: kpi.pacientesNuevos, color: '#1D9E75' },
+    { id: 'sight', name: 'Sinap Sight', status: kpi.totalFacturado > 0 ? 'processing' as const : 'idle' as const, messages: Math.max(1, Math.round(kpi.ocupacion / 10)), color: '#1D9E75' },
+    { id: 'hub', name: 'Sinap Hub', status: kpi.citasHoy > 0 ? 'active' as const : 'idle' as const, messages: kpi.citasHoy, color: '#1D9E75' },
+  ]
+}
 
 const defaultKpiData: KpiData = {
   citasHoy: 0,
@@ -212,6 +214,7 @@ export function OsOverview() {
   const [kpiData, setKpiData] = useState<KpiData>(defaultKpiData)
   const [weeklyAppointments, setWeeklyAppointments] = useState<WeeklyAppointment[]>(defaultWeeklyAppointments)
   const [isLoadingKpi, setIsLoadingKpi] = useState(true)
+  const [dbEvents, setDbEvents] = useState<Array<{ id: string; eventType: string; sourceAgent: string; targetAgent?: string; payload: string; createdAt: string }>>([])
 
   // Resolve clinicId on mount if needed
   useEffect(() => {
@@ -258,7 +261,39 @@ export function OsOverview() {
     fetchKpi()
   }, [clinicId])
 
+  // Fetch recent events from DB
+  useEffect(() => {
+    if (!clinicId) return
+    async function fetchEvents() {
+      try {
+        const res = await fetch(`/api/events?clinicId=${clinicId}&limit=10`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.events) {
+            setDbEvents(data.events.map((e: Record<string, unknown>) => ({
+              id: e.id as string,
+              eventType: e.eventType as string,
+              sourceAgent: e.sourceAgent as string,
+              targetAgent: (e.targetAgent as string) || undefined,
+              payload: e.payload as string,
+              createdAt: e.createdAt as string,
+            })))
+          }
+        }
+      } catch {
+        // Non-blocking — events from Zustand store still available
+      }
+    }
+    fetchEvents()
+  }, [clinicId])
+
+  // Merge DB events with local Zustand events (DB first, then local, deduped)
+  const allEvents = [...dbEvents, ...recentEvents.filter(e => !dbEvents.some(d => d.id === e.id))].slice(0, 10)
+
   const maxAppointments = Math.max(...weeklyAppointments.map((d) => d.count), 1)
+
+  // Derive agent statuses from real KPI data
+  const agentStatuses = deriveAgentStatuses(kpiData)
 
   const kpiCards = [
     {
@@ -489,7 +524,7 @@ export function OsOverview() {
             <CardContent>
               <ScrollArea className="h-48">
                 <div className="space-y-3">
-                  {recentEvents.slice(0, 8).map((event, i) => {
+                  {allEvents.slice(0, 8).map((event, i) => {
                     const Icon = eventTypeIcons[event.eventType] || Circle
                     const color = eventTypeColors[event.eventType] || '#888780'
                     const label = eventTypeLabels[event.eventType] || event.eventType

@@ -70,8 +70,8 @@ export function SightAnalytics() {
         if (data.kpi) {
           setKpiData({
             ocupacion: data.kpi.ocupacion || 0,
-            currentMonthRevenue: data.currentMonthRevenue || 0,
-            noShowRate: data.noShowRate || 0,
+            currentMonthRevenue: data.kpi.totalFacturado || data.currentMonthRevenue || 0,
+            noShowRate: data.noShowRate || data.kpi.noShowRate || 0,
           })
         }
         if (data.weeklyAppointments) {
@@ -95,36 +95,86 @@ export function SightAnalytics() {
   const maxRevenue = Math.max(...monthlyRevenue.map((d) => d.amount), 1)
   const maxAppointments = Math.max(...weeklyAppointments.map((d) => d.count), 1)
 
-  const alerts = [
-    {
-      id: 'al1',
+  // Dynamic alerts based on real KPI data
+  const alerts: Array<{ id: string; type: 'warning' | 'success' | 'info'; title: string; description: string; action: string }> = []
+
+  // No-show rate alert
+  if (kpiData.noShowRate > 10) {
+    alerts.push({
+      id: 'al-noshow',
       type: 'warning',
-      title: 'Ocupacion baja los jueves',
-      description: 'La ocupacion de jueves ha bajado un 15% en las ultimas 3 semanas.',
-      action: 'Considerar promociones para horarios de jueves',
-    },
-    {
-      id: 'al2',
-      type: 'success',
-      title: 'Pacientes nuevos en aumento',
-      description: 'Los pacientes nuevos aumentaron 23% este mes vs. el anterior.',
-      action: 'El agente Sinap Grow esta funcionando bien',
-    },
-    {
-      id: 'al3',
-      type: 'info',
-      title: 'Facturacion en tendencia positiva',
-      description: 'La facturacion mensual crece consistentemente desde febrero.',
-      action: 'Mantener estrategia actual de precios',
-    },
-    {
-      id: 'al4',
-      type: 'warning' as const,
       title: 'Tasa de no-show elevada',
-      description: `El ${kpiData.noShowRate || 12}% de las citas no se presentan. Promedio sector: 8%.`,
+      description: `El ${kpiData.noShowRate}% de las citas no se presentan. Promedio sector: 8%.`,
       action: 'Activar recordatorios automaticos por WhatsApp',
-    },
-  ]
+    })
+  }
+
+  // Revenue trend alert
+  if (monthlyRevenue.length >= 2) {
+    const lastMonth = monthlyRevenue[monthlyRevenue.length - 1]?.amount || 0
+    const prevMonth = monthlyRevenue[monthlyRevenue.length - 2]?.amount || 0
+    if (lastMonth > prevMonth && prevMonth > 0) {
+      const growth = Math.round(((lastMonth - prevMonth) / prevMonth) * 100)
+      alerts.push({
+        id: 'al-revenue',
+        type: 'success',
+        title: 'Facturacion en tendencia positiva',
+        description: `La facturacion crecio ${growth}% respecto al mes anterior. Ingresos: $${lastMonth.toLocaleString('es-MX')} MXN.`,
+        action: 'Mantener estrategia actual de precios',
+      })
+    } else if (prevMonth > 0 && lastMonth < prevMonth) {
+      const drop = Math.round(((prevMonth - lastMonth) / prevMonth) * 100)
+      alerts.push({
+        id: 'al-revenue-drop',
+        type: 'warning',
+        title: 'Facturacion en baja',
+        description: `La facturacion bajo ${drop}% respecto al mes anterior ($${prevMonth.toLocaleString('es-MX')} → $${lastMonth.toLocaleString('es-MX')} MXN).`,
+        action: 'Considerar promociones o campanas de reactivacion',
+      })
+    }
+  }
+
+  // Occupancy alert
+  if (kpiData.ocupacion > 0 && kpiData.ocupacion < 50) {
+    alerts.push({
+      id: 'al-ocupacion',
+      type: 'info',
+      title: 'Ocupacion semanal baja',
+      description: `La ocupacion es del ${kpiData.ocupacion}%. Hay espacios disponibles que podrian aprovecharse.`,
+      action: 'Considerar promociones para horarios con baja demanda',
+    })
+  } else if (kpiData.ocupacion >= 80) {
+    alerts.push({
+      id: 'al-ocupacion-high',
+      type: 'success',
+      title: 'Alta ocupacion semanal',
+      description: `La ocupacion es del ${kpiData.ocupacion}%. La agenda esta bien aprovechada.`,
+      action: 'Considerar ampliar horarios o agregar doctores',
+    })
+  }
+
+  // Empty weeks alert
+  const emptyDays = weeklyAppointments.filter(d => d.count === 0)
+  if (emptyDays.length > 0 && emptyDays.length < 6) {
+    alerts.push({
+      id: 'al-empty-days',
+      type: 'warning',
+      title: `Dias sin citas esta semana`,
+      description: `${emptyDays.map(d => d.day).join(', ')} no tienen citas agendadas.`,
+      action: 'Promover disponibilidad en esos dias',
+    })
+  }
+
+  // If no alerts generated, show a default one
+  if (alerts.length === 0) {
+    alerts.push({
+      id: 'al-default',
+      type: 'info',
+      title: 'Todo en orden',
+      description: 'No se detectan anomalias en los datos de la clinica. Los indicadores estan dentro de parametros normales.',
+      action: 'Continuar con la operacion actual',
+    })
+  }
 
   const containerVariants = {
     hidden: { opacity: 0 },
