@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
         messageType: messageType || 'text',
         agentName: agentName || null,
         aiGenerated: aiGenerated || false,
-        isMock: true, // All messages from the demo UI are mock
+        isMock: false, // Real messages from the UI
       },
     })
 
