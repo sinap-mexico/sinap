@@ -1,5 +1,5 @@
-import { SinapLanding } from '@/components/sinap/landing-page'
+import SinapDashboard from './dashboard/page'
 
 export default function HomePage() {
-  return <SinapLanding />
+  return <SinapDashboard />
 }

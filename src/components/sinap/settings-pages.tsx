@@ -134,12 +134,14 @@ export function SettingsPages() {
               store.setClinicProfile({
                 name: data.clinic.name || store.clinicProfile.name,
                 rfc: data.clinic.rfc || store.clinicProfile.rfc,
+                regimenFiscal: data.clinic.regimenFiscal || store.clinicProfile.regimenFiscal,
                 address: data.clinic.address || store.clinicProfile.address,
                 city: data.clinic.city || store.clinicProfile.city,
                 state: data.clinic.state || store.clinicProfile.state,
                 phone: data.clinic.phone || store.clinicProfile.phone,
                 email: data.clinic.email || store.clinicProfile.email,
               })
+              setClinicRegimenFiscal(data.clinic.regimenFiscal || '')
               store.setClinicName(data.clinic.name || store.clinicName)
             }
           }
@@ -259,11 +261,13 @@ export function SettingsPages() {
     if (!clinicId) return
     const fetchServices = async () => {
       try {
-        const res = await fetch(`/api/services?clinicId=${clinicId}&includeInactive=true`)
+        const res = await fetch(`/api/services?clinicId=${clinicId}`)
         if (res.ok) {
           const data = await res.json()
           if (data.services && data.services.length > 0) {
-            const dbServices: ServiceItem[] = data.services.map((s: { id: string; name: string; duration: number; price: number; category: string | null; isActive: boolean }) => ({
+            const dbServices: ServiceItem[] = data.services
+              .filter((s: { isActive: boolean }) => s.isActive)
+              .map((s: { id: string; name: string; duration: number; price: number; category: string | null; isActive: boolean }) => ({
               id: s.id,
               name: s.name,
               duration: s.duration,
@@ -273,6 +277,9 @@ export function SettingsPages() {
             }))
             setLocalServices(dbServices)
             store.setServices(dbServices)
+          } else {
+            setLocalServices([])
+            store.setServices([])
           }
         }
       } catch {
@@ -353,6 +360,7 @@ export function SettingsPages() {
   const [clinicState, setClinicState] = useState(store.clinicProfile.state)
   const [clinicPhone, setClinicPhone] = useState(store.clinicProfile.phone)
   const [clinicEmail, setClinicEmail] = useState(store.clinicProfile.email)
+  const [clinicRegimenFiscal, setClinicRegimenFiscal] = useState(store.clinicProfile.regimenFiscal || '')
 
   const [localServices, setLocalServices] = useState(store.services)
   const [isSavingServices, setIsSavingServices] = useState(false)
@@ -424,6 +432,7 @@ export function SettingsPages() {
             clinicId,
             name: clinicName,
             rfc: clinicRfc,
+            regimenFiscal: clinicRegimenFiscal,
             address: clinicAddress,
             city: clinicCity,
             state: clinicState,
@@ -438,6 +447,7 @@ export function SettingsPages() {
             store.setClinicProfile({
               name: data.clinic.name || clinicName,
               rfc: data.clinic.rfc || clinicRfc,
+              regimenFiscal: data.clinic.regimenFiscal || clinicRegimenFiscal,
               address: data.clinic.address || clinicAddress,
               city: data.clinic.city || clinicCity,
               state: data.clinic.state || clinicState,
@@ -445,17 +455,18 @@ export function SettingsPages() {
               email: data.clinic.email || clinicEmail,
             })
             store.setClinicName(data.clinic.name || clinicName)
+            setClinicRegimenFiscal(data.clinic.regimenFiscal || clinicRegimenFiscal)
           }
         }
       }
       // Fallback: also save to Zustand
-      store.setClinicProfile({ name: clinicName, rfc: clinicRfc, address: clinicAddress, city: clinicCity, state: clinicState, phone: clinicPhone, email: clinicEmail })
+      store.setClinicProfile({ name: clinicName, rfc: clinicRfc, regimenFiscal: clinicRegimenFiscal, address: clinicAddress, city: clinicCity, state: clinicState, phone: clinicPhone, email: clinicEmail })
       store.setClinicName(clinicName)
       setClinicSaved(true)
       setTimeout(() => setClinicSaved(false), 2000)
     } catch {
       // Fallback to local save
-      store.setClinicProfile({ name: clinicName, rfc: clinicRfc, address: clinicAddress, city: clinicCity, state: clinicState, phone: clinicPhone, email: clinicEmail })
+      store.setClinicProfile({ name: clinicName, rfc: clinicRfc, regimenFiscal: clinicRegimenFiscal, address: clinicAddress, city: clinicCity, state: clinicState, phone: clinicPhone, email: clinicEmail })
       store.setClinicName(clinicName)
     } finally {
       setIsSavingClinic(false)
@@ -556,7 +567,7 @@ export function SettingsPages() {
       await Promise.all([...createPromises, ...updatePromises])
 
       // Re-fetch from DB to get real IDs
-      const res = await fetch(`/api/services?clinicId=${clinicId}&includeInactive=true`)
+      const res = await fetch(`/api/services?clinicId=${clinicId}`)
       if (res.ok) {
         const data = await res.json()
         const dbServices: ServiceItem[] = data.services.map((s: { id: string; name: string; duration: number; price: number; category: string | null; isActive: boolean }) => ({
@@ -591,7 +602,9 @@ export function SettingsPages() {
         // continue removing from local state anyway
       }
     }
-    setLocalServices(prev => prev.filter(s => s.id !== id))
+    const updated = localServices.filter(s => s.id !== id)
+    setLocalServices(updated)
+    store.setServices(updated)
   }
 
   return (
@@ -722,9 +735,9 @@ export function SettingsPages() {
                   </div>
                   <div className="space-y-2">
                     <Label className="text-xs text-[#888780]">Regimen fiscal</Label>
-                    <Select defaultValue="601">
+                    <Select value={clinicRegimenFiscal || undefined} onValueChange={setClinicRegimenFiscal}>
                       <SelectTrigger className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE]">
-                        <SelectValue />
+                        <SelectValue placeholder="Selecciona un regimen" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="601">601 - General de Ley Personas Morales</SelectItem>

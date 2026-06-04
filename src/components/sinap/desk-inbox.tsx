@@ -168,10 +168,11 @@ function mapApiConversation(apiConv: Record<string, unknown>): Conversation {
 }
 
 export function DeskInbox() {
-  const { clinicId, setClinicId, clinicSlug } = useSinapStore()
+  const { clinicId, setClinicId, clinicSlug, isDemoMode } = useSinapStore()
   const [convList, setConvList] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isSeeding, setIsSeeding] = useState(false)
   const [messageInput, setMessageInput] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [isTyping, setIsTyping] = useState(false)
@@ -220,6 +221,31 @@ export function DeskInbox() {
   useEffect(() => {
     fetchConversations()
   }, [fetchConversations])
+
+  // Auto-seed demo data in demo mode when no conversations exist
+  const handleSeedDemo = useCallback(async () => {
+    setIsSeeding(true)
+    try {
+      const seedRes = await fetch('/api/demo/seed', { method: 'POST' })
+      const seedData = await seedRes.json()
+      if (seedData.clinicId && !clinicId) {
+        setClinicId(seedData.clinicId)
+      }
+      // Refresh conversations after seeding
+      await fetchConversations()
+    } catch (err) {
+      console.error('Failed to seed demo data:', err)
+    } finally {
+      setIsSeeding(false)
+    }
+  }, [clinicId, setClinicId, fetchConversations])
+
+  // Auto-seed on first load in demo mode if empty
+  useEffect(() => {
+    if (!isDemoMode || !clinicId || isLoading || convList.length > 0 || isSeeding) return
+    // Only auto-seed once — if conversations are empty after loading
+    handleSeedDemo()
+  }, [isDemoMode, clinicId, isLoading, convList.length, isSeeding, handleSeedDemo])
 
   const filteredConversations = convList.filter((c) =>
     c.patientName.toLowerCase().includes(searchQuery.toLowerCase())
@@ -413,9 +439,29 @@ export function DeskInbox() {
                   <Loader2 className="h-5 w-5 animate-spin text-[#534AB7]" />
                 </div>
               ) : filteredConversations.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="flex flex-col items-center justify-center py-12 text-center px-4">
                   <MessageSquare className="h-8 w-8 text-[#888780]/30 mb-2" />
-                  <p className="text-xs text-[#888780]">No hay conversaciones</p>
+                  <p className="text-xs text-[#888780] mb-3">No hay conversaciones</p>
+                  {isDemoMode && (
+                    <Button
+                      size="sm"
+                      className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white text-xs h-7"
+                      onClick={handleSeedDemo}
+                      disabled={isSeeding}
+                    >
+                      {isSeeding ? (
+                        <>
+                          <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                          Cargando...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-3 w-3 mr-1.5" />
+                          Cargar datos demo
+                        </>
+                      )}
+                    </Button>
+                  )}
                 </div>
               ) : (
                 filteredConversations.map((conv, i) => (

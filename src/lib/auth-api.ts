@@ -1,8 +1,9 @@
 import { getServerSession } from "next-auth"
-import { authOptions } from "./auth"
+import { getAuthOptions } from "./auth"
 
 export async function getAuthUser() {
-  const session = await getServerSession(authOptions)
+  // Use getAuthOptions() to ensure NEXTAUTH_SECRET is read at request time
+  const session = await getServerSession(getAuthOptions())
   if (!session?.user) return null
 
   return {

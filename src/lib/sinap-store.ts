@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 
-export type SinapModule = 'os' | 'agenda' | 'desk' | 'flow' | 'bill' | 'grow' | 'sight' | 'hub' | 'config'
+export type SinapModule = 'os' | 'agenda' | 'patients' | 'desk' | 'flow' | 'bill' | 'grow' | 'sight' | 'hub' | 'config'
 
 export type FeatureFlagState = 'on' | 'assist' | 'off'
 
@@ -14,6 +14,7 @@ interface FeatureFlag {
 }
 
 interface DoctorProfile {
+  id: string
   name: string
   specialty: string
   license: string
@@ -40,6 +41,7 @@ export interface DoctorItem {
 interface ClinicProfile {
   name: string
   rfc: string
+  regimenFiscal: string
   address: string
   city: string
   state: string
@@ -70,19 +72,6 @@ export interface SinapEvent {
   targetAgent?: string
   payload: string
   createdAt: string
-}
-
-export interface SoapNoteItem {
-  id: string
-  patientId: string
-  patientName: string
-  subjective: string
-  objective: string
-  assessment: string
-  plan: string
-  status: 'draft' | 'approved' | 'signed'
-  createdAt: string
-  aiGenerated?: boolean
 }
 
 interface SinapStore {
@@ -130,12 +119,15 @@ interface SinapStore {
   // Event Bus
   recentEvents: SinapEvent[]
   addRecentEvent: (event: SinapEvent) => void
-  // SOAP Notes
-  soapNotes: SoapNoteItem[]
-  addSoapNote: (note: SoapNoteItem) => void
-  updateSoapNote: (id: string, updates: Partial<SoapNoteItem>) => void
+  // Trial
+  trialDaysRemaining: number
+  setTrialDaysRemaining: (days: number) => void
+  isTrialExpired: boolean
+  setIsTrialExpired: (v: boolean) => void
   // Reset
   resetStore: () => void
+  // Clear for real account login — removes demo data
+  clearForRealLogin: () => void
 }
 
 const defaultFeatureFlags: FeatureFlag[] = [
@@ -153,49 +145,13 @@ const defaultFeatureFlags: FeatureFlag[] = [
   { id: 'hub-inventory', module: 'hub', name: 'Inventario inteligente', description: 'IA sugiere reabastecimiento de insumos', state: 'off' },
 ]
 
-const defaultSoapNotes: SoapNoteItem[] = [
-  {
-    id: 'soap1',
-    patientId: 'p4',
-    patientName: 'Roberto Jimenez Salazar',
-    subjective: 'Paciente masculino de 45 anos que acude a revision de lesion en dorso de mano derecha. Refiere que la lesion ha crecido en los ultimos 2 meses. Niega dolor, pero reporta prurito ocasional. No antecedentes de lesiones similares. Sin tratamiento previo.',
-    objective: 'A la exploracion fisica: lesion papulosa de 6mm de diametro en dorso de mano derecha, bordes bien definidos, color cafe oscuro, superficie ligeramente verrugosa. No signos de sangrado. Piel circundante sin alteraciones. Resto de la exploracion sin hallazgos patologicos.',
-    assessment: 'Lesion pigmentada en dorso de mano derecha, probable nevo melanocitico compuesto. No se observan signos clinicos de malignidad (criterios ABCDE dentro de parametros normales). Se sugiere biopsia excisional para confirmacion histopatologica.',
-    plan: '1. Biopsia excisional de lesion en dorso de mano derecha programada para proxima sesion.\n2. Estudio histopatologico con inmunohistoquimica si es necesario.\n3. Seguimiento en 15 dias post-biopsia para revision de resultados y cura.\n4. Indicar al paciente signos de alarma (cambio de color, tamano, sangrado).',
-    status: 'approved',
-    createdAt: '2026-05-30T10:00:00Z',
-    aiGenerated: true,
-  },
-  {
-    id: 'soap2',
-    patientId: 'p1',
-    patientName: 'Maria Garcia Lopez',
-    subjective: 'Paciente femenina de 32 anos con dermatitis atopica en flexuras de codos desde hace 3 semanas. Refiere prurito intenso que interrumpe su sueno. Ha usado cremas hidratantes sin mejoria. Antecedente de dermatitis en la infancia.',
-    objective: 'Pendiente exploracion fisica.',
-    assessment: 'Dermatitis atopica en brote agudo. Diagnosticos diferenciales: dermatitis de contacto, eczema numular.',
-    plan: '1. Emoliente de alta hidratacion post-bano.\n2. Corticoide topico de potencia moderada en zonas afectadas por 2 semanas.\n3. Antihistaminico oral para control de prurito nocturno.\n4. Control en 15 dias.',
-    status: 'draft',
-    createdAt: '2026-05-30T14:00:00Z',
-    aiGenerated: true,
-  },
-]
+// No default events — new accounts should start clean.
+// Demo mode seeds its own events via /api/demo/seed.
+const defaultRecentEvents: SinapEvent[] = []
 
-const defaultRecentEvents: SinapEvent[] = [
-  { id: 'evt1', eventType: 'cita_agendada', sourceAgent: 'desk', targetAgent: 'flow', payload: 'Maria Garcia Lopez - 09:00', createdAt: '2026-05-30T09:05:00Z' },
-  { id: 'evt2', eventType: 'factura_generada', sourceAgent: 'bill', targetAgent: 'desk', payload: '$1,500 MXN - Roberto Jimenez', createdAt: '2026-05-30T09:12:00Z' },
-  { id: 'evt3', eventType: 'soap_borrador_listo', sourceAgent: 'flow', targetAgent: 'os', payload: 'Roberto Jimenez Salazar', createdAt: '2026-05-30T09:25:00Z' },
-  { id: 'evt4', eventType: 'cita_completada', sourceAgent: 'flow', targetAgent: 'bill', payload: 'Roberto Jimenez Salazar - 10:00', createdAt: '2026-05-30T10:45:00Z' },
-  { id: 'evt5', eventType: 'paciente_nuevo', sourceAgent: 'desk', targetAgent: 'grow', payload: 'Fernando Diaz Vega', createdAt: '2026-05-30T08:30:00Z' },
-]
-
-const defaultServices: ServiceItem[] = [
-  { id: 'svc1', name: 'Consulta general', duration: 30, price: 1200, category: 'Consulta', isActive: true },
-  { id: 'svc2', name: 'Revision dermatologica', duration: 45, price: 1500, category: 'Consulta', isActive: true },
-  { id: 'svc3', name: 'Tratamiento laser', duration: 45, price: 2800, category: 'Procedimiento', isActive: true },
-  { id: 'svc4', name: 'Crioterapia', duration: 30, price: 1800, category: 'Procedimiento', isActive: true },
-  { id: 'svc5', name: 'Biopsia', duration: 60, price: 3500, category: 'Procedimiento', isActive: true },
-  { id: 'svc6', name: 'Consulta estetica', duration: 30, price: 2000, category: 'Estetica', isActive: true },
-]
+// No default services — new accounts should start clean.
+// Demo mode seeds its own services via /api/demo/seed.
+const defaultServices: ServiceItem[] = []
 
 export const useSinapStore = create<SinapStore>()(
   persist(
@@ -206,11 +162,11 @@ export const useSinapStore = create<SinapStore>()(
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       clinicMode: 'clinic',
       setClinicMode: (mode) => set({ clinicMode: mode }),
-      clinicName: 'Clinica San Angel',
+      clinicName: '',
       setClinicName: (name) => set({ clinicName: name }),
       clinicId: '',
       setClinicId: (id) => set({ clinicId: id }),
-      clinicSlug: 'clinica-san-angel-demo',
+      clinicSlug: '',
       setClinicSlug: (slug) => set({ clinicSlug: slug }),
       plan: 'pro',
       featureFlags: defaultFeatureFlags,
@@ -229,21 +185,23 @@ export const useSinapStore = create<SinapStore>()(
       setIsDemoMode: (v) => set({ isDemoMode: v }),
       // Profile data
       doctorProfile: {
-        name: 'Dr. Alejandro Ruiz',
-        specialty: 'Dermatologia',
-        license: '12345678',
-        email: 'aruiz@clinicasanangel.mx',
-        phone: '+52 55 1234 5678',
+        id: '',
+        name: '',
+        specialty: '',
+        license: '',
+        email: '',
+        phone: '',
       },
       setDoctorProfile: (p) => set((s) => ({ doctorProfile: { ...s.doctorProfile, ...p } })),
       clinicProfile: {
-        name: 'Clinica San Angel',
-        rfc: 'CSA230515ABC',
-        address: 'Av. Insurgentes Sur 1234, Col. San Angel',
-        city: 'Ciudad de Mexico',
-        state: 'CDMX',
-        phone: '+52 55 1234 5678',
-        email: 'contacto@clinicasanangel.mx',
+        name: '',
+        rfc: '',
+        regimenFiscal: '',
+        address: '',
+        city: '',
+        state: '',
+        phone: '',
+        email: '',
       },
       setClinicProfile: (p) => set((s) => ({ clinicProfile: { ...s.clinicProfile, ...p } })),
       services: defaultServices,
@@ -265,15 +223,14 @@ export const useSinapStore = create<SinapStore>()(
       removeDoctor: (id) => set((s) => ({ doctors: s.doctors.filter((d) => d.id !== id) })),
       isLoadingDoctors: false,
       setIsLoadingDoctors: (v) => set({ isLoadingDoctors: v }),
+      // Trial
+      trialDaysRemaining: 7,
+      setTrialDaysRemaining: (days) => set({ trialDaysRemaining: days }),
+      isTrialExpired: false,
+      setIsTrialExpired: (v) => set({ isTrialExpired: v }),
       // Event Bus
       recentEvents: defaultRecentEvents,
       addRecentEvent: (event) => set((s) => ({ recentEvents: [event, ...s.recentEvents].slice(0, 50) })),
-      // SOAP Notes
-      soapNotes: defaultSoapNotes,
-      addSoapNote: (note) => set((s) => ({ soapNotes: [note, ...s.soapNotes] })),
-      updateSoapNote: (id, updates) => set((s) => ({
-        soapNotes: s.soapNotes.map((n) => n.id === id ? { ...n, ...updates } : n),
-      })),
       // Reset — clears everything back to defaults (used for logout)
       resetStore: () => set({
         activeModule: 'os',
@@ -281,7 +238,82 @@ export const useSinapStore = create<SinapStore>()(
         onboardingComplete: false,
         isLoggedIn: false,
         isDemoMode: false,
+        clinicId: '',
+        clinicName: '',
+        clinicSlug: '',
+        clinicMode: 'clinic',
+        plan: 'pro',
+        trialDaysRemaining: 7,
+        isTrialExpired: false,
+        doctorProfile: {
+          id: '',
+          name: '',
+          specialty: '',
+          license: '',
+          email: '',
+          phone: '',
+        },
+        clinicProfile: {
+          name: '',
+          rfc: '',
+          regimenFiscal: '',
+          address: '',
+          city: '',
+          state: '',
+          phone: '',
+          email: '',
+        },
+        services: [],
+        schedule: {
+          workDays: '1,2,3,4,5',
+          workStart: '09:00',
+          workEnd: '18:00',
+          slotMinutes: 30,
+        },
+        featureFlags: defaultFeatureFlags,
         doctors: [],
+        recentEvents: [],
+      }),
+      // Clear for real account login — removes demo data but keeps structure
+      clearForRealLogin: () => set({
+        activeModule: 'os',
+        sidebarCollapsed: false,
+        isDemoMode: false,
+        clinicId: '',
+        clinicName: '',
+        clinicSlug: '',
+        clinicMode: 'solo',
+        plan: 'starter',
+        trialDaysRemaining: 7,
+        isTrialExpired: false,
+        doctorProfile: {
+          id: '',
+          name: '',
+          specialty: '',
+          license: '',
+          email: '',
+          phone: '',
+        },
+        clinicProfile: {
+          name: '',
+          rfc: '',
+          regimenFiscal: '',
+          address: '',
+          city: '',
+          state: '',
+          phone: '',
+          email: '',
+        },
+        services: [],
+        schedule: {
+          workDays: '1,2,3,4,5',
+          workStart: '09:00',
+          workEnd: '18:00',
+          slotMinutes: 30,
+        },
+        featureFlags: defaultFeatureFlags,
+        doctors: [],
+        recentEvents: [],
       }),
     }),
     {
@@ -304,6 +336,8 @@ export const useSinapStore = create<SinapStore>()(
         schedule: state.schedule,
         activeModule: state.activeModule,
         doctors: state.doctors,
+        trialDaysRemaining: state.trialDaysRemaining,
+        isTrialExpired: state.isTrialExpired,
       }),
     }
   )

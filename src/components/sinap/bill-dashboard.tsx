@@ -68,9 +68,11 @@ interface CFDIInvoice {
   concept: string
   total: number
   status: string
+  paymentStatus: string
   date: string
   paymentMethod: string
   isSimulated?: boolean
+  appointmentId?: string | null
 }
 
 interface PatientOption {
@@ -110,6 +112,11 @@ export function BillDashboard() {
   const [isCancelling, setIsCancelling] = useState(false)
   const [cfdiStep, setCfdiStep] = useState(0)
 
+  // Mark as paid state
+  const [payTarget, setPayTarget] = useState<CFDIInvoice | null>(null)
+  const [payMethod, setPayMethod] = useState('01')
+  const [isMarkingPaid, setIsMarkingPaid] = useState(false)
+
   // Clinic billing config from DB
   const [clinicBilling, setClinicBilling] = useState<ClinicBillingConfig | null>(null)
   const [isLoadingBilling, setIsLoadingBilling] = useState(true)
@@ -127,6 +134,7 @@ export function BillDashboard() {
   const [formFormaPago, setFormFormaPago] = useState('01')
   const [formMetodoPago, setFormMetodoPago] = useState('PUE')
   const [formUsoCFDI, setFormUsoCFDI] = useState('G01')
+  const [formIvaRate, setFormIvaRate] = useState(0) // 0 = exento (salud), 0.16 = 16%
 
   // Resolve clinicId on mount if needed, and fetch billing config
   useEffect(() => {
@@ -200,9 +208,11 @@ export function BillDashboard() {
           concept: (inv.concepto as string) || '',
           total: (inv.total as number) || 0,
           status: (inv.status as string) || 'pending',
+          paymentStatus: (inv.paymentStatus as string) || 'unpaid',
           date: inv.createdAt ? new Date(inv.createdAt as string).toISOString().split('T')[0] : '',
           paymentMethod: (inv.formaPago as string) === '01' ? 'Efectivo' : (inv.formaPago as string) === '03' ? 'Transferencia' : 'Tarjeta',
           isSimulated: false,
+          appointmentId: (inv.appointmentId as string) || null,
         }))
         setInvoiceList(mapped)
       }
@@ -247,11 +257,15 @@ export function BillDashboard() {
   const timbradas = invoiceList.filter((i) => i.status === 'timbrada').length
   const pendientes = invoiceList.filter((i) => i.status === 'pendiente' || i.status === 'pending').length
   const errores = invoiceList.filter((i) => i.status === 'error').length
+  const pagadas = invoiceList.filter((i) => i.paymentStatus === 'paid').length
   const totalTimbrado = invoiceList
     .filter((i) => i.status === 'timbrada')
     .reduce((sum, i) => sum + i.total, 0)
   const totalPendiente = invoiceList
-    .filter((i) => i.status === 'pendiente' || i.status === 'pending')
+    .filter((i) => (i.status === 'pendiente' || i.status === 'pending') && i.paymentStatus !== 'paid')
+    .reduce((sum, i) => sum + i.total, 0)
+  const totalCobrado = invoiceList
+    .filter((i) => i.paymentStatus === 'paid')
     .reduce((sum, i) => sum + i.total, 0)
 
   // Use DB-driven emisor info, fallback to store profile, fallback to defaults
@@ -277,7 +291,7 @@ export function BillDashboard() {
           patientId: formPatient,
           concept: formConcept,
           subtotal,
-          ivaRate: 0.16,
+          ivaRate: formIvaRate,
           formaPago: formFormaPago,
           metodoPago: formMetodoPago,
           usoCFDI: formUsoCFDI,
@@ -302,8 +316,9 @@ export function BillDashboard() {
             patientId: formPatient,
             concepto: formConcept,
             subtotal,
-            iva: data.iva || subtotal * 0.16,
-            total: data.total || subtotal * 1.16,
+            iva: data.iva || Math.round(subtotal * formIvaRate * 100) / 100,
+            ivaRate: formIvaRate,
+            total: data.total || Math.round((subtotal + Math.round(subtotal * formIvaRate * 100) / 100) * 100) / 100,
             formaPago: formFormaPago,
             metodoPago: formMetodoPago,
             usoCFDI: formUsoCFDI,
@@ -325,6 +340,7 @@ export function BillDashboard() {
           concept: formConcept,
           total: data.total,
           status: 'timbrada',
+          paymentStatus: 'unpaid',
           date: new Date().toISOString().split('T')[0],
           paymentMethod: formFormaPago === '01' ? 'Efectivo' : formFormaPago === '03' ? 'Transferencia' : 'Tarjeta',
           isSimulated: data.isSimulated,
@@ -343,8 +359,9 @@ export function BillDashboard() {
             patientId: formPatient,
             concepto: formConcept,
             subtotal,
-            iva: subtotal * 0.16,
-            total: subtotal * 1.16,
+            iva: Math.round(subtotal * formIvaRate * 100) / 100,
+            ivaRate: formIvaRate,
+            total: Math.round((subtotal + Math.round(subtotal * formIvaRate * 100) / 100) * 100) / 100,
             formaPago: formFormaPago,
             metodoPago: formMetodoPago,
             usoCFDI: formUsoCFDI,
@@ -362,6 +379,7 @@ export function BillDashboard() {
           concept: formConcept,
           total: subtotal * 1.16,
           status: 'error',
+          paymentStatus: 'unpaid',
           date: new Date().toISOString().split('T')[0],
           paymentMethod: formFormaPago === '01' ? 'Efectivo' : 'Transferencia',
         }
@@ -404,6 +422,77 @@ export function BillDashboard() {
     }
   }
 
+  const handleDeleteInvoice = async (invoiceId: string) => {
+    const inv = invoiceList.find(i => i.id === invoiceId)
+    const isTimbrada = inv?.status === 'timbrada'
+    const msg = isTimbrada
+      ? 'Esta factura está timbrada ante el SAT. ¿Estás seguro de que deseas eliminarla del sistema? (El CFDI seguirá vigente ante el SAT).'
+      : '¿Eliminar esta factura? Esta acción no se puede deshacer.'
+    if (!confirm(msg)) return
+    try {
+      const res = await fetch(`/api/invoices?invoiceId=${invoiceId}`, { method: 'DELETE' })
+      if (res.ok) {
+        setInvoiceList(prev => prev.filter(i => i.id !== invoiceId))
+      }
+    } catch (err) {
+      console.error('Failed to delete invoice:', err)
+    }
+  }
+
+  const handleRevertPayment = async (invoiceId: string) => {
+    if (!confirm('¿Eliminar el pago registrado? La factura volverá a pendiente.')) return
+    try {
+      const res = await fetch('/api/invoices', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invoiceId,
+          paymentStatus: 'unpaid',
+        }),
+      })
+      if (res.ok) {
+        setInvoiceList(prev => prev.map(i =>
+          i.id === invoiceId ? { ...i, paymentStatus: 'unpaid' } : i
+        ))
+      }
+    } catch (err) {
+      console.error('Failed to revert payment:', err)
+    }
+  }
+
+  const handleMarkAsPaid = async () => {
+    if (!payTarget) return
+
+    setIsMarkingPaid(true)
+    try {
+      const response = await fetch('/api/invoices', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invoiceId: payTarget.id,
+          paymentStatus: 'paid',
+          formaPago: payMethod,
+        }),
+      })
+
+      if (response.ok) {
+        setInvoiceList(prev => prev.map(i =>
+          i.id === payTarget.id ? {
+            ...i,
+            paymentStatus: 'paid',
+            paymentMethod: payMethod === '01' ? 'Efectivo' : payMethod === '03' ? 'Transferencia' : 'Tarjeta',
+          } : i
+        ))
+      }
+    } catch {
+      // Error handling
+    } finally {
+      setIsMarkingPaid(false)
+      setPayTarget(null)
+      setPayMethod('01')
+    }
+  }
+
   const resetForm = () => {
     setFormPatient('')
     setFormConcept('')
@@ -411,6 +500,7 @@ export function BillDashboard() {
     setFormFormaPago('01')
     setFormMetodoPago('PUE')
     setFormUsoCFDI('G01')
+    setFormIvaRate(0)
   }
 
   return (
@@ -421,7 +511,7 @@ export function BillDashboard() {
       animate="visible"
     >
       {/* Stats row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 shrink-0 items-stretch">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 shrink-0 items-stretch">
         <motion.div variants={itemVariants} className="h-full">
           <Card className="border-[#E1F5EE] bg-white hover:shadow-md transition-shadow h-full flex flex-col">
             <CardContent className="p-5 flex-1 flex flex-col">
@@ -488,9 +578,37 @@ export function BillDashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-[#888780] font-medium uppercase tracking-wide">
+                    Cobrado
+                  </p>
+                  <p className="text-3xl font-medium text-[#1D9E75] mt-1 tracking-[-0.03em]">
+                    {isLoadingInvoices ? '—' : `$${totalCobrado.toLocaleString('es-MX')}`}
+                  </p>
+                  <p className="text-[10px] text-[#888780]">{pagadas} pagadas</p>
+                </div>
+                <motion.div
+                  className="h-10 w-10 rounded-lg bg-[#E1F5EE] flex items-center justify-center"
+                  whileHover={{ scale: 1.1, rotate: 5 }}
+                >
+                  <DollarSign className="h-5 w-5 text-[#1D9E75]" />
+                </motion.div>
+              </div>
+              <p className="text-xs text-[#1D9E75] mt-2 font-medium flex items-center gap-1">
+                <CheckCircle2 className="h-3 w-3" />
+                {pagadas > 0 ? `${Math.round((totalCobrado / (totalCobrado + totalPendiente || 1)) * 100)}% cobrado` : 'Sin cobros registrados'}
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div variants={itemVariants} className="h-full">
+          <Card className="border-[#E1F5EE] bg-white hover:shadow-md transition-shadow h-full flex flex-col">
+            <CardContent className="p-5 flex-1 flex flex-col">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-[#888780] font-medium uppercase tracking-wide">
                     Pendientes de cobro
                   </p>
-                  <p className="text-3xl font-medium text-[#2C2C2A] mt-1 tracking-[-0.03em]">
+                  <p className="text-3xl font-medium text-[#D97706] mt-1 tracking-[-0.03em]">
                     {isLoadingInvoices ? '—' : `$${totalPendiente.toLocaleString('es-MX')}`}
                   </p>
                   <p className="text-[10px] text-[#888780]">MXN / {pendientes} facturas</p>
@@ -569,9 +687,6 @@ export function BillDashboard() {
                     <thead>
                       <tr className="border-b border-[#E1F5EE]">
                         <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
-                          UUID
-                        </th>
-                        <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
                           Paciente
                         </th>
                         <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
@@ -581,13 +696,13 @@ export function BillDashboard() {
                           Total
                         </th>
                         <th className="text-center text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
-                          Estado
+                          CFDI
+                        </th>
+                        <th className="text-center text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
+                          Pago
                         </th>
                         <th className="text-left text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
                           Fecha
-                        </th>
-                        <th className="text-center text-[10px] text-[#888780] uppercase tracking-wide pb-2 pr-4 font-medium">
-                          Descargar
                         </th>
                         <th className="text-right text-[10px] text-[#888780] uppercase tracking-wide pb-2 font-medium">
                           Acciones
@@ -600,11 +715,6 @@ export function BillDashboard() {
                           key={inv.id}
                           className="border-b border-[#E1F5EE]/50 hover:bg-[#F1EFE8] transition-colors group"
                         >
-                          <td className="py-3 pr-4">
-                            <span className="text-xs font-mono text-[#534AB7]">
-                              {inv.uuid.slice(0, 8)}...
-                            </span>
-                          </td>
                           <td className="py-3 pr-4">
                             <span className="text-sm text-[#2C2C2A]">{inv.patientName}</span>
                           </td>
@@ -619,33 +729,93 @@ export function BillDashboard() {
                           <td className="py-3 pr-4 text-center">
                             <InvoiceStatusBadge status={inv.status} />
                           </td>
+                          <td className="py-3 pr-4 text-center">
+                            <Badge
+                              className="text-[10px] border-0 font-medium flex items-center gap-1 mx-auto w-fit"
+                              style={{
+                                backgroundColor: inv.paymentStatus === 'paid' ? '#E1F5EE' : '#FEF3C7',
+                                color: inv.paymentStatus === 'paid' ? '#1D9E75' : '#D97706',
+                              }}
+                            >
+                              {inv.paymentStatus === 'paid' ? (
+                                <><CheckCircle2 className="h-3 w-3" />Pagado</>
+                              ) : (
+                                <><Clock className="h-3 w-3" />Pendiente</>
+                              )}
+                            </Badge>
+                          </td>
                           <td className="py-3 pr-4">
                             <span className="text-xs text-[#888780]">{inv.date}</span>
                           </td>
-                          <td className="py-3 pr-4 text-center">
-                            {inv.status === 'timbrada' && (
-                              <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-[#534AB7]">
-                                  <FileDown className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-[#1D9E75]">
-                                  <Download className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                            )}
-                          </td>
                           <td className="py-3 text-right">
-                            {inv.status === 'timbrada' && (
+                            <div className="flex items-center justify-end gap-1">
+                              {inv.paymentStatus !== 'paid' && inv.status !== 'cancelled' && inv.status !== 'error' && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-xs text-[#1D9E75] hover:text-[#1D9E75] hover:bg-[#E1F5EE]"
+                                  onClick={() => setPayTarget(inv)}
+                                >
+                                  <DollarSign className="h-3 w-3 mr-1" />
+                                  Cobrar
+                                </Button>
+                              )}
+                              {inv.paymentStatus === 'paid' && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-xs text-[#D97706] hover:text-[#D97706] hover:bg-[#FEF3C7]"
+                                  onClick={() => handleRevertPayment(inv.id)}
+                                >
+                                  <XCircle className="h-3 w-3 mr-1" />
+                                  Eliminar pago
+                                </Button>
+                              )}
+                              {inv.status === 'pending' && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-xs text-[#534AB7] hover:text-[#534AB7] hover:bg-[#EEEDFE]"
+                                  onClick={() => {
+                                    // Pre-fill the CFDI dialog with this invoice's data
+                                    const patient = patients.find(p => p.fullName === inv.patientName)
+                                    if (patient) setFormPatient(patient.id)
+                                    setFormConcept(inv.concept)
+                                    setFormSubtotal(String(inv.total))
+                                    setShowCFDIDialog(true)
+                                    setCfdiStep(0)
+                                  }}
+                                >
+                                  <Receipt className="h-3 w-3 mr-1" />
+                                  CFDI
+                                </Button>
+                              )}
+                              {inv.status === 'timbrada' && (
+                                <>
+                                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-[#534AB7]">
+                                    <FileDown className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-xs text-[#E53E3E] hover:text-[#E53E3E] hover:bg-[#FEE2E2]"
+                                    onClick={() => setCancelTarget(inv)}
+                                  >
+                                    <XCircle className="h-3 w-3 mr-1" />
+                                    Cancelar CFDI
+                                  </Button>
+                                </>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 className="h-7 text-xs text-[#E53E3E] hover:text-[#E53E3E] hover:bg-[#FEE2E2]"
-                                onClick={() => setCancelTarget(inv)}
+                                onClick={() => handleDeleteInvoice(inv.id)}
                               >
                                 <Trash2 className="h-3 w-3 mr-1" />
-                                Cancelar
+                                Eliminar
                               </Button>
-                            )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -724,26 +894,71 @@ export function BillDashboard() {
             )}
 
             {cfdiStep === 1 && (
-              <div className="space-y-2">
-                <Label className="text-xs text-[#888780]">Concepto</Label>
-                <Input
-                  className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7]"
-                  placeholder="Ej: Consulta dermatologica"
-                  value={formConcept}
-                  onChange={(e) => setFormConcept(e.target.value)}
-                />
-                <Label className="text-xs text-[#888780]">Subtotal (MXN)</Label>
-                <Input
-                  type="number"
-                  className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7]"
-                  placeholder="0.00"
-                  value={formSubtotal}
-                  onChange={(e) => setFormSubtotal(e.target.value)}
-                />
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label className="text-xs text-[#888780]">Concepto</Label>
+                  <Input
+                    className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7]"
+                    placeholder="Ej: Consulta dermatologica"
+                    value={formConcept}
+                    onChange={(e) => setFormConcept(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs text-[#888780]">Subtotal (MXN)</Label>
+                  <Input
+                    type="number"
+                    className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7]"
+                    placeholder="0.00"
+                    value={formSubtotal}
+                    onChange={(e) => setFormSubtotal(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs text-[#888780]">IVA</Label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setFormIvaRate(0)}
+                      className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all border ${
+                        formIvaRate === 0
+                          ? 'bg-[#E1F5EE] border-[#1D9E75] text-[#1D9E75]'
+                          : 'bg-white border-[#E1F5EE] text-[#888780] hover:border-[#1D9E75]/50'
+                      }`}
+                    >
+                      Exento (0%)
+                      <span className="block text-[9px] font-normal opacity-70">Servicios de salud</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormIvaRate(0.16)}
+                      className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all border ${
+                        formIvaRate === 0.16
+                          ? 'bg-[#EEEDFE] border-[#534AB7] text-[#534AB7]'
+                          : 'bg-white border-[#E1F5EE] text-[#888780] hover:border-[#534AB7]/50'
+                      }`}
+                    >
+                      16% IVA
+                      <span className="block text-[9px] font-normal opacity-70">Producto/servicio gravado</span>
+                    </button>
+                  </div>
+                </div>
                 {formSubtotal && (
-                  <p className="text-[10px] text-[#888780]">
-                    IVA (16%): ${((parseFloat(formSubtotal) || 0) * 0.16).toFixed(2)} | Total: ${((parseFloat(formSubtotal) || 0) * 1.16).toFixed(2)}
-                  </p>
+                  <div className="rounded-lg bg-[#F1EFE8] p-2.5 space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-[#888780]">Subtotal</span>
+                      <span className="text-[#2C2C2A]">${(parseFloat(formSubtotal) || 0).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-[#888780]">IVA {formIvaRate > 0 ? `(${(formIvaRate * 100).toFixed(0)}%)` : '(Exento)'}</span>
+                      <span className="text-[#2C2C2A]">${((parseFloat(formSubtotal) || 0) * formIvaRate).toFixed(2)}</span>
+                    </div>
+                    <Separator className="bg-[#E1F5EE]" />
+                    <div className="flex justify-between text-xs font-medium">
+                      <span className="text-[#2C2C2A]">Total</span>
+                      <span className="text-[#534AB7]">${((parseFloat(formSubtotal) || 0) * (1 + formIvaRate)).toFixed(2)}</span>
+                    </div>
+                  </div>
                 )}
               </div>
             )}
@@ -824,6 +1039,57 @@ export function BillDashboard() {
                 )}
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mark as Paid Dialog */}
+      <Dialog open={!!payTarget} onOpenChange={() => { setPayTarget(null); setPayMethod('01') }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-medium tracking-[-0.03em] flex items-center gap-2">
+              <DollarSign className="h-5 w-5 text-[#1D9E75]" />
+              Registrar pago
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {payTarget && (
+              <div className="p-3 rounded-lg bg-[#E1F5EE] text-sm">
+                <p className="font-medium text-[#2C2C2A]">{payTarget.patientName}</p>
+                <p className="text-xs text-[#888780]">{payTarget.concept} - ${payTarget.total.toLocaleString('es-MX')} MXN</p>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label className="text-xs text-[#888780]">Metodo de pago</Label>
+              <Select value={payMethod} onValueChange={setPayMethod}>
+                <SelectTrigger className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="01">Efectivo</SelectItem>
+                  <SelectItem value="03">Transferencia</SelectItem>
+                  <SelectItem value="04">Tarjeta de credito</SelectItem>
+                  <SelectItem value="28">Tarjeta de debito</SelectItem>
+                  <SelectItem value="99">Otros</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" className="text-sm" onClick={() => setPayTarget(null)}>
+              Cancelar
+            </Button>
+            <Button
+              className="bg-[#1D9E75] hover:bg-[#1D9E75]/90 text-white text-sm"
+              onClick={handleMarkAsPaid}
+              disabled={isMarkingPaid}
+            >
+              {isMarkingPaid ? (
+                <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Guardando...</>
+              ) : (
+                <><CheckCircle2 className="h-4 w-4 mr-1" />Marcar como pagado</>
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

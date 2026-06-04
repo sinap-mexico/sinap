@@ -23,9 +23,19 @@ export async function GET(req: NextRequest) {
     const todayEnd = new Date()
     todayEnd.setHours(23, 59, 59, 999)
 
+    // Yesterday for trend calculation
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayEnd = new Date(yesterday)
+    yesterdayEnd.setHours(23, 59, 59, 999)
+
     // Start of current month
     const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
     const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999)
+
+    // Start of previous month for revenue trend
+    const prevMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+    const prevMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0, 23, 59, 59, 999)
 
     // Start of current week (Monday)
     const dayOfWeek = today.getDay()
@@ -33,62 +43,135 @@ export async function GET(req: NextRequest) {
     weekStart.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
     weekStart.setHours(0, 0, 0, 0)
 
-    // Citas hoy — count of today's appointments (excluding cancelled/no-show)
-    const citasHoy = await db.appointment.count({
-      where: {
-        clinicId,
-        date: { gte: today, lte: todayEnd },
-        status: { notIn: ['cancelled', 'no_show'] },
-      },
-    })
+    // ── Parallel batch 1: Core KPI counts ───────────────────────
+    const [
+      citasHoy,
+      citasAyer,
+      conversacionesActivas,
+      conversacionesUnread,
+      facturasMes,
+      invoiceAgg,
+      pacientesNuevos,
+      prevInvoiceAgg,
+    ] = await Promise.all([
+      // Citas hoy (excluding cancelled/no_show)
+      db.appointment.count({
+        where: {
+          clinicId,
+          date: { gte: today, lte: todayEnd },
+          status: { notIn: ['cancelled', 'no_show'] },
+        },
+      }),
 
-    // Conversaciones activas — count of active conversations
-    const conversacionesActivas = await db.conversation.count({
-      where: {
-        clinicId,
-        status: 'active',
-      },
-    })
+      // Citas ayer (for trend)
+      db.appointment.count({
+        where: {
+          clinicId,
+          date: { gte: yesterday, lte: yesterdayEnd },
+          status: { notIn: ['cancelled', 'no_show'] },
+        },
+      }),
 
-    // Facturas este mes — count
-    const facturasMes = await db.invoice.count({
-      where: {
-        clinicId,
-        createdAt: { gte: monthStart, lte: monthEnd },
-      },
-    })
+      // Conversaciones activas
+      db.conversation.count({
+        where: { clinicId, status: 'active' },
+      }),
 
-    // Total facturado este mes — sum of invoice totals
-    const invoiceAgg = await db.invoice.aggregate({
-      where: {
-        clinicId,
-        createdAt: { gte: monthStart, lte: monthEnd },
-        status: { notIn: ['cancelled', 'error'] },
-      },
-      _sum: { total: true },
-    })
+      // Conversaciones sin leer (inbound messages not yet responded)
+      db.conversation.count({
+        where: { clinicId, status: 'active', unreadCount: { gt: 0 } },
+      }),
+
+      // Facturas este mes
+      db.invoice.count({
+        where: {
+          clinicId,
+          createdAt: { gte: monthStart, lte: monthEnd },
+        },
+      }),
+
+      // Total facturado este mes
+      db.invoice.aggregate({
+        where: {
+          clinicId,
+          createdAt: { gte: monthStart, lte: monthEnd },
+          status: { notIn: ['cancelled', 'error'] },
+        },
+        _sum: { total: true },
+      }),
+
+      // Pacientes nuevos este mes (by createdAt, not segment)
+      db.patient.count({
+        where: {
+          clinicId,
+          createdAt: { gte: monthStart, lte: monthEnd },
+        },
+      }),
+
+      // Total facturado mes anterior (for trend)
+      db.invoice.aggregate({
+        where: {
+          clinicId,
+          createdAt: { gte: prevMonthStart, lte: prevMonthEnd },
+          status: { notIn: ['cancelled', 'error'] },
+        },
+        _sum: { total: true },
+      }),
+    ])
+
     const totalFacturado = invoiceAgg._sum.total || 0
+    const prevTotalFacturado = prevInvoiceAgg._sum.total || 0
 
-    // Pacientes nuevos este mes
-    const pacientesNuevos = await db.patient.count({
-      where: {
-        clinicId,
-        segment: 'new',
-        createdAt: { gte: monthStart, lte: monthEnd },
-      },
-    })
+    // ── Parallel batch 2: Ocupacion + weekly chart + monthly ─────
+    const [doctors, bookedThisWeek, todayAppts, totalAppointments, noShowCount] =
+      await Promise.all([
+        // Doctors for occupancy calculation
+        db.doctor.findMany({
+          where: { clinicId, isActive: true },
+          select: { workDays: true, workStart: true, workEnd: true, slotMinutes: true },
+        }),
 
-    // Ocupacion — calculate based on available slots vs booked appointments this week
-    // Get doctors for this clinic
-    const doctors = await db.doctor.findMany({
-      where: { clinicId, isActive: true },
-      select: { workDays: true, workStart: true, workEnd: true, slotMinutes: true },
-    })
+        // Booked this week
+        db.appointment.count({
+          where: {
+            clinicId,
+            date: { gte: weekStart, lte: todayEnd },
+            status: { notIn: ['cancelled', 'no_show'] },
+          },
+        }),
 
+        // Today's appointments grouped by doctor
+        db.appointment.findMany({
+          where: {
+            clinicId,
+            date: { gte: today, lte: todayEnd },
+            status: { notIn: ['cancelled', 'no_show'] },
+          },
+          select: { doctorId: true, doctor: { select: { name: true } } },
+        }),
+
+        // Total appointments this month (for no-show rate)
+        db.appointment.count({
+          where: {
+            clinicId,
+            date: { gte: monthStart, lte: monthEnd },
+          },
+        }),
+
+        // No-show count this month
+        db.appointment.count({
+          where: {
+            clinicId,
+            date: { gte: monthStart, lte: monthEnd },
+            status: 'no_show',
+          },
+        }),
+      ])
+
+    // Ocupacion calculation
     let totalPossibleSlots = 0
     for (const doc of doctors) {
       const workDaysArr = doc.workDays.split(',').map(Number)
-      // Count work days in current week
       const daysInWeek: Date[] = []
       for (let i = 0; i < 6; i++) {
         const d = new Date(weekStart)
@@ -102,97 +185,71 @@ export async function GET(req: NextRequest) {
       totalPossibleSlots += workDaysThisWeek * slotsPerDay
     }
 
-    // Booked appointments this week
-    const bookedThisWeek = await db.appointment.count({
-      where: {
-        clinicId,
-        date: { gte: weekStart, lte: todayEnd },
-        status: { notIn: ['cancelled', 'no_show'] },
-      },
-    })
-
     const ocupacion = totalPossibleSlots > 0
       ? Math.round((bookedThisWeek / totalPossibleSlots) * 100)
       : 0
 
-    // Weekly appointments for chart
+    // ── Weekly appointments chart ────────────────────────────────
     const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
     const weeklyAppointments = []
 
-    for (let i = 0; i < 6; i++) {
-      const dayDate = new Date(weekStart)
-      dayDate.setDate(weekStart.getDate() + i)
-      const dayStart = new Date(dayDate)
-      dayStart.setHours(0, 0, 0, 0)
-      const dayEnd = new Date(dayDate)
-      dayEnd.setHours(23, 59, 59, 999)
+    // Batch all 6 day counts in parallel
+    const dayCounts = await Promise.all(
+      Array.from({ length: 6 }, (_, i) => {
+        const dayDate = new Date(weekStart)
+        dayDate.setDate(weekStart.getDate() + i)
+        const dayStart = new Date(dayDate)
+        dayStart.setHours(0, 0, 0, 0)
+        const dayEnd = new Date(dayDate)
+        dayEnd.setHours(23, 59, 59, 999)
 
-      const count = await db.appointment.count({
-        where: {
-          clinicId,
-          date: { gte: dayStart, lte: dayEnd },
-          status: { notIn: ['cancelled', 'no_show'] },
-        },
+        return db.appointment.count({
+          where: {
+            clinicId,
+            date: { gte: dayStart, lte: dayEnd },
+            status: { notIn: ['cancelled', 'no_show'] },
+          },
+        })
       })
+    )
 
-      weeklyAppointments.push({ day: dayNames[i], count })
+    for (let i = 0; i < 6; i++) {
+      weeklyAppointments.push({ day: dayNames[i], count: dayCounts[i] })
     }
 
-    // Monthly revenue — last 6 months for chart
+    // ── Monthly revenue chart ────────────────────────────────────
     const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
-    const monthlyRevenue = []
     const currentMonth = today.getMonth()
 
-    for (let i = 5; i >= 0; i--) {
-      const mIdx = (currentMonth - i + 12) % 12
-      const year = currentMonth - i < 0 ? today.getFullYear() - 1 : today.getFullYear()
-      const mStart = new Date(year, mIdx, 1)
-      const mEnd = new Date(year, mIdx + 1, 0, 23, 59, 59, 999)
+    const monthlyAggs = await Promise.all(
+      Array.from({ length: 6 }, (_, idx) => {
+        const i = 5 - idx
+        const mIdx = (currentMonth - i + 12) % 12
+        const year = currentMonth - i < 0 ? today.getFullYear() - 1 : today.getFullYear()
+        const mStart = new Date(year, mIdx, 1)
+        const mEnd = new Date(year, mIdx + 1, 0, 23, 59, 59, 999)
 
-      const agg = await db.invoice.aggregate({
-        where: {
-          clinicId,
-          createdAt: { gte: mStart, lte: mEnd },
-          status: { notIn: ['cancelled', 'error'] },
-        },
-        _sum: { total: true },
+        return db.invoice.aggregate({
+          where: {
+            clinicId,
+            createdAt: { gte: mStart, lte: mEnd },
+            status: { notIn: ['cancelled', 'error'] },
+          },
+          _sum: { total: true },
+        }).then(agg => ({
+          month: monthNames[mIdx],
+          amount: Math.round(agg._sum.total || 0),
+        }))
       })
+    )
 
-      monthlyRevenue.push({
-        month: monthNames[mIdx],
-        amount: Math.round(agg._sum.total || 0),
-      })
-    }
+    const monthlyRevenue = monthlyAggs
 
-    // No-show rate
-    const totalAppointments = await db.appointment.count({
-      where: {
-        clinicId,
-        date: { gte: monthStart, lte: monthEnd },
-      },
-    })
-    const noShowCount = await db.appointment.count({
-      where: {
-        clinicId,
-        date: { gte: monthStart, lte: monthEnd },
-        status: 'no_show',
-      },
-    })
+    // ── Derived metrics ──────────────────────────────────────────
     const noShowRate = totalAppointments > 0 ? Math.round((noShowCount / totalAppointments) * 100) : 0
-
-    // Current month revenue for KPI card
     const currentMonthRevenue = monthlyRevenue.length > 0 ? monthlyRevenue[monthlyRevenue.length - 1].amount : 0
 
-    // Doctor appointments today — count per doctor
-    const todayAppts = await db.appointment.findMany({
-      where: {
-        clinicId,
-        date: { gte: today, lte: todayEnd },
-        status: { notIn: ['cancelled', 'no_show'] },
-      },
-      select: { doctorId: true, doctor: { select: { name: true } } },
-    })
-
+    // Doctor appointments today
     const doctorApptMap = new Map<string, { doctorName: string; todayCount: number }>()
     for (const appt of todayAppts) {
       const existing = doctorApptMap.get(appt.doctorId)
@@ -208,6 +265,14 @@ export async function GET(req: NextRequest) {
       todayCount: data.todayCount,
     }))
 
+    // Trend calculations
+    const citasHoyDiff = citasHoy - citasAyer
+    const revenueGrowth = prevTotalFacturado > 0
+      ? Math.round(((totalFacturado - prevTotalFacturado) / prevTotalFacturado) * 100)
+      : totalFacturado > 0 ? 100 : 0
+
+    const prevMonthName = monthNames[(currentMonth - 1 + 12) % 12]
+
     return NextResponse.json({
       kpi: {
         citasHoy,
@@ -216,6 +281,12 @@ export async function GET(req: NextRequest) {
         totalFacturado: Math.round(totalFacturado),
         pacientesNuevos,
         ocupacion,
+      },
+      trends: {
+        citasHoyDiff,
+        conversacionesUnread,
+        revenueGrowth,
+        revenuePrevMonth: prevMonthName,
       },
       weeklyAppointments,
       monthlyRevenue,

@@ -4,8 +4,8 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
-// Create PrismaClient — works with both SQLite (dev) and PostgreSQL (Supabase)
-// Gracefully returns null if no DATABASE_URL is set (demo mode on Vercel)
+// Create PrismaClient — works with PostgreSQL (Supabase)
+// Returns null only if no DATABASE_URL is set (shouldn't happen on Vercel)
 function createPrismaClient(): PrismaClient | null {
   const dbUrl = process.env.DATABASE_URL
 
@@ -26,9 +26,9 @@ function createPrismaClient(): PrismaClient | null {
 }
 
 // In development, reuse the client to avoid connection pool exhaustion
-// In production (Vercel), each cold start creates a new client
+// In production (Vercel), also cache to avoid creating new clients on warm functions
 export const db = globalForPrisma.prisma ?? createPrismaClient()
 
-if (process.env.NODE_ENV !== 'production' && db) {
+if (db) {
   globalForPrisma.prisma = db
 }

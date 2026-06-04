@@ -1,18 +1,17 @@
 'use client'
 
 import { useSearchParams, useRouter } from 'next/navigation'
-import { useEffect, Suspense } from 'react'
+import { Suspense } from 'react'
 import { LoginScreen } from '@/components/sinap/login-screen'
 
 function LoginContent() {
   const searchParams = useSearchParams()
-  const router = useRouter()
 
-  // After successful login, the LoginScreen component handles auth via next-auth
-  // and the middleware will redirect to /dashboard automatically
-  // This page just renders the login screen as a standalone route
+  // NextAuth redirects to /login?error=CredentialsSignin when login fails.
+  // We pass this to LoginScreen so it can display the error message.
+  const authError = searchParams.get('error')
 
-  return <LoginScreen />
+  return <LoginScreen authError={authError} />
 }
 
 export default function LoginPage() {

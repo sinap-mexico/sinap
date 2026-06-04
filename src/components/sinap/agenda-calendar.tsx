@@ -28,12 +28,16 @@ import {
   XCircle,
   AlertCircle,
   Bot,
+  Trash2,
   Loader2,
+  Receipt,
+  DollarSign,
+  FileDown,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ScrollArea } from '@/components/ui/scroll-area'
 
-type AppointmentStatus = 'confirmed' | 'pending' | 'scheduled' | 'cancelled' | 'no-show'
+type AppointmentStatus = 'confirmed' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'no-show'
 
 interface AgendaAppointment {
   id: string
@@ -78,10 +82,11 @@ interface ServiceItem {
 
 const statusConfig: Record<AppointmentStatus, { label: string; color: string; bg: string; icon: React.ElementType }> = {
   confirmed: { label: 'Confirmada', color: '#1D9E75', bg: '#E1F5EE', icon: CheckCircle },
-  pending: { label: 'Pendiente', color: '#D97706', bg: '#FEF3C7', icon: Clock },
   scheduled: { label: 'Agendada', color: '#534AB7', bg: '#EEEDFE', icon: CalendarIcon },
+  in_progress: { label: 'En consulta', color: '#1D9E75', bg: '#E1F5EE', icon: Clock },
+  completed: { label: 'Completada', color: '#888780', bg: '#F1EFE8', icon: CheckCircle },
   cancelled: { label: 'Cancelada', color: '#888780', bg: '#F1EFE8', icon: XCircle },
-  'no-show': { label: 'No asistio', color: '#E53E3E', bg: '#FEE2E2', icon: AlertCircle },
+  'no-show': { label: 'No asistió', color: '#E53E3E', bg: '#FEE2E2', icon: AlertCircle },
 }
 
 function StatusBadge({ status }: { status: AppointmentStatus }) {
@@ -111,7 +116,7 @@ function formatDateStr(date: Date): string {
 }
 
 export function AgendaCalendar() {
-  const { schedule, clinicMode, clinicId, setClinicId, clinicSlug } = useSinapStore()
+  const { schedule, clinicMode, clinicId, setClinicId, clinicSlug, setActiveModule } = useSinapStore()
 
   // Data states
   const [doctors, setDoctors] = useState<DoctorItem[]>([])
@@ -128,6 +133,20 @@ export function AgendaCalendar() {
   const [isCreating, setIsCreating] = useState(false)
   const [isUpdating, setIsUpdating] = useState(false)
 
+  // Invoice states for completed appointments
+  const [appointmentInvoice, setAppointmentInvoice] = useState<{
+    id: string
+    concepto?: string | null
+    total?: number
+    status?: string
+    paymentStatus?: string
+    formaPago?: string
+    cfdiUuid?: string | null
+  } | null>(null)
+  const [isLoadingInvoice, setIsLoadingInvoice] = useState(false)
+  const [isCharging, setIsCharging] = useState(false)
+  const [chargeMethod, setChargeMethod] = useState('01') // '01'=efectivo, '03'=transferencia, '04'=tarjeta
+
   // UI states
   const [view, setView] = useState<'day' | 'week'>('day')
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -138,6 +157,9 @@ export function AgendaCalendar() {
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null)
   const [selectedAppointment, setSelectedAppointment] = useState<AgendaAppointment | null>(null)
   const [cancelReason, setCancelReason] = useState('')
+
+  // Error feedback
+  const [actionError, setActionError] = useState<string | null>(null)
 
   // New appointment form
   const [newPatient, setNewPatient] = useState('')
@@ -264,7 +286,7 @@ export function AgendaCalendar() {
       duration: (service?.duration as number) || 30,
       status: (apt.status as AppointmentStatus) || 'scheduled',
       type: (service?.name as string) || 'Consulta',
-      isAI: apt.channel === 'whatsapp' && apt.status === 'scheduled',
+      isAI: apt.channel === 'whatsapp' && (apt.status === 'scheduled' || apt.status === 'confirmed') && apt.notes?.includes('[IA]'),
       doctorId: apt.doctorId as string,
       doctorName: (doctor?.name as string) || 'Doctor',
       doctorColor: (doctor?.color as string) || '#1D9E75',
@@ -306,6 +328,138 @@ export function AgendaCalendar() {
     fetchAppointments(currentDate, selectedDoctor)
   }, [currentDate, selectedDoctor, fetchAppointments])
 
+  // Fetch invoice for completed appointment when detail dialog opens
+  const fetchAppointmentInvoice = useCallback(async () => {
+    if (!selectedAppointment || !clinicId) return
+    setIsLoadingInvoice(true)
+    try {
+      const res = await fetch(`/api/invoices?clinicId=${clinicId}`)
+      if (res.ok) {
+        const data = await res.json()
+        const inv = (data.invoices || []).find((i: Record<string, unknown>) => i.appointmentId === selectedAppointment.id)
+        setAppointmentInvoice(inv ? {
+          id: inv.id as string,
+          concepto: inv.concepto as string | null,
+          total: inv.total as number,
+          status: inv.status as string,
+          paymentStatus: inv.paymentStatus as string,
+          formaPago: inv.formaPago as string,
+          cfdiUuid: inv.cfdiUuid as string | null,
+        } : null)
+      }
+    } catch (err) {
+      console.error('Failed to fetch invoice:', err)
+    } finally {
+      setIsLoadingInvoice(false)
+    }
+  }, [selectedAppointment, clinicId])
+
+  useEffect(() => {
+    if (showDetailDialog && selectedAppointment?.status === 'completed') {
+      fetchAppointmentInvoice()
+    } else if (!showDetailDialog) {
+      setAppointmentInvoice(null)
+    }
+  }, [showDetailDialog, selectedAppointment?.status, fetchAppointmentInvoice])
+
+  // Charge appointment (mark invoice as paid)
+  const handleChargeAppointment = async () => {
+    if (!appointmentInvoice) return
+    setIsCharging(true)
+    try {
+      const res = await fetch('/api/invoices', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invoiceId: appointmentInvoice.id,
+          paymentStatus: 'paid',
+          formaPago: chargeMethod,
+        }),
+      })
+      if (res.ok) {
+        await fetchAppointmentInvoice()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setActionError(data.error || 'Error al cobrar')
+      }
+    } catch (err) {
+      console.error('Failed to charge:', err)
+      setActionError('Error de conexión al cobrar')
+    } finally {
+      setIsCharging(false)
+    }
+  }
+
+  // Create invoice for a completed appointment
+  const handleCreateAppointmentInvoice = async () => {
+    if (!selectedAppointment || !clinicId) return
+    setIsCharging(true)
+    try {
+      const serviceName = selectedAppointment.type || 'Consulta'
+      // Try to get price from service
+      const servicesRes = await fetch(`/api/services?clinicId=${clinicId}`)
+      let price = 0
+      if (servicesRes.ok) {
+        const servicesData = await servicesRes.json()
+        const svc = (servicesData.services || []).find((s: Record<string, unknown>) => s.name === serviceName)
+        if (svc) price = (svc.price as number) || 0
+      }
+
+      const res = await fetch('/api/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clinicId,
+          patientId: selectedAppointment.patientId,
+          appointmentId: selectedAppointment.id,
+          concepto: serviceName,
+          subtotal: price,
+          iva: 0,
+          ivaRate: 0,
+          total: price,
+          status: 'pending',
+          paymentStatus: 'unpaid',
+        }),
+      })
+      if (res.ok) {
+        await fetchAppointmentInvoice()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setActionError(data.error || 'Error al crear cuenta')
+      }
+    } catch (err) {
+      console.error('Failed to create invoice:', err)
+      setActionError('Error de conexión al crear cuenta')
+    } finally {
+      setIsCharging(false)
+    }
+  }
+
+  // Revert payment (mark invoice as unpaid again)
+  const handleRevertAppointmentPayment = async () => {
+    if (!appointmentInvoice) return
+    if (!confirm('¿Eliminar el pago? La factura volverá a pendiente.')) return
+    try {
+      const res = await fetch('/api/invoices', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invoiceId: appointmentInvoice.id,
+          paymentStatus: 'unpaid',
+        }),
+      })
+      if (res.ok) {
+        await fetchAppointmentInvoice()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setActionError(data.error || 'Error al eliminar pago')
+      }
+    } catch (err) {
+      console.error('Failed to revert payment:', err)
+      setActionError('Error de conexión al eliminar pago')
+    }
+  }
+
   // For week view, fetch appointments for the entire week
   const [weekAppointments, setWeekAppointments] = useState<Record<string, AgendaAppointment[]>>({})
 
@@ -313,8 +467,8 @@ export function AgendaCalendar() {
     if (view !== 'week' || !clinicId) return
     async function fetchWeek() {
       const days = weekDays
-      const results: Record<string, AgendaAppointment[]> = {}
-      for (const day of days) {
+      // Fetch all days in parallel instead of sequentially
+      const fetches = days.map(async (day) => {
         const dateStr = formatDateStr(day)
         let url = `/api/appointments?clinicId=${clinicId}&date=${dateStr}&includeHistory=true`
         if (selectedDoctor !== 'all') url += `&doctorId=${selectedDoctor}`
@@ -322,13 +476,19 @@ export function AgendaCalendar() {
           const res = await fetch(url)
           if (res.ok) {
             const data = await res.json()
-            results[dateStr] = (data.appointments || []).map(mapApiAppointment)
+            return { dateStr, apts: (data.appointments || []).map(mapApiAppointment) }
           }
         } catch {
-          results[dateStr] = []
+          // skip failed day
         }
+        return { dateStr, apts: [] }
+      })
+      const results = await Promise.all(fetches)
+      const weekMap: Record<string, AgendaAppointment[]> = {}
+      for (const r of results) {
+        weekMap[r.dateStr] = r.apts
       }
-      setWeekAppointments(results)
+      setWeekAppointments(weekMap)
     }
     fetchWeek()
   }, [view, clinicId, selectedDoctor, currentDate])
@@ -451,14 +611,14 @@ export function AgendaCalendar() {
         setNewService('')
         setNewDoctor('')
         setNewNotes('')
-        // Refresh appointments
+        setActionError(null)
         fetchAppointments(currentDate, selectedDoctor)
       } else {
         const data = await res.json()
-        console.error('Failed to create appointment:', data.error)
+        setActionError(data.error || 'Error al crear la cita')
       }
     } catch (err) {
-      console.error('Failed to create appointment:', err)
+      setActionError('Error de conexión al crear la cita')
     } finally {
       setIsCreating(false)
     }
@@ -475,10 +635,14 @@ export function AgendaCalendar() {
       })
       if (res.ok) {
         setShowDetailDialog(false)
+        setActionError(null)
         fetchAppointments(currentDate, selectedDoctor)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setActionError(data.error || 'Error al confirmar la cita')
       }
     } catch (err) {
-      console.error('Failed to confirm appointment:', err)
+      setActionError('Error de conexión al confirmar')
     } finally {
       setIsUpdating(false)
     }
@@ -505,10 +669,14 @@ export function AgendaCalendar() {
         setShowCancelDialog(false)
         setShowDetailDialog(false)
         setCancelReason('')
+        setActionError(null)
         fetchAppointments(currentDate, selectedDoctor)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setActionError(data.error || 'Error al cancelar la cita')
       }
     } catch (err) {
-      console.error('Failed to cancel appointment:', err)
+      setActionError('Error de conexión al cancelar')
     } finally {
       setIsUpdating(false)
     }
@@ -523,6 +691,29 @@ export function AgendaCalendar() {
     setShowNewDialog(true)
     fetchPatients()
     fetchServices()
+  }
+
+  const handleHardDeleteAppointment = async () => {
+    if (!selectedAppointment || !clinicId) return
+    if (!confirm('¿Eliminar esta cita permanentemente? Esta acción no se puede deshacer.')) return
+    setIsUpdating(true)
+    try {
+      const res = await fetch(`/api/appointments/${selectedAppointment.id}?hard=true`, {
+        method: 'DELETE',
+      })
+      if (res.ok) {
+        setShowDetailDialog(false)
+        setActionError(null)
+        fetchAppointments(currentDate, selectedDoctor)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setActionError(data.error || 'Error al eliminar la cita')
+      }
+    } catch (err) {
+      setActionError('Error de conexión al eliminar la cita')
+    } finally {
+      setIsUpdating(false)
+    }
   }
 
   const now = new Date()
@@ -560,6 +751,26 @@ export function AgendaCalendar() {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
     >
+      {/* Error toast */}
+      {actionError && (
+        <motion.div
+          className="rounded-lg bg-red-50 border border-red-200 p-3 flex items-center gap-2"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
+          <p className="text-sm text-red-700 flex-1">{actionError}</p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-red-500 hover:text-red-700"
+            onClick={() => setActionError(null)}
+          >
+            Cerrar
+          </Button>
+        </motion.div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -1081,22 +1292,34 @@ export function AgendaCalendar() {
                       <span className="font-medium">Motivo:</span> {selectedAppointment.cancelReason}
                     </p>
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-2 h-7 text-xs border-[#1D9E75] text-[#1D9E75] hover:bg-[#E1F5EE]"
-                    onClick={() => handleRebookSlot(selectedAppointment)}
-                  >
-                    <Plus className="h-3 w-3 mr-1" />
-                    Agendar en este horario
-                  </Button>
+                  <div className="flex gap-2 mt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 h-7 text-xs border-[#1D9E75] text-[#1D9E75] hover:bg-[#E1F5EE]"
+                      onClick={() => handleRebookSlot(selectedAppointment)}
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Reagendar
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs border-red-300 text-red-600 hover:bg-red-50"
+                      onClick={handleHardDeleteAppointment}
+                      disabled={isUpdating}
+                    >
+                      <Trash2 className="h-3 w-3 mr-1" />
+                      Eliminar
+                    </Button>
+                  </div>
                 </div>
               )}
 
               {/* Action buttons */}
               {selectedAppointment.status !== 'cancelled' && selectedAppointment.status !== 'no-show' && (
                 <div className="flex gap-2">
-                  {selectedAppointment.status !== 'confirmed' && (
+                  {selectedAppointment.status !== 'confirmed' && selectedAppointment.status !== 'completed' && (
                     <motion.div whileTap={{ scale: 0.97 }} className="flex-1">
                       <Button
                         className="w-full bg-[#1D9E75] hover:bg-[#1D9E75]/90 text-white text-sm h-9"
@@ -1112,29 +1335,172 @@ export function AgendaCalendar() {
                       </Button>
                     </motion.div>
                   )}
+                  {selectedAppointment.status !== 'completed' && (
+                    <Button
+                      variant="outline"
+                      className="flex-1 text-red-600 border-red-200 hover:bg-red-50 text-sm h-9"
+                      onClick={handleCancelClick}
+                      disabled={isUpdating}
+                    >
+                      <XCircle className="h-4 w-4 mr-1" />
+                      Cancelar
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {/* Completed appointment: Cita → Factura → Pago flow */}
+              {selectedAppointment.status === 'completed' && (
+                <div className="p-3 rounded-lg bg-[#EEEDFE] border border-[#534AB7]/20 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-[#534AB7]" />
+                    <p className="text-sm font-medium text-[#534AB7]">Cita completada</p>
+                  </div>
+
+                  {isLoadingInvoice ? (
+                    <div className="flex items-center gap-2 py-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-[#534AB7]" />
+                      <span className="text-xs text-[#888780]">Cargando cuenta...</span>
+                    </div>
+                  ) : !appointmentInvoice ? (
+                    /* No invoice - create one */
+                    <div className="space-y-2">
+                      <p className="text-xs text-[#888780]">No se ha creado cuenta para esta cita.</p>
+                      <Button
+                        className="w-full h-8 text-xs bg-[#534AB7] hover:bg-[#534AB7]/90 text-white"
+                        onClick={handleCreateAppointmentInvoice}
+                        disabled={isCharging}
+                      >
+                        {isCharging ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Receipt className="h-3.5 w-3.5 mr-1" />}
+                        Crear cuenta
+                      </Button>
+                    </div>
+                  ) : appointmentInvoice.paymentStatus === 'unpaid' ? (
+                    /* Unpaid invoice - charge it */
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-2 rounded-lg bg-white">
+                        <div>
+                          <p className="text-xs font-medium text-[#2C2C2A]">{appointmentInvoice.concepto || 'Consulta'}</p>
+                          <p className="text-[10px] text-[#888780]">{appointmentInvoice.status === 'timbrada' ? 'CFDI timbrada' : 'Pendiente de cobro'}</p>
+                        </div>
+                        <p className="text-sm font-semibold text-[#2C2C2A]">${(Number(appointmentInvoice.total) || 0).toLocaleString('es-MX')}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Select value={chargeMethod} onValueChange={setChargeMethod}>
+                          <SelectTrigger className="h-8 text-xs w-[130px] bg-white border-[#E1F5EE]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="01">Efectivo</SelectItem>
+                            <SelectItem value="03">Transferencia</SelectItem>
+                            <SelectItem value="04">Tarjeta</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          className="flex-1 h-8 text-xs bg-[#1D9E75] hover:bg-[#1D9E75]/90 text-white"
+                          onClick={handleChargeAppointment}
+                          disabled={isCharging}
+                        >
+                          {isCharging ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <DollarSign className="h-3.5 w-3.5 mr-1" />}
+                          Cobrar
+                        </Button>
+                      </div>
+                      {appointmentInvoice.status !== 'timbrada' && (
+                        <Button
+                          variant="outline"
+                          className="w-full h-8 text-xs border-[#534AB7] text-[#534AB7] hover:bg-[#EEEDFE]"
+                          onClick={() => { setShowDetailDialog(false); setActiveModule('bill') }}
+                        >
+                          <Receipt className="h-3.5 w-3.5 mr-1" />
+                          Generar CFDI
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    /* Paid invoice */
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 p-2 rounded-lg bg-[#E1F5EE]">
+                        <CheckCircle className="h-4 w-4 text-[#1D9E75]" />
+                        <div className="flex-1">
+                          <p className="text-xs font-medium text-[#1D9E75]">Pagado</p>
+                          <p className="text-[10px] text-[#888780]">
+                            ${(Number(appointmentInvoice.total) || 0).toLocaleString('es-MX')} — {
+                              appointmentInvoice.formaPago === '01' ? 'Efectivo' :
+                              appointmentInvoice.formaPago === '03' ? 'Transferencia' : 'Tarjeta'
+                            }
+                          </p>
+                        </div>
+                      </div>
+                      {appointmentInvoice.status === 'timbrada' && (
+                        <div className="flex items-center gap-2 p-2 rounded-lg bg-[#E1F5EE]">
+                          <Receipt className="h-4 w-4 text-[#534AB7]" />
+                          <div className="flex-1">
+                            <p className="text-xs font-medium text-[#534AB7]">CFDI timbrada</p>
+                            <p className="text-[10px] text-[#888780] truncate">{appointmentInvoice.cfdiUuid as string || ''}</p>
+                          </div>
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-[#534AB7]" onClick={() => { setShowDetailDialog(false); setActiveModule('bill') }}>
+                            <FileDown className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        {appointmentInvoice.status !== 'timbrada' && (
+                          <Button
+                            variant="outline"
+                            className="flex-1 h-8 text-xs border-[#534AB7] text-[#534AB7] hover:bg-[#EEEDFE]"
+                            onClick={() => { setShowDetailDialog(false); setActiveModule('bill') }}
+                          >
+                            <Receipt className="h-3.5 w-3.5 mr-1" />
+                            Generar CFDI
+                          </Button>
+                        )}
+                        <Button
+                          variant="outline"
+                          className="h-8 text-xs border-red-300 text-red-600 hover:bg-red-50"
+                          onClick={handleRevertAppointmentPayment}
+                        >
+                          <XCircle className="h-3.5 w-3.5 mr-1" />
+                          Eliminar pago
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Link to patient */}
                   <Button
-                    variant="outline"
-                    className="flex-1 text-red-600 border-red-200 hover:bg-red-50 text-sm h-9"
-                    onClick={handleCancelClick}
-                    disabled={isUpdating}
+                    variant="ghost"
+                    className="w-full h-7 text-xs text-[#888780] hover:text-[#2C2C2A] hover:bg-[#F1EFE8]"
+                    onClick={() => { setShowDetailDialog(false); setActiveModule('patients') }}
                   >
-                    <XCircle className="h-4 w-4 mr-1" />
-                    Cancelar
+                    <User className="h-3 w-3 mr-1" />
+                    Ver paciente
                   </Button>
                 </div>
               )}
 
-              {/* No-show can also be re-booked */}
+              {/* No-show can be re-booked or deleted */}
               {selectedAppointment.status === 'no-show' && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full h-9 text-xs border-[#1D9E75] text-[#1D9E75] hover:bg-[#E1F5EE]"
-                  onClick={() => handleRebookSlot(selectedAppointment)}
-                >
-                  <Plus className="h-3 w-3 mr-1" />
-                  Agendar en este horario
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 h-9 text-xs border-[#1D9E75] text-[#1D9E75] hover:bg-[#E1F5EE]"
+                    onClick={() => handleRebookSlot(selectedAppointment)}
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Reagendar
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 text-xs border-red-300 text-red-600 hover:bg-red-50"
+                    onClick={handleHardDeleteAppointment}
+                    disabled={isUpdating}
+                  >
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    Eliminar
+                  </Button>
+                </div>
               )}
             </motion.div>
           )}

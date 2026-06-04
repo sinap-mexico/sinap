@@ -1,17 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
+// Mock fallback for analytics when DB is unavailable
+function getMockAnalytics() {
+  const patientSegments = {
+    new: 1,
+    active: 2,
+    inactive: 1,
+    churned: 2,
+    vip: 2,
+  }
+
+  const totalPatients = Object.values(patientSegments).reduce((a, b) => a + b, 0)
+  const hadFirstAppointment = patientSegments.new + patientSegments.active + patientSegments.inactive + patientSegments.vip
+  const recurrent = patientSegments.active + patientSegments.vip
+
+  const funnelData = [
+    { stage: 'Lead', count: totalPatients, color: '#888780' },
+    { stage: 'Primera cita', count: hadFirstAppointment, color: '#5DCAA5' },
+    { stage: 'Recurrente', count: recurrent, color: '#1D9E75' },
+    { stage: 'VIP', count: patientSegments.vip, color: '#534AB7' },
+  ]
+
+  return { patientSegments, funnelData, campaigns: [] }
+}
+
 // GET /api/analytics?clinicId=xxx
 // Returns patient segments, funnel data, and campaigns
 export async function GET(req: NextRequest) {
   try {
-    if (!db) return NextResponse.json({ error: 'Base de datos no disponible' }, { status: 503 })
-
     const { searchParams } = new URL(req.url)
     const clinicId = searchParams.get('clinicId')
 
     if (!clinicId) {
       return NextResponse.json({ error: 'clinicId es requerido' }, { status: 400 })
+    }
+
+    // Fallback to mock data when DB is unavailable (demo mode)
+    if (!db) {
+      return NextResponse.json(getMockAnalytics())
     }
 
     // Patient segments — count patients by segment
@@ -36,10 +63,6 @@ export async function GET(req: NextRequest) {
     }
 
     // Funnel data — derive from patient segments
-    // Lead = total patients who had first contact
-    // Primera cita = new + active + inactive + vip (they all had at least one appointment)
-    // Recurrente = active + vip
-    // VIP = vip
     const totalPatients = Object.values(patientSegments).reduce((a, b) => a + b, 0)
     const hadFirstAppointment = patientSegments.new + patientSegments.active + patientSegments.inactive + patientSegments.vip
     const recurrent = patientSegments.active + patientSegments.vip
@@ -51,8 +74,7 @@ export async function GET(req: NextRequest) {
       { stage: 'VIP', count: patientSegments.vip, color: '#534AB7' },
     ]
 
-    // Campaigns — for now return empty since there's no Campaign model
-    // In the future, this could query a Campaign table
+    // Campaigns — return empty since there's no Campaign model yet
     const campaigns: Array<{
       id: string
       name: string

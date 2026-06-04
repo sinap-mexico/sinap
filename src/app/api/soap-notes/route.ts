@@ -16,11 +16,28 @@ export async function POST(req: NextRequest) {
       vitals, diagnosis, prescriptions,
     } = body
 
-    if (!clinicId || !patientId || !doctorId) {
+    if (!clinicId || !patientId) {
       return NextResponse.json(
-        { error: 'clinicId, patientId y doctorId son requeridos' },
+        { error: 'clinicId y patientId son requeridos' },
         { status: 400 }
       )
+    }
+
+    // Resolve doctorId if missing: look up the first active doctor for this clinic
+    let resolvedDoctorId = doctorId
+    if (!resolvedDoctorId) {
+      const firstDoctor = await db.doctor.findFirst({
+        where: { clinicId, isActive: true },
+        select: { id: true },
+      })
+      if (firstDoctor) {
+        resolvedDoctorId = firstDoctor.id
+      } else {
+        return NextResponse.json(
+          { error: 'No se encontró un doctor activo para esta clínica. Agrega un doctor en Configuración.' },
+          { status: 400 }
+        )
+      }
     }
 
     // If appointmentId provided and a SoapNote already exists, UPDATE it
@@ -53,7 +70,7 @@ export async function POST(req: NextRequest) {
       data: {
         clinicId,
         patientId,
-        doctorId,
+        doctorId: resolvedDoctorId,
         appointmentId: appointmentId || null,
         subjective: subjective || null,
         objective: objective || null,

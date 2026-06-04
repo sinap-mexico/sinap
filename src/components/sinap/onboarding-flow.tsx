@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useSession } from 'next-auth/react'
+import { useSession } from '@/components/providers/session-provider'
 import { useSinapStore } from '@/lib/sinap-store'
 import { defaultServicesBySpecialty } from '@/lib/mock-data'
 import { Button } from '@/components/ui/button'

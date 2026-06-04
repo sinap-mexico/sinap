@@ -1,5 +1,5 @@
-import ZAI from 'z-ai-web-dev-sdk'
 import { NextRequest, NextResponse } from 'next/server'
+import { createZAI } from '@/lib/zai'
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const zai = await ZAI.create()
+    const zai = await createZAI()
 
     const systemPrompt = `Eres un asistente de pre-consulta medica para una clinica de ${specialty || 'salud general'} en Mexico.
 Genera 5 preguntas especificas que el paciente debe responder antes de su cita.

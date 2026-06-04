@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { useSinapStore, type SinapModule } from '@/lib/sinap-store'
-import { Bell, Menu, Calendar, CheckCircle2, MessageSquare, Receipt, UserPlus, X } from 'lucide-react'
+import { signOut } from 'next-auth/react'
+import { Bell, Menu, Calendar, CheckCircle2, MessageSquare, Receipt, UserPlus, X, LogOut } from 'lucide-react'
 
 import { SinapLogo } from '@/components/sinap/sinap-logo'
 import { Button } from '@/components/ui/button'
@@ -13,6 +14,7 @@ import { Separator } from '@/components/ui/separator'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   LayoutDashboard,
+  Users,
   MessageSquare as MessageSquareIcon,
   Activity,
   Receipt as ReceiptIcon,
@@ -20,6 +22,7 @@ import {
   BarChart3,
   Building2,
   Settings,
+  LogOut as LogOutIcon,
 } from 'lucide-react'
 import {
   Sheet,
@@ -31,6 +34,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 const moduleLabels: Record<SinapModule, string> = {
   os: 'Sinap OS',
   agenda: 'Agenda',
+  patients: 'Pacientes',
   desk: 'Sinap Desk',
   flow: 'Sinap Flow',
   bill: 'Sinap Bill',
@@ -43,6 +47,7 @@ const moduleLabels: Record<SinapModule, string> = {
 const moduleDescriptions: Record<SinapModule, string> = {
   os: 'Panel principal',
   agenda: 'Calendario de citas',
+  patients: 'CRM y fichas de pacientes',
   desk: 'Agente de recepcion',
   flow: 'Agente clinico',
   bill: 'Agente de facturacion',
@@ -62,7 +67,8 @@ const navItems: {
 }[] = [
   { module: 'os', label: 'Sinap OS', icon: LayoutDashboard },
   { module: 'agenda', label: 'Agenda', icon: Calendar },
-  { module: 'desk', label: 'Sinap Desk', icon: MessageSquareIcon, badge: 3 },
+  { module: 'patients', label: 'Pacientes', icon: Users },
+  { module: 'desk', label: 'Sinap Desk', icon: MessageSquareIcon },
   { module: 'flow', label: 'Sinap Flow', icon: Activity },
   { module: 'bill', label: 'Sinap Bill', icon: ReceiptIcon },
   { module: 'grow', label: 'Sinap Grow', icon: TrendingUp, requiresPlan: 'pro' },
@@ -70,18 +76,20 @@ const navItems: {
   { module: 'hub', label: 'Sinap Hub', icon: Building2, requiresClinic: true },
 ]
 
-// Mock notifications
-const mockNotifications = [
-  { id: 'n1', icon: MessageSquare, text: 'Nuevo mensaje de Maria Garcia', time: 'Hace 5 min', color: '#534AB7', read: false },
-  { id: 'n2', icon: CheckCircle2, text: 'Cita confirmada: Roberto Jimenez', time: 'Hace 15 min', color: '#1D9E75', read: false },
-  { id: 'n3', icon: Receipt, text: 'Factura timbrada: $1,500 MXN', time: 'Hace 30 min', color: '#1D9E75', read: false },
-  { id: 'n4', icon: UserPlus, text: 'Nuevo paciente: Fernando Diaz', time: 'Hace 1 hr', color: '#5DCAA5', read: true },
-  { id: 'n5', icon: Calendar, text: 'Recordatorio: 3 citas manana', time: 'Hace 2 hr', color: '#534AB7', read: true },
-]
+// Notifications will come from the API in the future.
+// For now, start with empty — no fake data for real accounts.
+const emptyNotifications: Array<{ id: string; icon: React.ElementType; text: string; time: string; color: string; read: boolean }> = []
 
 export function SinapHeader() {
-  const { activeModule, clinicName, plan, clinicMode, setActiveModule, doctorProfile } = useSinapStore()
+  const { activeModule, clinicName, plan, clinicMode, setActiveModule, doctorProfile, isDemoMode, resetStore } = useSinapStore()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  const handleLogout = async () => {
+    document.cookie = 'sinap-demo=; path=/; max-age=0; SameSite=Lax'
+    resetStore()
+    try { await signOut({ redirect: false }) } catch {}
+    window.location.href = '/login'
+  }
 
   const isNavVisible = (item: typeof navItems[number]) => {
     if (item.requiresPlan === 'pro' && plan === 'starter') return false
@@ -89,7 +97,7 @@ export function SinapHeader() {
     return true
   }
 
-  const unreadCount = mockNotifications.filter(n => !n.read).length
+  const unreadCount = emptyNotifications.filter(n => !n.read).length
 
   return (
     <>
@@ -169,7 +177,8 @@ export function SinapHeader() {
               </div>
               <ScrollArea className="max-h-72">
                 <div className="divide-y divide-[#E1F5EE]">
-                  {mockNotifications.map((notif, i) => {
+                {emptyNotifications.length > 0 ? (
+                  emptyNotifications.map((notif, i) => {
                     const NotifIcon = notif.icon
                     return (
                       <motion.div
@@ -196,7 +205,14 @@ export function SinapHeader() {
                         )}
                       </motion.div>
                     )
-                  })}
+                  })
+                ) : (
+                  <div className="py-8 text-center">
+                    <Bell className="h-8 w-8 mx-auto text-[#888780]/30 mb-2" />
+                    <p className="text-xs text-[#888780]">Sin notificaciones</p>
+                    <p className="text-[10px] text-[#888780]/60 mt-0.5">Las notificaciones aparecerán aquí</p>
+                  </div>
+                )}
                 </div>
               </ScrollArea>
               <div className="p-2 border-t border-[#E1F5EE]">
@@ -207,22 +223,45 @@ export function SinapHeader() {
             </PopoverContent>
           </Popover>
 
-          {/* User avatar with online indicator */}
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-[#534AB7] text-white text-xs font-medium">
-                  {doctorProfile.name.split(' ').filter(w => w.length > 2).map(w => w[0]).join('').slice(0, 2)}
-                </AvatarFallback>
-              </Avatar>
-              {/* Online status indicator */}
-              <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-[#1D9E75] border-2 border-white" />
-            </div>
-            <div className="hidden sm:block">
-              <p className="text-sm font-medium text-[#2C2C2A] leading-tight">{doctorProfile.name}</p>
-              <p className="text-[11px] text-[#888780]">{doctorProfile.specialty}</p>
-            </div>
-          </div>
+          {/* User avatar with dropdown */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-[#F1EFE8] transition-colors">
+                <div className="relative">
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback className="bg-[#534AB7] text-white text-xs font-medium">
+                      {doctorProfile.name ? doctorProfile.name.split(' ').filter(w => w.length > 2).map(w => w[0]).join('').slice(0, 2) : '??'}
+                    </AvatarFallback>
+                  </Avatar>
+                  {/* Online status indicator */}
+                  <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-[#1D9E75] border-2 border-white" />
+                </div>
+                <div className="hidden sm:block text-left">
+                  <p className="text-sm font-medium text-[#2C2C2A] leading-tight">{doctorProfile.name || 'Usuario'}</p>
+                  <p className="text-[11px] text-[#888780]">{doctorProfile.specialty || (isDemoMode ? 'Modo demo' : 'Mi cuenta')}</p>
+                </div>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-2 border-[#E1F5EE]" align="end">
+              <div className="px-2 py-1.5 mb-1">
+                <p className="text-sm font-medium text-[#2C2C2A]">{doctorProfile.name || 'Usuario'}</p>
+                <p className="text-xs text-[#888780]">{doctorProfile.email || 'Sin correo'}</p>
+                {isDemoMode && (
+                  <span className="inline-block mt-1 text-[10px] bg-[#1D9E75]/10 text-[#1D9E75] px-1.5 py-0.5 rounded font-medium">
+                    Modo demo
+                  </span>
+                )}
+              </div>
+              <Separator className="bg-[#E1F5EE] my-1" />
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2.5 w-full rounded-md px-2 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+              >
+                <LogOut className="h-4 w-4" />
+                Cerrar sesion
+              </button>
+            </PopoverContent>
+          </Popover>
         </div>
       </header>
 
@@ -280,6 +319,16 @@ export function SinapHeader() {
                 >
                   <Settings className="h-5 w-5 shrink-0" />
                   <span className="font-medium">Configuracion</span>
+                </button>
+
+                <Separator className="bg-white/10 my-2" />
+
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/40 hover:text-white hover:bg-red-500/20 transition-all duration-200 w-full"
+                >
+                  <LogOutIcon className="h-5 w-5 shrink-0" />
+                  <span className="font-medium">Cerrar sesion</span>
                 </button>
               </nav>
             </ScrollArea>

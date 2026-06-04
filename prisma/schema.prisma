@@ -102,11 +102,17 @@ model Clinic {
   facturamaUserId   String?
   facturamaToken    String?
   facturamaSandbox  Boolean @default(true)
+  defaultIvaRate    Float   @default(0) // Tasa IVA por defecto: 0 = exento (salud), 0.16 = 16%
 
   // Plan & billing
   plan           String   @default("starter") // "starter" | "pro" | "premium"
   monthlyConvLimit Int    @default(200)
   maxDoctors     Int      @default(1)
+
+  // Trial & subscription
+  trialStart     DateTime? // When the 7-day trial started
+  trialEnd       DateTime? // When the 7-day trial expires
+  isActive       Boolean  @default(true) // False when trial expired and not subscribed
 
   // Branding
   logoUrl        String?
@@ -181,6 +187,7 @@ model Service {
   description String?
   duration    Int      @default(30) // minutos
   price       Float    @default(0)
+  ivaRate     Float    @default(0) // Tasa de IVA: 0 = exento (salud), 0.16 = 16%, etc.
   category    String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
@@ -347,6 +354,7 @@ model Invoice {
   // Amounts
   subtotal        Float    @default(0)
   iva             Float    @default(0)
+  ivaRate         Float    @default(0) // Tasa de IVA usada: 0 = exento, 0.16 = 16%
   total           Float    @default(0)
   currency        String   @default("MXN")
 

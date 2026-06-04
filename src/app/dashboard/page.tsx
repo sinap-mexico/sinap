@@ -1,6 +1,6 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
+import { useSession } from '@/components/providers/session-provider'
 import { useRouter } from 'next/navigation'
 import { useSinapStore, type SinapModule } from '@/lib/sinap-store'
 import { SinapSidebar } from '@/components/sinap/sidebar'
@@ -8,6 +8,7 @@ import { SinapHeader } from '@/components/sinap/header'
 import { OsOverview } from '@/components/sinap/os-overview'
 import { AgendaCalendar } from '@/components/sinap/agenda-calendar'
 import { DeskInbox } from '@/components/sinap/desk-inbox'
+import { PatientDirectory } from '@/components/sinap/patient-directory'
 import { BillDashboard } from '@/components/sinap/bill-dashboard'
 import { FlowClinical } from '@/components/sinap/flow-clinical'
 import { GrowMarketing } from '@/components/sinap/grow-marketing'
@@ -15,6 +16,7 @@ import { SightAnalytics } from '@/components/sinap/sight-analytics'
 import { HubOperations } from '@/components/sinap/hub-operations'
 import { SettingsPages } from '@/components/sinap/settings-pages'
 import { OnboardingFlow } from '@/components/sinap/onboarding-flow'
+import { TrialBanner } from '@/components/sinap/trial-banner'
 import { Loader2 } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -35,6 +37,7 @@ function ModuleContent({ module }: { module: string }) {
       >
         {module === 'os' && <OsOverview />}
         {module === 'agenda' && <AgendaCalendar />}
+        {module === 'patients' && <PatientDirectory />}
         {module === 'desk' && <DeskInbox />}
         {module === 'flow' && <FlowClinical />}
         {module === 'bill' && <BillDashboard />}
@@ -49,11 +52,13 @@ function ModuleContent({ module }: { module: string }) {
 
 export default function SinapDashboard() {
   const { data: session, status } = useSession()
-  const { activeModule, onboardingComplete, isDemoMode, setClinicId, setOnboardingComplete } = useSinapStore()
+  const { activeModule, onboardingComplete, isDemoMode, setClinicId, setOnboardingComplete, setIsTrialExpired, setTrialDaysRemaining } = useSinapStore()
   const router = useRouter()
   const [isMobile, setIsMobile] = useState(false)
   const [mounted, setMounted] = useState(false)
   const sessionHydratedRef = useRef(false)
+  const demoSeededRef = useRef(false)
+  const redirectAttemptedRef = useRef(false)
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- standard SSR hydration pattern
@@ -71,39 +76,112 @@ export default function SinapDashboard() {
     sessionHydratedRef.current = true
     const sessionUser = session.user as any
 
-    // Set clinicId from session if not already set in store
+    // Set clinicId from session
     if (sessionUser.clinicId) {
       setClinicId(sessionUser.clinicId)
     }
 
+    // For real accounts (not demo), fetch full profile from DB
+    fetch('/api/auth/me')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (!data) return
+
+        // Hydrate clinic data
+        if (data.clinic) {
+          const c = data.clinic
+          useSinapStore.getState().setClinicId(c.id)
+          useSinapStore.getState().setClinicName(c.name)
+          useSinapStore.getState().setClinicSlug(c.slug)
+          useSinapStore.getState().setClinicMode(c.mode === 'clinic' ? 'clinic' : 'solo')
+          useSinapStore.getState().setClinicProfile({
+            name: c.name,
+            rfc: c.rfc || '',
+            address: c.address || '',
+            city: c.city || '',
+            state: c.state || '',
+            phone: c.phone || '',
+            email: c.email || '',
+          })
+        }
+
+        // Hydrate trial status
+        if (data.trial) {
+          useSinapStore.getState().setTrialDaysRemaining(data.trial.daysRemaining)
+          useSinapStore.getState().setIsTrialExpired(data.trial.isTrialExpired)
+
+          if (data.trial.isTrialExpired && !isDemoMode) {
+            router.replace('/trial-expired')
+          }
+        }
+
+        // Hydrate doctor profile
+        if (data.doctor) {
+          const d = data.doctor
+          useSinapStore.getState().setDoctorProfile({
+            id: d.id || '',
+            name: d.name || '',
+            specialty: d.specialty || '',
+            license: d.license || '',
+            email: d.email || '',
+            phone: d.phone || '',
+          })
+        } else if (data.user) {
+          useSinapStore.getState().setDoctorProfile({
+            name: data.user.name || '',
+            email: data.user.email || '',
+          })
+        }
+      })
+      .catch(() => {
+        // Non-blocking — if API fails, use session data
+      })
+
     // If onboarding is not complete in Zustand but user has a session with clinicId,
     // check if the clinic already has doctors (meaning onboarding was done before)
     if (!onboardingComplete && sessionUser.clinicId) {
-      // Check if clinic has doctors via API
       fetch(`/api/doctors?clinicId=${sessionUser.clinicId}`)
         .then(res => res.ok ? res.json() : { doctors: [] })
         .then(data => {
           if (data.doctors && data.doctors.length > 0) {
-            // Clinic has doctors — onboarding was completed before
             setOnboardingComplete(true)
           }
         })
-        .catch(() => {
-          // If API fails, don't block the user
-        })
+        .catch(() => {})
     }
   }, [status, session, onboardingComplete, setClinicId, setOnboardingComplete])
 
-  // Redirect to login ONLY via useEffect to avoid render-time redirects that cause loops
-  // User is authenticated if: they have a NextAuth session OR they are in demo mode
+  // Auto-seed demo data in demo mode (only once)
+  useEffect(() => {
+    if (!isDemoMode || demoSeededRef.current || !onboardingComplete) return
+    demoSeededRef.current = true
+    fetch('/api/demo/seed', { method: 'POST' })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.clinicId) {
+          setClinicId(data.clinicId)
+        }
+      })
+      .catch(() => {
+        // Non-blocking — modules can still trigger seed individually
+      })
+  }, [isDemoMode, onboardingComplete, setClinicId])
+
+  // Auth redirect — only redirect once, never loop
   useEffect(() => {
     if (!mounted) return
     if (status === 'loading') return
-    const isAuthenticated = session?.user || isDemoMode || onboardingComplete
+    if (redirectAttemptedRef.current) return
+
+    // User is authenticated if: they have a NextAuth session OR they are in demo mode
+    const isRealAuth = status === 'authenticated' && session?.user
+    const isAuthenticated = isRealAuth || isDemoMode
+
     if (!isAuthenticated) {
+      redirectAttemptedRef.current = true
       router.replace('/login')
     }
-  }, [mounted, status, session, isDemoMode, onboardingComplete, router])
+  }, [mounted, status, session, isDemoMode, router])
 
   // Show loading while mounting or session is being fetched
   if (!mounted || status === 'loading') {
@@ -120,8 +198,10 @@ export default function SinapDashboard() {
     )
   }
 
-  // If not authenticated in any way, show loading while redirect happens
-  const isAuthenticated = session?.user || isDemoMode || onboardingComplete
+  // Check auth — only consider real NextAuth session or demo mode
+  const isRealAuth = status === 'authenticated' && session?.user
+  const isAuthenticated = isRealAuth || isDemoMode
+
   if (!isAuthenticated) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-[#F1EFE8]">
@@ -130,9 +210,15 @@ export default function SinapDashboard() {
     )
   }
 
-  // Show onboarding if not complete
-  if (!onboardingComplete) {
+  // Show onboarding if not complete (only for real users with session)
+  if (!onboardingComplete && isRealAuth) {
     return <OnboardingFlow />
+  }
+
+  // Demo mode without onboarding — show dashboard anyway
+  if (!onboardingComplete && isDemoMode) {
+    // Auto-complete onboarding for demo
+    setOnboardingComplete(true)
   }
 
   const isFullHeight = FULL_HEIGHT_MODULES.includes(activeModule)
@@ -145,6 +231,9 @@ export default function SinapDashboard() {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Trial banner */}
+        <TrialBanner />
+
         {/* Header */}
         <SinapHeader />
 

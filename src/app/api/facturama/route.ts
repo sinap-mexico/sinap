@@ -79,8 +79,62 @@ function generateCFDIPayload(params: {
   metodoPago: string
   lugarExpedicion: string
 }): CFDIPayload {
-  const ivaAmount = Math.round(params.subtotal * params.ivaRate * 100) / 100
+  const ivaAmount = params.ivaRate > 0 ? Math.round(params.subtotal * params.ivaRate * 100) / 100 : 0
   const total = Math.round((params.subtotal + ivaAmount) * 100) / 100
+
+  // Build concept — only include Impuestos if IVA applies
+  const concepto: Record<string, unknown> = {
+    ClaveProdServ: '84111500',
+    Cantidad: 1,
+    ClaveUnidad: 'E48',
+    Descripcion: params.concepto,
+    ValorUnitario: params.subtotal,
+    Importe: params.subtotal,
+  }
+
+  if (ivaAmount > 0) {
+    concepto.Impuestos = {
+      Traslados: [{
+        Base: params.subtotal,
+        Impuesto: '002',
+        TipoFactor: 'Tasa',
+        TasaOCuota: params.ivaRate,
+        Importe: ivaAmount,
+      }],
+    }
+  } else {
+    // Exento de IVA — servicio de salud
+    concepto.Impuestos = {
+      Traslados: [{
+        Base: params.subtotal,
+        Impuesto: '002',
+        TipoFactor: 'Exento',
+        TasaOCuota: 0,
+        Importe: 0,
+      }],
+    }
+  }
+
+  // Build global Impuestos section
+  const impuestos: Record<string, unknown> = {}
+  if (ivaAmount > 0) {
+    impuestos.TotalImpuestosTrasladados = ivaAmount
+    impuestos.Traslados = [{
+      Base: params.subtotal,
+      Impuesto: '002',
+      TipoFactor: 'Tasa',
+      TasaOCuota: params.ivaRate,
+      Importe: ivaAmount,
+    }]
+  } else {
+    impuestos.Traslados = [{
+      Base: params.subtotal,
+      Impuesto: '002',
+      TipoFactor: 'Exento',
+      TasaOCuota: 0,
+      Importe: 0,
+    }]
+  }
 
   return {
     Serie: 'A',
@@ -101,39 +155,8 @@ function generateCFDIPayload(params: {
       RegimenFiscalReceptor: '616',
       DomicilioFiscalReceptor: '01000',
     },
-    Conceptos: [
-      {
-        ClaveProdServ: '84111500',
-        Cantidad: 1,
-        ClaveUnidad: 'E48',
-        Descripcion: params.concepto,
-        ValorUnitario: params.subtotal,
-        Importe: params.subtotal,
-        Impuestos: {
-          Traslados: [
-            {
-              Base: params.subtotal,
-              Impuesto: '002',
-              TipoFactor: 'Tasa',
-              TasaOCuota: params.ivaRate,
-              Importe: ivaAmount,
-            },
-          ],
-        },
-      },
-    ],
-    Impuestos: {
-      TotalImpuestosTrasladados: ivaAmount,
-      Traslados: [
-        {
-          Base: params.subtotal,
-          Impuesto: '002',
-          TipoFactor: 'Tasa',
-          TasaOCuota: params.ivaRate,
-          Importe: ivaAmount,
-        },
-      ],
-    },
+    Conceptos: [concepto],
+    Impuestos: impuestos,
     SubTotal: params.subtotal,
     Total: total,
   }
@@ -146,7 +169,7 @@ function generateMockCFDI(params: {
   formaPago: string
   metodoPago: string
 }) {
-  const ivaAmount = Math.round(params.subtotal * params.ivaRate * 100) / 100
+  const ivaAmount = params.ivaRate > 0 ? Math.round(params.subtotal * params.ivaRate * 100) / 100 : 0
   const total = Math.round((params.subtotal + ivaAmount) * 100) / 100
   const uuid = `${crypto.randomUUID().slice(0, 8).toUpperCase()}-${crypto.randomUUID().slice(0, 4).toUpperCase()}-${crypto.randomUUID().slice(0, 4).toUpperCase()}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`
 
@@ -280,7 +303,7 @@ export async function POST(req: NextRequest) {
       appointmentId,
       concept,
       subtotal,
-      ivaRate = 0.16,
+      ivaRate = 0,
       formaPago = '01',
       metodoPago = 'PUE',
       usoCFDI = 'G01',

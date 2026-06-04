@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
   reactStrictMode: false,
   // Output standalone for Vercel serverless optimization
   output: "standalone",
+  // Allow API routes up to 60s (default is 10s on hobby plan)
+  experimental: {
+    maxDuration: 60,
+  },
   // Optimize images
   images: {
     formats: ["image/avif", "image/webp"],

@@ -59,6 +59,37 @@ export async function PUT(
   }
 }
 
+// DELETE — Delete a SOAP note (draft or signed)
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    if (!db) {
+      return NextResponse.json({ error: 'Base de datos no disponible' }, { status: 503 })
+    }
+
+    const { id } = await params
+
+    const existing = await db.soapNote.findUnique({ where: { id } })
+    if (!existing) {
+      return NextResponse.json({ error: 'Nota SOAP no encontrada' }, { status: 404 })
+    }
+
+    // If the note is linked to an appointment, clear the appointment's soapNote relation
+    // by setting appointmentId to null on the soapNote before deleting is not needed
+    // because onDelete: SetNull on the appointment relation handles it.
+
+    await db.soapNote.delete({ where: { id } })
+
+    return NextResponse.json({ success: true })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Error desconocido'
+    console.error('SOAP notes DELETE error:', error)
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
+}
+
 // PATCH — Approve/sign SOAP note
 export async function PATCH(
   req: NextRequest,

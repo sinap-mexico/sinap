@@ -1,9 +1,11 @@
 'use client'
 
 import { useSinapStore, type SinapModule } from '@/lib/sinap-store'
+import { signOut } from 'next-auth/react'
 import {
   LayoutDashboard,
   Calendar,
+  Users,
   MessageSquare,
   Activity,
   Receipt,
@@ -13,6 +15,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  LogOut,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Separator } from '@/components/ui/separator'
@@ -37,7 +40,8 @@ const navItems: {
 }[] = [
   { module: 'os', label: 'Sinap OS', icon: LayoutDashboard },
   { module: 'agenda', label: 'Agenda', icon: Calendar },
-  { module: 'desk', label: 'Sinap Desk', icon: MessageSquare, badge: 3 },
+  { module: 'patients', label: 'Pacientes', icon: Users },
+  { module: 'desk', label: 'Sinap Desk', icon: MessageSquare },
   { module: 'flow', label: 'Sinap Flow', icon: Activity },
   { module: 'bill', label: 'Sinap Bill', icon: Receipt },
   { module: 'grow', label: 'Sinap Grow', icon: TrendingUp, requiresPlan: 'pro' },
@@ -48,7 +52,18 @@ const navItems: {
 const configItem = { module: 'config' as SinapModule, label: 'Configuracion', icon: Settings }
 
 export function SinapSidebar() {
-  const { activeModule, setActiveModule, sidebarCollapsed, toggleSidebar, plan, clinicMode } = useSinapStore()
+  const { activeModule, setActiveModule, sidebarCollapsed, toggleSidebar, plan, clinicMode, isDemoMode, resetStore } = useSinapStore()
+
+  const handleLogout = async () => {
+    // Clear demo cookie
+    document.cookie = 'sinap-demo=; path=/; max-age=0; SameSite=Lax'
+    // Reset Zustand store
+    resetStore()
+    // Sign out from NextAuth (no redirect — we do it manually)
+    try { await signOut({ redirect: false }) } catch {}
+    // Navigate to login
+    window.location.href = '/login'
+  }
 
   const isVisible = (item: typeof navItems[number]) => {
     if (item.requiresPlan === 'pro' && plan === 'starter') return false
@@ -230,22 +245,60 @@ export function SinapSidebar() {
           </nav>
         </ScrollArea>
 
-        {/* Tagline at bottom */}
-        <AnimatePresence>
-          {!sidebarCollapsed && (
-            <motion.div
-              className="px-5 py-4 border-t border-white/10"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              <p className="text-[11px] text-white/30 italic tracking-wide">
-                Inteligencia que conecta
-              </p>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* Logout + Tagline at bottom */}
+        <div className="mt-auto">
+          <div className="px-3 py-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <motion.button
+                  onClick={handleLogout}
+                  className={cn(
+                    'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 w-full text-white/40 hover:text-white hover:bg-red-500/20',
+                    sidebarCollapsed && 'justify-center px-2'
+                  )}
+                  whileHover={{ x: 3 }}
+                  whileTap={{ scale: 0.97 }}
+                >
+                  <LogOut className="h-5 w-5 shrink-0" />
+                  <AnimatePresence>
+                    {!sidebarCollapsed && (
+                      <motion.span
+                        className="font-medium"
+                        initial={{ opacity: 0, x: -5 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -5 }}
+                        transition={{ duration: 0.15 }}
+                      >
+                        Cerrar sesion
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </motion.button>
+              </TooltipTrigger>
+              {sidebarCollapsed && (
+                <TooltipContent side="right" className="bg-[#2C2C2A] text-white text-xs border-0">
+                  Cerrar sesion
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </div>
+
+          <AnimatePresence>
+            {!sidebarCollapsed && (
+              <motion.div
+                className="px-5 py-4 border-t border-white/10"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <p className="text-[11px] text-white/30 italic tracking-wide">
+                  Inteligencia que conecta
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
         {/* Collapse toggle */}
         <motion.button

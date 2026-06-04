@@ -36,6 +36,7 @@ interface MonthlyRevenue {
 export function SightAnalytics() {
   const { clinicId, setClinicId, clinicSlug } = useSinapStore()
   const [kpiData, setKpiData] = useState<KpiData>({ ocupacion: 0, currentMonthRevenue: 0, noShowRate: 0 })
+  const [trends, setTrends] = useState<{ citasHoyDiff: number; conversacionesUnread: number; revenueGrowth: number; revenuePrevMonth: string }>({ citasHoyDiff: 0, conversacionesUnread: 0, revenueGrowth: 0, revenuePrevMonth: '' })
   const [weeklyAppointments, setWeeklyAppointments] = useState<WeeklyAppointment[]>([])
   const [monthlyRevenue, setMonthlyRevenue] = useState<MonthlyRevenue[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -73,6 +74,9 @@ export function SightAnalytics() {
             currentMonthRevenue: data.kpi.totalFacturado || data.currentMonthRevenue || 0,
             noShowRate: data.noShowRate || data.kpi.noShowRate || 0,
           })
+        }
+        if (data.trends) {
+          setTrends(data.trends)
         }
         if (data.weeklyAppointments) {
           setWeeklyAppointments(data.weeklyAppointments)
@@ -216,7 +220,9 @@ export function SightAnalytics() {
               <p className="text-3xl font-medium text-[#2C2C2A] tracking-[-0.03em]">
                 {isLoading ? '—' : `${kpiData.ocupacion}%`}
               </p>
-              <p className="text-xs text-[#1D9E75] mt-1 font-medium">+5% vs. semana pasada</p>
+              <p className={`text-xs mt-1 font-medium ${trends.citasHoyDiff >= 0 ? 'text-[#1D9E75]' : 'text-[#E53E3E]'}`}>
+                {trends.citasHoyDiff > 0 ? `+${trends.citasHoyDiff} citas vs. ayer` : trends.citasHoyDiff < 0 ? `${trends.citasHoyDiff} citas vs. ayer` : 'Sin cambio vs. ayer'}
+              </p>
             </CardContent>
           </Card>
         </motion.div>
@@ -252,7 +258,9 @@ export function SightAnalytics() {
               <p className="text-3xl font-medium text-[#2C2C2A] tracking-[-0.03em]">
                 {isLoading ? '—' : `${kpiData.noShowRate || 0}%`}
               </p>
-              <p className="text-xs text-[#E53E3E] mt-1 font-medium">Por encima del promedio (8%)</p>
+              <p className={`text-xs mt-1 font-medium ${kpiData.noShowRate > 8 ? 'text-[#E53E3E]' : 'text-[#1D9E75]'}`}>
+                {kpiData.noShowRate > 8 ? 'Por encima del promedio (8%)' : kpiData.noShowRate > 0 ? 'Dentro del rango aceptable' : 'Sin datos'}
+              </p>
             </CardContent>
           </Card>
         </motion.div>

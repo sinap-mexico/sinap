@@ -1,6 +1,6 @@
-import ZAI from 'z-ai-web-dev-sdk'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { createZAI } from '@/lib/zai'
 
 type AgentName = 'desk' | 'flow' | 'bill' | 'grow'
 
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
     const agent: AgentName = (targetAgent as AgentName) || routeToAgent(message || '')
     const systemPrompt = agentSystemPrompts[agent] || agentSystemPrompts.desk
 
-    const zai = await ZAI.create()
+    const zai = await createZAI()
 
     const messages = [
       { role: 'system' as const, content: systemPrompt },

@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import { signIn } from 'next-auth/react'
+// Note: We do NOT use signIn() from next-auth/react for the actual login.
+// signIn() with redirect:false uses fetch() internally, which doesn't reliably
+// set HttpOnly cookies from 302 redirect responses. Instead, we use native
+// HTML form submission which guarantees proper cookie handling.
 import { useSinapStore } from '@/lib/sinap-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -187,19 +189,23 @@ const staggerItem = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
 }
 
-export function LoginScreen() {
-  const router = useRouter()
-  const { setOnboardingComplete, setIsDemoMode, setClinicId } = useSinapStore()
+export function LoginScreen({ authError }: { authError?: string | null }) {
+  const { setOnboardingComplete, setIsDemoMode, setClinicId, clearForRealLogin } = useSinapStore()
   const [isRegister, setIsRegister] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [clinicName, setClinicName] = useState('')
-  const [error, setError] = useState('')
+  const [error, setError] = useState(() => {
+    // Show NextAuth error from URL parameter on initial load
+    if (authError === 'CredentialsSignin') return 'Correo o contraseña incorrectos'
+    if (authError) return 'Error de autenticación. Intenta de nuevo.'
+    return ''
+  })
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
-  const [shakeError, setShakeError] = useState(false)
+  const [shakeError, setShakeError] = useState(() => !!authError)
   const [rememberMe, setRememberMe] = useState(true)
 
   const emailValid = email ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) : true
@@ -211,21 +217,52 @@ export function LoginScreen() {
     setTimeout(() => setShakeError(false), 500)
   }, [])
 
-  // Navigate to dashboard for existing user (login) — onboarding already done
-  const navigateToDashboard = useCallback(() => {
-    setOnboardingComplete(true)
-    window.location.href = '/dashboard'
-  }, [setOnboardingComplete])
+  // Native form submission to NextAuth — bypasses fetch() which doesn't reliably
+  // set HttpOnly cookies from 302 redirect responses in all browsers.
+  // Using a real HTML form ensures the browser processes Set-Cookie headers correctly.
+  const submitLoginForm = useCallback(async (email: string, password: string, callbackUrl: string) => {
+    try {
+      // Get CSRF token from NextAuth
+      const csrfRes = await fetch('/api/auth/csrf')
+      const { csrfToken } = await csrfRes.json()
 
-  // Navigate to dashboard for new user (register) — onboarding needed
-  const navigateToOnboarding = useCallback(() => {
-    // Do NOT set onboardingComplete — the dashboard will show the onboarding flow
-    window.location.href = '/dashboard'
-  }, [])
+      // Create a hidden form and submit it natively
+      const form = document.createElement('form')
+      form.method = 'POST'
+      form.action = '/api/auth/callback/credentials'
+      form.style.display = 'none'
+
+      const fields: Record<string, string> = {
+        email,
+        password,
+        csrfToken,
+        callbackUrl,
+      }
+
+      for (const [name, value] of Object.entries(fields)) {
+        const input = document.createElement('input')
+        input.type = 'hidden'
+        input.name = name
+        input.value = value
+        form.appendChild(input)
+      }
+
+      document.body.appendChild(form)
+      form.submit()
+      // After form.submit(), the browser navigates to callbackUrl (success)
+      // or /login?error=CredentialsSignin (failure)
+      // No JS code runs after this point — the page unloads
+    } catch {
+      setError('Error de conexión. Intenta de nuevo.')
+      triggerShake()
+      setIsLoading(false)
+    }
+  }, [triggerShake])
 
   const navigateToDemo = useCallback(() => {
     setOnboardingComplete(true)
     setIsDemoMode(true)
+    // Demo mode uses a cookie, so full reload is needed for middleware to see it
     window.location.href = '/dashboard'
   }, [setOnboardingComplete, setIsDemoMode])
 
@@ -242,24 +279,13 @@ export function LoginScreen() {
     }
     setError('')
     setIsLoading(true)
-    try {
-      const result = await signIn('credentials', { email, password, redirect: false })
-      if (result?.error) {
-        setError('Correo o contraseña incorrectos')
-        triggerShake()
-      } else if (result?.ok) {
-        navigateToDashboard()
-      } else {
-        // result is null/undefined — NextAuth might not be properly configured
-        setError('Error de autenticación. Intenta el modo demo.')
-        triggerShake()
-      }
-    } catch {
-      setError('Error de conexión. Intenta de nuevo o usa el modo demo.')
-      triggerShake()
-    } finally {
-      setIsLoading(false)
-    }
+    // Clear demo data BEFORE form submission (page unloads after submit)
+    document.cookie = 'sinap-demo=; path=/; max-age=0'
+    clearForRealLogin()
+    setOnboardingComplete(true)
+    // Use native form submission — ensures HttpOnly cookies are set properly
+    // by the browser's native form handler (fetch() doesn't reliably do this)
+    await submitLoginForm(email, password, '/dashboard')
   }
 
   const handleRegister = async () => {
@@ -299,19 +325,19 @@ export function LoginScreen() {
       if (!response.ok) {
         setError(data.error || 'Error al crear la cuenta')
         triggerShake()
+        setIsLoading(false)
         return
       }
-      // Auto sign in after registration
-      const result = await signIn('credentials', { email, password, redirect: false })
-      if (result?.ok) {
-        // Store clinicId from register response so onboarding can use it
-        if (data.clinicId) {
-          setClinicId(data.clinicId)
-        }
-        navigateToOnboarding()
-      } else {
-        setError('Cuenta creada. Intenta iniciar sesión manualmente.')
+      // Account created successfully — auto-login via native form submission
+      // This bypasses fetch() which doesn't reliably set HttpOnly cookies from 302 responses
+      // Clear demo data BEFORE form submission (page unloads after submit)
+      document.cookie = 'sinap-demo=; path=/; max-age=0'
+      clearForRealLogin()
+      // Store clinicId from register response so onboarding can use it
+      if (data.clinicId) {
+        setClinicId(data.clinicId)
       }
+      await submitLoginForm(email, password, '/dashboard')
     } catch {
       setError('Error de conexión. Intenta de nuevo.')
       triggerShake()
@@ -426,7 +452,7 @@ export function LoginScreen() {
               {isRegister ? 'Crear cuenta' : 'Iniciar sesión'}
             </h2>
             <p className="text-sm text-[#888780] mt-1.5">
-              {isRegister ? 'Registra tu consultorio en Sinap' : 'Accede a tu plataforma Sinap'}
+              {isRegister ? '7 días gratis — sin tarjeta de crédito' : 'Accede a tu plataforma Sinap'}
             </p>
           </motion.div>
 
@@ -592,7 +618,7 @@ export function LoginScreen() {
                   <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
                   <span className="flex items-center gap-2">
-                    {isRegister ? 'Crear cuenta' : 'Iniciar sesión'}
+                    {isRegister ? 'Comenzar prueba gratis' : 'Iniciar sesión'}
                     <ArrowRight className="h-[18px] w-[18px]" />
                   </span>
                 )}
@@ -625,7 +651,7 @@ export function LoginScreen() {
                 ) : (
                   <span className="flex items-center gap-2">
                     <User className="h-4 w-4" />
-                    Crear cuenta nueva
+                    Probar 7 días gratis
                   </span>
                 )}
               </Button>

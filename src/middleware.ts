@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { getToken } from 'next-auth/jwt'
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -10,23 +9,35 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Protect dashboard
-  if (pathname.startsWith('/dashboard')) {
+  // Allow trial-expired page
+  if (pathname === '/trial-expired') {
+    return NextResponse.next()
+  }
+
+  // Protect dashboard (both /dashboard and /dashboard/*)
+  if (pathname === '/dashboard' || pathname.startsWith('/dashboard/')) {
     // Check demo mode cookie
     const isDemo = request.cookies.get('sinap-demo')?.value === 'true'
     if (isDemo) return NextResponse.next()
 
-    // Check NextAuth session
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
-    if (!token) {
+    // Check for NextAuth session cookie directly (more reliable than getToken on Edge)
+    // NextAuth sets one of these cookies when a user is authenticated:
+    const sessionCookie = request.cookies.get('next-auth.session-token')?.value
+      || request.cookies.get('__Secure-next-auth.session-token')?.value
+
+    if (!sessionCookie) {
       const loginUrl = new URL('/login', request.url)
       return NextResponse.redirect(loginUrl)
     }
+
+    // Session cookie exists — let the request through
+    // Actual session validation (JWT decode, trial check) happens client-side
+    // and in individual API route handlers via requireAuth()
   }
 
   return NextResponse.next()
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*'],
+  matcher: ['/dashboard', '/dashboard/:path*'],
 }

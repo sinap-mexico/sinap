@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
       include: {
         patient: { select: { fullName: true, phone: true } },
         doctor: { select: { name: true, color: true } },
-        service: { select: { name: true, duration: true } },
+        service: { select: { name: true, duration: true, price: true } },
       },
       orderBy: { startTime: 'asc' },
     })
@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
       include: {
         patient: { select: { fullName: true, phone: true } },
         doctor: { select: { name: true, color: true } },
-        service: { select: { name: true, duration: true } },
+        service: { select: { name: true, duration: true, price: true } },
       },
     })
 
@@ -141,7 +141,7 @@ export async function PATCH(req: NextRequest) {
     if (!db) return NextResponse.json({ error: 'Base de datos no disponible' }, { status: 503 })
 
     const body = await req.json()
-    const { appointmentId, status, cancelReason, notes } = body
+    const { appointmentId, status, cancelReason, notes, preConsultCompleted, preConsultData } = body
 
     if (!appointmentId) {
       return NextResponse.json({ error: 'appointmentId es requerido' }, { status: 400 })
@@ -155,11 +155,13 @@ export async function PATCH(req: NextRequest) {
           status: 'cancelled',
           cancelReason: cancelReason || 'Cancelada sin razón especificada',
           notes: notes || undefined,
+          ...(preConsultCompleted !== undefined && { preConsultCompleted }),
+          ...(preConsultData !== undefined && { preConsultData }),
         },
         include: {
           patient: { select: { fullName: true, phone: true } },
           doctor: { select: { name: true, color: true } },
-          service: { select: { name: true, duration: true } },
+          service: { select: { name: true, duration: true, price: true } },
         },
       })
 
@@ -172,11 +174,13 @@ export async function PATCH(req: NextRequest) {
       data: {
         ...(status && { status }),
         ...(notes && { notes }),
+        ...(preConsultCompleted !== undefined && { preConsultCompleted }),
+        ...(preConsultData !== undefined && { preConsultData }),
       },
       include: {
         patient: { select: { fullName: true, phone: true } },
         doctor: { select: { name: true, color: true } },
-        service: { select: { name: true, duration: true } },
+        service: { select: { name: true, duration: true, price: true } },
       },
     })
 
