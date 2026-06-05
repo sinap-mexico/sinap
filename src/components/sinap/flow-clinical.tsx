@@ -632,13 +632,11 @@ export function FlowClinical() {
               const apt = aptData.appointment
               if (apt && apt.patientId) {
                 // Check if an invoice already exists for this appointment
-                const existingInvRes = await fetch(`/api/invoices?clinicId=${clinicId}`)
+                const existingInvRes = await fetch(`/api/invoices?clinicId=${clinicId}&appointmentId=${selectedSoapNote.appointmentId}`)
                 let hasExistingInvoice = false
                 if (existingInvRes.ok) {
                   const existingInvData = await existingInvRes.json()
-                  hasExistingInvoice = (existingInvData.invoices || []).some(
-                    (inv: Record<string, unknown>) => inv.appointmentId === selectedSoapNote.appointmentId
-                  )
+                  hasExistingInvoice = (existingInvData.invoices || []).length > 0
                 }
 
                 if (!hasExistingInvoice) {
@@ -656,11 +654,20 @@ export function FlowClinical() {
                       concepto: serviceName,
                       subtotal: servicePrice,
                       iva: 0,
+                      ivaRate: 0,
                       total: servicePrice,
                       status: 'pending',
                       paymentStatus: 'unpaid',
                     }),
                   })
+
+                  // Update patient metrics (totalVisits, lastVisitDate, segment)
+                  try {
+                    const { updatePatientMetrics } = await import('@/app/api/patients/route')
+                    await updatePatientMetrics(apt.patientId)
+                  } catch (e) {
+                    console.error('Failed to update patient metrics:', e)
+                  }
                 }
               }
             } catch (e) {

@@ -51,6 +51,11 @@ import {
   Trash2,
   DollarSign,
   XCircle,
+  CheckCircle2,
+  PhoneCall,
+  MessageSquare,
+  Bell,
+  CalendarClock,
 } from 'lucide-react'
 
 // ─── TYPES ──────────────────────────────────────────────
@@ -114,6 +119,18 @@ interface InvoiceItem {
   status: string
   paymentStatus: string
   cfdiUuid: string | null
+}
+
+interface FollowUpItem {
+  id: string
+  type: string
+  status: string
+  dueDate: string | null
+  completedAt: string | null
+  notes: string | null
+  createdBy: string | null
+  createdAt: string
+  patient?: { fullName: string; phone: string | null }
 }
 
 interface PatientProfile extends PatientListItem {
@@ -327,6 +344,13 @@ export function PatientDirectory() {
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'appointment' | 'invoice'; id: string } | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
+  // Follow-ups state
+  const [followUps, setFollowUps] = useState<FollowUpItem[]>([])
+  const [isLoadingFollowUps, setIsLoadingFollowUps] = useState(false)
+  const [showNewFollowUp, setShowNewFollowUp] = useState(false)
+  const [newFollowUp, setNewFollowUp] = useState({ type: 'call', dueDate: '', notes: '' })
+  const [isCreatingFollowUp, setIsCreatingFollowUp] = useState(false)
+
   // Resolve clinicId on mount if needed
   useEffect(() => {
     async function resolveClinicId() {
@@ -415,12 +439,88 @@ export function PatientDirectory() {
     []
   )
 
+  // ─── FETCH FOLLOW-UPS ───────────────────────────────
+
+  const fetchFollowUps = useCallback(
+    async (patientId: string) => {
+      if (!clinicId) return
+      setIsLoadingFollowUps(true)
+      try {
+        const res = await fetch(`/api/follow-ups?clinicId=${clinicId}&patientId=${patientId}`)
+        if (res.ok) {
+          const data = await res.json()
+          setFollowUps(data.followUps || [])
+        }
+      } catch (err) {
+        console.error('Failed to fetch follow-ups:', err)
+      } finally {
+        setIsLoadingFollowUps(false)
+      }
+    },
+    [clinicId]
+  )
+
+  // ─── CREATE FOLLOW-UP ────────────────────────────────
+
+  const handleCreateFollowUp = async () => {
+    if (!selectedPatientId || !clinicId) return
+    setIsCreatingFollowUp(true)
+    try {
+      const res = await fetch('/api/follow-ups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clinicId,
+          patientId: selectedPatientId,
+          type: newFollowUp.type,
+          dueDate: newFollowUp.dueDate || null,
+          notes: newFollowUp.notes || null,
+        }),
+      })
+      if (res.ok) {
+        setToast({ message: 'Seguimiento creado', type: 'success' })
+        setShowNewFollowUp(false)
+        setNewFollowUp({ type: 'call', dueDate: '', notes: '' })
+        fetchFollowUps(selectedPatientId)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setToast({ message: data.error || 'Error al crear seguimiento', type: 'error' })
+      }
+    } catch {
+      setToast({ message: 'Error de conexión', type: 'error' })
+    } finally {
+      setIsCreatingFollowUp(false)
+    }
+  }
+
+  // ─── UPDATE FOLLOW-UP ────────────────────────────────
+
+  const handleUpdateFollowUp = async (followUpId: string, updates: Record<string, unknown>) => {
+    try {
+      const res = await fetch('/api/follow-ups', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ followUpId, ...updates }),
+      })
+      if (res.ok) {
+        setToast({ message: 'Seguimiento actualizado', type: 'success' })
+        if (selectedPatientId) fetchFollowUps(selectedPatientId)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setToast({ message: data.error || 'Error al actualizar', type: 'error' })
+      }
+    } catch {
+      setToast({ message: 'Error de conexión', type: 'error' })
+    }
+  }
+
   // ─── OPEN PROFILE ───────────────────────────────────
 
   const openProfile = (patientId: string) => {
     setSelectedPatientId(patientId)
     setView('profile')
     fetchPatientProfile(patientId)
+    fetchFollowUps(patientId)
   }
 
   // ─── BACK TO LIST ───────────────────────────────────
@@ -1128,6 +1228,20 @@ export function PatientDirectory() {
               <Receipt className="h-3.5 w-3.5 mr-1.5" />
               Facturacion
             </TabsTrigger>
+            <TabsTrigger
+              value="timeline"
+              className="text-xs h-8 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md data-[state=active]:text-[#534AB7]"
+            >
+              <Activity className="h-3.5 w-3.5 mr-1.5" />
+              Timeline
+            </TabsTrigger>
+            <TabsTrigger
+              value="followups"
+              className="text-xs h-8 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md data-[state=active]:text-[#534AB7]"
+            >
+              <Clock className="h-3.5 w-3.5 mr-1.5" />
+              Seguimientos
+            </TabsTrigger>
           </TabsList>
 
           {/* TAB: Informacion */}
@@ -1619,6 +1733,325 @@ export function PatientDirectory() {
                       ))}
                     </div>
                   </ScrollArea>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB: Timeline */}
+          <TabsContent value="timeline">
+            <Card className="border-[#E1F5EE] bg-white">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium tracking-[-0.03em]">
+                  Timeline de actividad
+                </CardTitle>
+              </CardHeader>
+              <Separator className="bg-[#E1F5EE]" />
+              <CardContent className="p-4">
+                {(() => {
+                  // Build timeline items from various data sources
+                  type TimelineEntry = { id: string; date: string; type: 'appointment' | 'soap' | 'invoice' | 'followup'; label: string; detail: string }
+                  const entries: TimelineEntry[] = []
+
+                  // Appointments
+                  for (const apt of p.appointments) {
+                    entries.push({
+                      id: apt.id,
+                      date: apt.date,
+                      type: 'appointment',
+                      label: apt.status === 'completed' ? 'Cita completada' : apt.status === 'cancelled' ? 'Cita cancelada' : 'Cita agendada',
+                      detail: `${apt.startTime} - ${apt.service?.name || 'Consulta'} ${apt.doctor ? `(${apt.doctor.name})` : ''}`,
+                    })
+                  }
+
+                  // SOAP notes
+                  for (const note of p.soapNotes) {
+                    entries.push({
+                      id: note.id,
+                      date: note.createdAt,
+                      type: 'soap',
+                      label: 'Nota clínica',
+                      detail: note.diagnosis || note.assessment?.slice(0, 60) || 'Nota SOAP',
+                    })
+                  }
+
+                  // Invoices
+                  for (const inv of p.invoices) {
+                    entries.push({
+                      id: inv.id,
+                      date: inv.createdAt,
+                      type: 'invoice',
+                      label: inv.paymentStatus === 'paid' ? 'Pago recibido' : inv.status === 'timbrada' ? 'CFDI timbrada' : 'Factura generada',
+                      detail: `${formatCurrency(inv.total)} — ${inv.concepto || 'Consulta'}`,
+                    })
+                  }
+
+                  // Follow-ups
+                  for (const fu of followUps) {
+                    entries.push({
+                      id: fu.id,
+                      date: fu.completedAt || fu.createdAt,
+                      type: 'followup',
+                      label: fu.status === 'completed' ? 'Seguimiento completado' : 'Seguimiento creado',
+                      detail: `${fu.type === 'call' ? 'Llamada' : fu.type === 'message' ? 'Mensaje' : fu.type === 'reminder' ? 'Recordatorio' : fu.type === 'appointment' ? 'Agendar cita' : 'Nota'}${fu.notes ? `: ${fu.notes.slice(0, 40)}` : ''}`,
+                    })
+                  }
+
+                  // Sort by date descending
+                  entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+                  const timelineConfig: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
+                    appointment: { icon: Calendar, color: '#1D9E75', bg: '#E1F5EE' },
+                    soap: { icon: FileText, color: '#534AB7', bg: '#EEEDFE' },
+                    invoice: { icon: Receipt, color: '#D97706', bg: '#FEF3C7' },
+                    followup: { icon: Clock, color: '#3B82F6', bg: '#DBEAFE' },
+                  }
+
+                  if (entries.length === 0) {
+                    return (
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <Activity className="h-10 w-10 text-[#888780]/30 mb-3" />
+                        <p className="text-sm text-[#888780]">Sin actividad registrada</p>
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <ScrollArea className="max-h-96">
+                      <div className="space-y-0">
+                        {entries.map((entry, i) => {
+                          const config = timelineConfig[entry.type]
+                          const Icon = config.icon
+                          const isLast = i === entries.length - 1
+                          return (
+                            <div key={entry.id} className="flex gap-3">
+                              {/* Timeline line + icon */}
+                              <div className="flex flex-col items-center">
+                                <div className={`h-7 w-7 rounded-full flex items-center justify-center shrink-0`} style={{ backgroundColor: config.bg }}>
+                                  <Icon className="h-3.5 w-3.5" style={{ color: config.color }} />
+                                </div>
+                                {!isLast && <div className="w-px flex-1 bg-[#E1F5EE]" />}
+                              </div>
+                              {/* Content */}
+                              <div className={`pb-4 ${isLast ? '' : ''}`}>
+                                <p className="text-xs font-medium text-[#2C2C2A]">{entry.label}</p>
+                                <p className="text-[10px] text-[#888780] mt-0.5">{entry.detail}</p>
+                                <p className="text-[9px] text-[#888780]/60 mt-0.5">{formatShortDate(entry.date)}</p>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </ScrollArea>
+                  )
+                })()}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB: Seguimientos */}
+          <TabsContent value="followups">
+            <Card className="border-[#E1F5EE] bg-white">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-medium tracking-[-0.03em]">
+                    Seguimientos
+                  </CardTitle>
+                  <Button
+                    className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white h-7 text-xs gap-1"
+                    onClick={() => setShowNewFollowUp(true)}
+                  >
+                    <Plus className="h-3 w-3" />
+                    Nuevo seguimiento
+                  </Button>
+                </div>
+              </CardHeader>
+              <Separator className="bg-[#E1F5EE]" />
+              <CardContent className="p-4">
+                {isLoadingFollowUps ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-5 w-5 animate-spin text-[#534AB7]" />
+                    <span className="ml-2 text-xs text-[#888780]">Cargando...</span>
+                  </div>
+                ) : followUps.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <Clock className="h-10 w-10 text-[#888780]/30 mb-3" />
+                    <p className="text-sm text-[#888780]">Sin seguimientos</p>
+                    <p className="text-xs text-[#888780]/60 mt-1">Crea un seguimiento para hacer seguimiento de este paciente</p>
+                    <Button
+                      className="mt-4 bg-[#534AB7] hover:bg-[#534AB7]/90 text-white h-8 text-xs gap-1.5"
+                      onClick={() => setShowNewFollowUp(true)}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Nuevo seguimiento
+                    </Button>
+                  </div>
+                ) : (
+                  <ScrollArea className="max-h-96">
+                    <div className="space-y-2">
+                      {followUps.map((fu, i) => {
+                        const typeConfig: Record<string, { icon: React.ElementType; label: string; color: string }> = {
+                          call: { icon: PhoneCall, label: 'Llamada', color: '#1D9E75' },
+                          message: { icon: MessageSquare, label: 'Mensaje', color: '#534AB7' },
+                          appointment: { icon: CalendarClock, label: 'Agendar cita', color: '#3B82F6' },
+                          reminder: { icon: Bell, label: 'Recordatorio', color: '#D97706' },
+                          note: { icon: FileText, label: 'Nota', color: '#888780' },
+                        }
+                        const statusConfig: Record<string, { label: string; bg: string; text: string }> = {
+                          pending: { label: 'Pendiente', bg: 'bg-[#FEF3C7]', text: 'text-[#92400E]' },
+                          completed: { label: 'Completado', bg: 'bg-[#E1F5EE]', text: 'text-[#1D9E75]' },
+                          cancelled: { label: 'Cancelado', bg: 'bg-[#FEE2E2]', text: 'text-[#991B1B]' },
+                          snoozed: { label: 'Pospuesto', bg: 'bg-[#EEEDFE]', text: 'text-[#534AB7]' },
+                        }
+                        const tConfig = typeConfig[fu.type] || typeConfig.note
+                        const sConfig = statusConfig[fu.status] || statusConfig.pending
+                        const TIcon = tConfig.icon
+                        return (
+                          <motion.div
+                            key={fu.id}
+                            className="p-3 rounded-lg border border-[#E1F5EE] hover:border-[#1D9E75]/30 transition-colors"
+                            initial={{ opacity: 0, y: 5 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.03 }}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <div className="h-6 w-6 rounded-full flex items-center justify-center" style={{ backgroundColor: `${tConfig.color}20`, color: tConfig.color }}>
+                                  <TIcon className="h-3 w-3" />
+                                </div>
+                                <div>
+                                  <p className="text-xs font-medium text-[#2C2C2A]">{tConfig.label}</p>
+                                  {fu.notes && <p className="text-[10px] text-[#888780] mt-0.5 line-clamp-2">{fu.notes}</p>}
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <Badge className={`${sConfig.bg} ${sConfig.text} border-0 text-[9px] px-1.5 py-0`}>
+                                      {sConfig.label}
+                                    </Badge>
+                                    {fu.dueDate && (
+                                      <span className="text-[9px] text-[#888780]">
+                                        {fu.status === 'completed' ? 'Completado' : 'Vence'}: {formatShortDate(fu.dueDate)}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                {fu.status === 'pending' && (
+                                  <>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 w-6 p-0 text-[#1D9E75] hover:bg-[#E1F5EE]"
+                                      onClick={() => handleUpdateFollowUp(fu.id, { status: 'completed' })}
+                                      title="Marcar como completado"
+                                    >
+                                      <CheckCircle2 className="h-3 w-3" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 w-6 p-0 text-[#534AB7] hover:bg-[#EEEDFE]"
+                                      onClick={() => {
+                                        const newDate = prompt('Nueva fecha (YYYY-MM-DD):', fu.dueDate ? new Date(fu.dueDate).toISOString().split('T')[0] : '')
+                                        if (newDate) handleUpdateFollowUp(fu.id, { status: 'snoozed', dueDate: newDate })
+                                      }}
+                                      title="Posponer"
+                                    >
+                                      <Clock className="h-3 w-3" />
+                                    </Button>
+                                  </>
+                                )}
+                                {fu.status === 'snoozed' && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0 text-[#1D9E75] hover:bg-[#E1F5EE]"
+                                    onClick={() => handleUpdateFollowUp(fu.id, { status: 'completed' })}
+                                    title="Marcar como completado"
+                                  >
+                                    <CheckCircle2 className="h-3 w-3" />
+                                  </Button>
+                                )}
+                                {fu.status !== 'completed' && fu.status !== 'cancelled' && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0 text-[#888780] hover:text-red-500 hover:bg-red-50"
+                                    onClick={() => handleUpdateFollowUp(fu.id, { status: 'cancelled' })}
+                                    title="Cancelar"
+                                  >
+                                    <XCircle className="h-3 w-3" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          </motion.div>
+                        )
+                      })}
+                    </div>
+                  </ScrollArea>
+                )}
+
+                {/* New follow-up dialog */}
+                {showNewFollowUp && (
+                  <motion.div
+                    className="mt-4 p-3 rounded-lg bg-[#F1EFE8] border border-[#E1F5EE] space-y-3"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                  >
+                    <p className="text-xs font-medium text-[#2C2C2A]">Nuevo seguimiento</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] text-[#888780]">Tipo</Label>
+                        <Select value={newFollowUp.type} onValueChange={(v) => setNewFollowUp(f => ({ ...f, type: v }))}>
+                          <SelectTrigger className="h-8 text-xs bg-white border-[#E1F5EE]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="call">Llamada</SelectItem>
+                            <SelectItem value="message">Mensaje</SelectItem>
+                            <SelectItem value="appointment">Agendar cita</SelectItem>
+                            <SelectItem value="reminder">Recordatorio</SelectItem>
+                            <SelectItem value="note">Nota</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] text-[#888780]">Fecha límite</Label>
+                        <Input
+                          type="date"
+                          className="h-8 text-xs bg-white border-[#E1F5EE]"
+                          value={newFollowUp.dueDate}
+                          onChange={(e) => setNewFollowUp(f => ({ ...f, dueDate: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-[#888780]">Notas</Label>
+                      <Textarea
+                        className="text-xs bg-white border-[#E1F5EE] min-h-[60px]"
+                        placeholder="Notas sobre el seguimiento..."
+                        value={newFollowUp.notes}
+                        onChange={(e) => setNewFollowUp(f => ({ ...f, notes: e.target.value }))}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        className="flex-1 h-8 text-xs bg-[#534AB7] hover:bg-[#534AB7]/90 text-white"
+                        onClick={handleCreateFollowUp}
+                        disabled={isCreatingFollowUp}
+                      >
+                        {isCreatingFollowUp ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Plus className="h-3 w-3 mr-1" />}
+                        Crear seguimiento
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="h-8 text-xs text-[#888780]"
+                        onClick={() => { setShowNewFollowUp(false); setNewFollowUp({ type: 'call', dueDate: '', notes: '' }) }}
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
+                  </motion.div>
                 )}
               </CardContent>
             </Card>

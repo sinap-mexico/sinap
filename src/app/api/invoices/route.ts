@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getMockInvoices } from '@/lib/mock-api'
 
-// GET /api/invoices?clinicId=xxx&status=xxx
+// GET /api/invoices?clinicId=xxx&status=xxx&appointmentId=xxx
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const clinicId = searchParams.get('clinicId')
     const status = searchParams.get('status')
+    const appointmentId = searchParams.get('appointmentId')
 
     if (!clinicId) {
       return NextResponse.json({ error: 'clinicId es requerido' }, { status: 400 })
@@ -17,12 +18,16 @@ export async function GET(req: NextRequest) {
     if (!db) {
       let invoices = getMockInvoices(clinicId)
       if (status) invoices = invoices.filter(i => i.status === status)
+      if (appointmentId) invoices = invoices.filter(i => i.appointmentId === appointmentId)
       return NextResponse.json({ invoices })
     }
 
     const where: Record<string, unknown> = { clinicId }
     if (status) {
       where.status = status
+    }
+    if (appointmentId) {
+      where.appointmentId = appointmentId
     }
 
     const invoices = await db.invoice.findMany({
@@ -131,6 +136,16 @@ export async function PATCH(req: NextRequest) {
         patient: { select: { fullName: true, rfc: true } },
       },
     })
+
+    // Auto-update patient metrics when invoice is paid
+    if (paymentStatus === 'paid' && invoice.patientId) {
+      try {
+        const { updatePatientMetrics } = await import('@/app/api/patients/route')
+        await updatePatientMetrics(invoice.patientId)
+      } catch (err) {
+        console.error('Failed to update patient metrics after payment:', err)
+      }
+    }
 
     return NextResponse.json({ invoice })
   } catch (error: unknown) {

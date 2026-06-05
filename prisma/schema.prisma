@@ -134,6 +134,7 @@ model Clinic {
   services       Service[]
   soapNotes      SoapNote[]
   users          User[]
+  followUps      FollowUp[]
 }
 
 model Doctor {
@@ -254,6 +255,7 @@ model Patient {
   invoices      Invoice[]
   conversations Conversation[]
   soapNotes     SoapNote[]
+  followUps     FollowUp[]
 
   @@index([clinicId])
   @@index([clinicId, phone])
@@ -490,4 +492,28 @@ model EventBus {
   @@index([clinicId, eventType])
   @@index([clinicId, status])
   @@index([createdAt])
+}
+
+// ─── FOLLOW-UPS ─────────────────────────────────────────
+
+model FollowUp {
+  id          String   @id @default(cuid())
+  clinicId    String
+  patientId   String
+  type        String   // "call" | "message" | "appointment" | "reminder" | "note"
+  status      String   @default("pending") // "pending" | "completed" | "cancelled" | "snoozed"
+  dueDate     DateTime?
+  completedAt DateTime?
+  notes       String?
+  createdBy   String?  // User or Staff ID
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clinic      Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId, status])
+  @@index([clinicId, dueDate])
+  @@index([patientId])
 }

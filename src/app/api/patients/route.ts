@@ -2,6 +2,71 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getMockPatients, DEMO_CLINIC_ID } from '@/lib/mock-api'
 
+// ─── AUTO-SEGMENTATION HELPER ──────────────────────────────
+
+function computeSegment(
+  totalVisits: number,
+  totalSpent: number,
+  lastVisitDate: Date | null
+): string {
+  if (totalVisits === 0) return 'new'
+  if (totalSpent > 50000 || totalVisits > 10) return 'vip'
+  if (!lastVisitDate) return 'new'
+
+  const now = new Date()
+  const diffMs = now.getTime() - lastVisitDate.getTime()
+  const diffDays = diffMs / (1000 * 60 * 60 * 24)
+
+  if (diffDays <= 90) return 'active'
+  if (diffDays <= 180) return 'inactive'
+  return 'churned'
+}
+
+// ─── UPDATE PATIENT METRICS HELPER ─────────────────────────
+
+export async function updatePatientMetrics(patientId: string) {
+  if (!db) return
+
+  try {
+    // Count completed appointments
+    const completedAppointments = await db.appointment.count({
+      where: { patientId, status: 'completed' },
+    })
+
+    // Sum paid invoices
+    const paidInvoices = await db.invoice.aggregate({
+      where: { patientId, paymentStatus: 'paid' },
+      _sum: { total: true },
+    })
+
+    // Last visit date = most recent completed appointment
+    const lastAppointment = await db.appointment.findFirst({
+      where: { patientId, status: 'completed' },
+      orderBy: { date: 'desc' },
+      select: { date: true },
+    })
+
+    const totalVisits = completedAppointments
+    const totalSpent = paidInvoices._sum.total || 0
+    const lastVisitDate = lastAppointment?.date || null
+
+    const segment = computeSegment(totalVisits, totalSpent, lastVisitDate)
+
+    await db.patient.update({
+      where: { id: patientId },
+      data: {
+        totalVisits,
+        totalSpent,
+        lastVisitDate,
+        segment,
+        ltv: totalSpent,
+      },
+    })
+  } catch (err) {
+    console.error('Failed to update patient metrics:', err)
+  }
+}
+
 // GET /api/patients?clinicId=...&search=...&segment=...&page=1&limit=20
 export async function GET(req: NextRequest) {
   try {

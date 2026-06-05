@@ -106,6 +106,13 @@ export async function GET(
             orderBy: { createdAt: 'desc' },
             take: 20,
           },
+          followUps: {
+            orderBy: [
+              { status: 'asc' },
+              { dueDate: 'asc' },
+            ],
+            take: 20,
+          },
           conversations: {
             orderBy: { lastMessageAt: 'desc' },
             take: 5,

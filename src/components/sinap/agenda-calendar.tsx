@@ -33,6 +33,9 @@ import {
   Receipt,
   DollarSign,
   FileDown,
+  Stamp,
+  CircleDot,
+  ArrowRight,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -137,15 +140,30 @@ export function AgendaCalendar() {
   const [appointmentInvoice, setAppointmentInvoice] = useState<{
     id: string
     concepto?: string | null
+    subtotal?: number
+    iva?: number
+    ivaRate?: number
     total?: number
     status?: string
     paymentStatus?: string
     formaPago?: string
     cfdiUuid?: string | null
+    metodoPago?: string
+    usoCFDI?: string
   } | null>(null)
   const [isLoadingInvoice, setIsLoadingInvoice] = useState(false)
   const [isCharging, setIsCharging] = useState(false)
   const [chargeMethod, setChargeMethod] = useState('01') // '01'=efectivo, '03'=transferencia, '04'=tarjeta
+  const [showPaymentSuccess, setShowPaymentSuccess] = useState(false)
+
+  // Inline CFDI dialog states
+  const [showInlineCFDI, setShowInlineCFDI] = useState(false)
+  const [isStampingCfdi, setIsStampingCfdi] = useState(false)
+  const [cfdiError, setCfdiError] = useState<string | null>(null)
+  const [cfdiFormaPago, setCfdiFormaPago] = useState('01')
+  const [cfdiMetodoPago, setCfdiMetodoPago] = useState('PUE')
+  const [cfdiUsoCFDI, setCfdiUsoCFDI] = useState('G01')
+  const [cfdiResult, setCfdiResult] = useState<{ uuid: string; isSimulated?: boolean } | null>(null)
 
   // UI states
   const [view, setView] = useState<'day' | 'week'>('day')
@@ -333,18 +351,23 @@ export function AgendaCalendar() {
     if (!selectedAppointment || !clinicId) return
     setIsLoadingInvoice(true)
     try {
-      const res = await fetch(`/api/invoices?clinicId=${clinicId}`)
+      const res = await fetch(`/api/invoices?clinicId=${clinicId}&appointmentId=${selectedAppointment.id}`)
       if (res.ok) {
         const data = await res.json()
-        const inv = (data.invoices || []).find((i: Record<string, unknown>) => i.appointmentId === selectedAppointment.id)
+        const inv = (data.invoices || [])[0] as Record<string, unknown> | undefined
         setAppointmentInvoice(inv ? {
           id: inv.id as string,
           concepto: inv.concepto as string | null,
+          subtotal: inv.subtotal as number,
+          iva: inv.iva as number,
+          ivaRate: inv.ivaRate as number,
           total: inv.total as number,
           status: inv.status as string,
           paymentStatus: inv.paymentStatus as string,
           formaPago: inv.formaPago as string,
           cfdiUuid: inv.cfdiUuid as string | null,
+          metodoPago: inv.metodoPago as string,
+          usoCFDI: inv.usoCFDI as string,
         } : null)
       }
     } catch (err) {
@@ -357,8 +380,16 @@ export function AgendaCalendar() {
   useEffect(() => {
     if (showDetailDialog && selectedAppointment?.status === 'completed') {
       fetchAppointmentInvoice()
+      setCfdiResult(null)
+      setCfdiError(null)
+      setShowInlineCFDI(false)
+      setShowPaymentSuccess(false)
     } else if (!showDetailDialog) {
       setAppointmentInvoice(null)
+      setCfdiResult(null)
+      setCfdiError(null)
+      setShowInlineCFDI(false)
+      setShowPaymentSuccess(false)
     }
   }, [showDetailDialog, selectedAppointment?.status, fetchAppointmentInvoice])
 
@@ -378,6 +409,8 @@ export function AgendaCalendar() {
       })
       if (res.ok) {
         await fetchAppointmentInvoice()
+        setShowPaymentSuccess(true)
+        setTimeout(() => setShowPaymentSuccess(false), 2500)
       } else {
         const data = await res.json().catch(() => ({}))
         setActionError(data.error || 'Error al cobrar')
@@ -457,6 +490,95 @@ export function AgendaCalendar() {
     } catch (err) {
       console.error('Failed to revert payment:', err)
       setActionError('Error de conexión al eliminar pago')
+    }
+  }
+
+  // Inline CFDI stamping from appointment detail
+  const handleStampCFDI = async () => {
+    if (!appointmentInvoice || !clinicId || !selectedAppointment) return
+    setIsStampingCfdi(true)
+    setCfdiError(null)
+    setCfdiResult(null)
+    try {
+      // Get clinic info for Facturama
+      const clinicRes = await fetch(`/api/clinic?clinicId=${clinicId}`)
+      if (!clinicRes.ok) throw new Error('Error al obtener datos de la clínica')
+      const clinicData = await clinicRes.json()
+      const clinic = clinicData.clinic
+
+      if (!clinic.rfc) {
+        setCfdiError('La clínica no tiene RFC configurado. Ve a Configuración para agregarlo.')
+        return
+      }
+
+      // Get patient info
+      const patientRes = await fetch(`/api/patients/${selectedAppointment.patientId}`)
+      if (!patientRes.ok) throw new Error('Error al obtener datos del paciente')
+      const patientData = await patientRes.json()
+      const patient = patientData.patient
+
+      const patientRfc = patient.rfc || 'XAXX010101000' // Default generic RFC
+
+      const ivaRate = appointmentInvoice.ivaRate ?? 0
+      const subtotal = Number(appointmentInvoice.subtotal) || Number(appointmentInvoice.total) || 0
+      const ivaAmount = ivaRate > 0 ? Math.round(subtotal * ivaRate * 100) / 100 : 0
+      const total = ivaRate > 0 ? subtotal + ivaAmount : subtotal
+
+      // Call Facturama API to stamp CFDI
+      const facturamaRes = await fetch('/api/facturama', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clinicId,
+          invoiceId: appointmentInvoice.id,
+          receptor: {
+            Rfc: patientRfc,
+            Nombre: patient.fullName,
+            UsoCFDI: cfdiUsoCFDI,
+            RegimenFiscalReceptor: '616', // Sin obligaciones fiscales (default for patients)
+          },
+          concepto: appointmentInvoice.concepto || 'Consulta',
+          cantidad: 1,
+          precioUnitario: subtotal,
+          ivaRate,
+          subtotal,
+          iva: ivaAmount,
+          total,
+          formaPago: cfdiFormaPago,
+          metodoPago: cfdiMetodoPago,
+        }),
+      })
+
+      const facturamaData = await facturamaRes.json()
+
+      if (!facturamaRes.ok) {
+        // Update invoice with error
+        await fetch('/api/invoices', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            invoiceId: appointmentInvoice.id,
+            status: 'error',
+            errorMessage: facturamaData.error || 'Error al timbrar CFDI',
+          }),
+        })
+        setCfdiError(facturamaData.error || 'Error al timbrar CFDI')
+        return
+      }
+
+      // CFDI stamped successfully
+      setCfdiResult({
+        uuid: facturamaData.cfdiUuid || facturamaData.uuid,
+        isSimulated: facturamaData.isSimulated,
+      })
+
+      // Refresh invoice data
+      await fetchAppointmentInvoice()
+    } catch (err) {
+      console.error('Failed to stamp CFDI:', err)
+      setCfdiError(err instanceof Error ? err.message : 'Error al timbrar CFDI')
+    } finally {
+      setIsStampingCfdi(false)
     }
   }
 
@@ -1349,13 +1471,62 @@ export function AgendaCalendar() {
                 </div>
               )}
 
-              {/* Completed appointment: Cita → Factura → Pago flow */}
+              {/* Completed appointment: Visual stepper Cita → Cobrar → CFDI */}
               {selectedAppointment.status === 'completed' && (
-                <div className="p-3 rounded-lg bg-[#EEEDFE] border border-[#534AB7]/20 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-[#534AB7]" />
-                    <p className="text-sm font-medium text-[#534AB7]">Cita completada</p>
+                <div className="p-3 rounded-lg bg-[#F1EFE8] border border-[#E1F5EE] space-y-3">
+                  {/* Step Indicator */}
+                  <div className="flex items-center gap-1 px-1">
+                    {[
+                      { key: 'cita', label: 'Cita', icon: CheckCircle, done: true },
+                      { key: 'cobrar', label: 'Cobrar', icon: DollarSign, done: appointmentInvoice?.paymentStatus === 'paid' },
+                      { key: 'cfdi', label: 'CFDI', icon: Receipt, done: appointmentInvoice?.status === 'timbrada' },
+                    ].map((step, i) => {
+                      const Icon = step.icon
+                      return (
+                        <div key={step.key} className="flex items-center flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <motion.div
+                              className={`h-5 w-5 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                                step.done
+                                  ? 'bg-[#1D9E75] text-white'
+                                  : 'bg-white border border-[#888780]/30 text-[#888780]'
+                              }`}
+                              animate={step.done ? { scale: [1, 1.15, 1] } : {}}
+                              transition={{ duration: 0.3, delay: i * 0.1 }}
+                            >
+                              {step.done ? <Icon className="h-3 w-3" /> : (i + 1)}
+                            </motion.div>
+                            <span className={`text-[10px] font-medium ${step.done ? 'text-[#1D9E75]' : 'text-[#888780]'}`}>
+                              {step.label}
+                            </span>
+                          </div>
+                          {i < 2 && (
+                            <div className={`flex-1 h-px mx-1.5 ${step.done ? 'bg-[#1D9E75]' : 'bg-[#888780]/20'}`} />
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
+
+                  {/* Payment success animation */}
+                  <AnimatePresence>
+                    {showPaymentSuccess && (
+                      <motion.div
+                        className="flex items-center justify-center gap-2 py-3 rounded-lg bg-[#E1F5EE]"
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                      >
+                        <motion.div
+                          animate={{ rotate: [0, 360] }}
+                          transition={{ duration: 0.5 }}
+                        >
+                          <CheckCircle className="h-5 w-5 text-[#1D9E75]" />
+                        </motion.div>
+                        <span className="text-sm font-medium text-[#1D9E75]">¡Pago registrado!</span>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
                   {isLoadingInvoice ? (
                     <div className="flex items-center gap-2 py-2">
@@ -1381,7 +1552,7 @@ export function AgendaCalendar() {
                       <div className="flex items-center justify-between p-2 rounded-lg bg-white">
                         <div>
                           <p className="text-xs font-medium text-[#2C2C2A]">{appointmentInvoice.concepto || 'Consulta'}</p>
-                          <p className="text-[10px] text-[#888780]">{appointmentInvoice.status === 'timbrada' ? 'CFDI timbrada' : 'Pendiente de cobro'}</p>
+                          <p className="text-[10px] text-[#888780]">Pendiente de cobro</p>
                         </div>
                         <p className="text-sm font-semibold text-[#2C2C2A]">${(Number(appointmentInvoice.total) || 0).toLocaleString('es-MX')}</p>
                       </div>
@@ -1405,16 +1576,6 @@ export function AgendaCalendar() {
                           Cobrar
                         </Button>
                       </div>
-                      {appointmentInvoice.status !== 'timbrada' && (
-                        <Button
-                          variant="outline"
-                          className="w-full h-8 text-xs border-[#534AB7] text-[#534AB7] hover:bg-[#EEEDFE]"
-                          onClick={() => { setShowDetailDialog(false); setActiveModule('bill') }}
-                        >
-                          <Receipt className="h-3.5 w-3.5 mr-1" />
-                          Generar CFDI
-                        </Button>
-                      )}
                     </div>
                   ) : (
                     /* Paid invoice */
@@ -1431,10 +1592,12 @@ export function AgendaCalendar() {
                           </p>
                         </div>
                       </div>
-                      {appointmentInvoice.status === 'timbrada' && (
-                        <div className="flex items-center gap-2 p-2 rounded-lg bg-[#E1F5EE]">
+
+                      {/* CFDI section */}
+                      {appointmentInvoice.status === 'timbrada' ? (
+                        <div className="flex items-center gap-2 p-2 rounded-lg bg-[#EEEDFE]">
                           <Receipt className="h-4 w-4 text-[#534AB7]" />
-                          <div className="flex-1">
+                          <div className="flex-1 min-w-0">
                             <p className="text-xs font-medium text-[#534AB7]">CFDI timbrada</p>
                             <p className="text-[10px] text-[#888780] truncate">{appointmentInvoice.cfdiUuid as string || ''}</p>
                           </div>
@@ -1442,39 +1605,122 @@ export function AgendaCalendar() {
                             <FileDown className="h-3.5 w-3.5" />
                           </Button>
                         </div>
-                      )}
-                      <div className="flex gap-2">
-                        {appointmentInvoice.status !== 'timbrada' && (
-                          <Button
-                            variant="outline"
-                            className="flex-1 h-8 text-xs border-[#534AB7] text-[#534AB7] hover:bg-[#EEEDFE]"
-                            onClick={() => { setShowDetailDialog(false); setActiveModule('bill') }}
-                          >
-                            <Receipt className="h-3.5 w-3.5 mr-1" />
-                            Generar CFDI
-                          </Button>
-                        )}
+                      ) : showInlineCFDI ? (
+                        /* Inline CFDI form */
+                        <div className="p-2 rounded-lg bg-white border border-[#534AB7]/20 space-y-2">
+                          <p className="text-[10px] font-semibold text-[#534AB7] uppercase tracking-wide">Generar CFDI</p>
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="space-y-1">
+                              <Label className="text-[9px] text-[#888780]">Forma de Pago</Label>
+                              <Select value={cfdiFormaPago} onValueChange={setCfdiFormaPago}>
+                                <SelectTrigger className="h-7 text-[10px] bg-[#F1EFE8] border-[#E1F5EE]">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="01">01 Efectivo</SelectItem>
+                                  <SelectItem value="03">03 Transferencia</SelectItem>
+                                  <SelectItem value="04">04 Tarjeta</SelectItem>
+                                  <SelectItem value="28">28 Débito</SelectItem>
+                                  <SelectItem value="99">99 Por definir</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[9px] text-[#888780]">Método</Label>
+                              <Select value={cfdiMetodoPago} onValueChange={setCfdiMetodoPago}>
+                                <SelectTrigger className="h-7 text-[10px] bg-[#F1EFE8] border-[#E1F5EE]">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="PUE">PUE</SelectItem>
+                                  <SelectItem value="PPD">PPD</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[9px] text-[#888780]">Uso CFDI</Label>
+                              <Select value={cfdiUsoCFDI} onValueChange={setCfdiUsoCFDI}>
+                                <SelectTrigger className="h-7 text-[10px] bg-[#F1EFE8] border-[#E1F5EE]">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="G01">G01 Mercancías</SelectItem>
+                                  <SelectItem value="G03">G03 Gastos</SelectItem>
+                                  <SelectItem value="D01">D01 Honorarios médicos</SelectItem>
+                                  <SelectItem value="D07">D07 Seguros médicos</SelectItem>
+                                  <SelectItem value="P01">P01 Por definir</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          {cfdiError && (
+                            <div className="flex items-center gap-2 p-2 rounded-lg bg-[#FEE2E2] border border-[#991B1B]/20">
+                              <AlertCircle className="h-3 w-3 text-[#991B1B] shrink-0" />
+                              <p className="text-[10px] text-[#991B1B]">{cfdiError}</p>
+                            </div>
+                          )}
+                          {cfdiResult ? (
+                            <motion.div
+                              className="flex items-center gap-2 p-2 rounded-lg bg-[#E1F5EE]"
+                              initial={{ opacity: 0, y: 5 }}
+                              animate={{ opacity: 1, y: 0 }}
+                            >
+                              <CheckCircle className="h-4 w-4 text-[#1D9E75] shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[10px] font-medium text-[#1D9E75]">CFDI timbrada {cfdiResult.isSimulated ? '(simulada)' : ''}</p>
+                                <p className="text-[9px] text-[#888780] truncate">{cfdiResult.uuid}</p>
+                              </div>
+                            </motion.div>
+                          ) : (
+                            <div className="flex gap-2">
+                              <Button
+                                className="flex-1 h-7 text-[10px] bg-[#534AB7] hover:bg-[#534AB7]/90 text-white"
+                                onClick={handleStampCFDI}
+                                disabled={isStampingCfdi}
+                              >
+                                {isStampingCfdi ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Stamp className="h-3 w-3 mr-1" />}
+                                Timbrar CFDI
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                className="h-7 text-[10px] text-[#888780]"
+                                onClick={() => setShowInlineCFDI(false)}
+                              >
+                                Cancelar
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
                         <Button
                           variant="outline"
-                          className="h-8 text-xs border-red-300 text-red-600 hover:bg-red-50"
+                          className="w-full h-8 text-xs border-[#534AB7] text-[#534AB7] hover:bg-[#EEEDFE]"
+                          onClick={() => { setShowInlineCFDI(true); setCfdiResult(null) }}
+                        >
+                          <Receipt className="h-3.5 w-3.5 mr-1" />
+                          Generar CFDI
+                        </Button>
+                      )}
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          className="h-7 text-[10px] text-[#888780] hover:text-[#2C2C2A] hover:bg-[#F1EFE8] flex-1"
+                          onClick={() => { setShowDetailDialog(false); setActiveModule('patients') }}
+                        >
+                          <User className="h-3 w-3 mr-1" />
+                          Ver paciente
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="h-7 text-[10px] text-red-500 hover:text-red-700 hover:bg-red-50"
                           onClick={handleRevertAppointmentPayment}
                         >
-                          <XCircle className="h-3.5 w-3.5 mr-1" />
+                          <XCircle className="h-3 w-3 mr-1" />
                           Eliminar pago
                         </Button>
                       </div>
                     </div>
                   )}
-
-                  {/* Link to patient */}
-                  <Button
-                    variant="ghost"
-                    className="w-full h-7 text-xs text-[#888780] hover:text-[#2C2C2A] hover:bg-[#F1EFE8]"
-                    onClick={() => { setShowDetailDialog(false); setActiveModule('patients') }}
-                  >
-                    <User className="h-3 w-3 mr-1" />
-                    Ver paciente
-                  </Button>
                 </div>
               )}
 
