@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { MetaClient, getClinicMetaConfig } from '@/lib/meta-client'
+import { MetaClient, getClinicMetaConfig, getClinicMetaConnection, type MetaChannel } from '@/lib/meta-client'
 import { createZAI } from '@/lib/zai'
 
 // ─── GET: Webhook verification ─────────────────────────────
@@ -55,6 +55,7 @@ export async function POST(req: NextRequest) {
 
 // ─── Async webhook processing ──────────────────────────────
 async function processWebhookPayload(body: Record<string, unknown>) {
+  const channel = MetaClient.detectChannel(body)
   const parsedMessages = MetaClient.parseWebhookPayload(body)
 
   for (const msg of parsedMessages) {
@@ -67,7 +68,7 @@ async function processWebhookPayload(body: Record<string, unknown>) {
 
       // ── Handle incoming messages ──────────────────
       if (msg.type !== 'system') {
-        await handleIncomingMessage(msg)
+        await handleIncomingMessage(msg, channel)
       }
     } catch (error) {
       console.error('[Webhook] Error processing message:', error)
@@ -87,7 +88,6 @@ async function handleStatusUpdate(msg: { messageId: string; status?: string; err
     })
 
     if (message && msg.status === 'failed') {
-      // Could update a status field, but for now just log
       console.warn(`[Webhook] Message ${msg.messageId} failed:`, msg.errors)
     }
   } catch (error) {
@@ -95,67 +95,169 @@ async function handleStatusUpdate(msg: { messageId: string; status?: string; err
   }
 }
 
+// ─── Find clinic by channel and business ID ────────────────
+async function findClinicByChannel(channel: MetaChannel, businessId: string): Promise<{ id: string; personaName: string | null } | null> {
+  if (!db) return null
+
+  try {
+    // First try MetaConnection table (new source of truth)
+    let connectionData: { clinicId: string; clinic: { id: string; personaName: string | null } } | null = null
+
+    switch (channel) {
+      case 'whatsapp':
+        connectionData = await db.metaConnection.findFirst({
+          where: { businessId, channel: 'whatsapp', status: 'active' },
+          select: { clinicId: true, clinic: { select: { id: true, personaName: true } } },
+        }) as { clinicId: string; clinic: { id: string; personaName: string | null } } | null
+        break
+      case 'instagram':
+        connectionData = await db.metaConnection.findFirst({
+          where: { businessId, channel: 'instagram', status: 'active' },
+          select: { clinicId: true, clinic: { select: { id: true, personaName: true } } },
+        }) as { clinicId: string; clinic: { id: string; personaName: string | null } } | null
+        break
+      case 'messenger':
+        connectionData = await db.metaConnection.findFirst({
+          where: { pageId: businessId, channel: 'messenger', status: 'active' },
+          select: { clinicId: true, clinic: { select: { id: true, personaName: true } } },
+        }) as { clinicId: string; clinic: { id: string; personaName: string | null } } | null
+        break
+    }
+
+    if (connectionData?.clinic) {
+      return connectionData.clinic
+    }
+
+    // Fallback: legacy Clinic table fields (for backward compat)
+    if (channel === 'whatsapp') {
+      const clinic = await db.clinic.findFirst({
+        where: { wabaId: businessId },
+        select: { id: true, personaName: true },
+      })
+      return clinic
+    }
+
+    return null
+  } catch (error) {
+    console.error('[Webhook] findClinicByChannel error:', error)
+    return null
+  }
+}
+
 // ─── Handle incoming message ───────────────────────────────
-async function handleIncomingMessage(msg: {
-  clinicWabaId: string
-  from: string
-  messageId: string
-  timestamp: number
-  type: string
-  text?: string
-  mediaId?: string
-  caption?: string
-  interactiveResponse?: string
-  buttonReply?: string
-}) {
+async function handleIncomingMessage(
+  msg: {
+    channel: MetaChannel
+    clinicWabaId: string
+    from: string
+    messageId: string
+    timestamp: number
+    type: string
+    text?: string
+    mediaId?: string
+    caption?: string
+    interactiveResponse?: string
+    buttonReply?: string
+    igUserId?: string
+    psid?: string
+    pageId?: string
+  },
+  detectedChannel: MetaChannel
+) {
   if (!db) return
 
-  // 1. Find the clinic by wabaId
-  const clinic = await db.clinic.findFirst({
-    where: { wabaId: msg.clinicWabaId },
-    select: { id: true, personaName: true },
-  })
+  const channel = msg.channel || detectedChannel
+
+  // 1. Find the clinic
+  // For Messenger, the entry ID is the page ID
+  // For WhatsApp, the entry ID is the WABA ID
+  // For Instagram, the entry ID is the IG Business Account ID
+  const businessId = msg.clinicWabaId
+  const clinic = await findClinicByChannel(channel, businessId)
 
   if (!clinic) {
-    console.warn(`[Webhook] No clinic found for wabaId: ${msg.clinicWabaId}`)
+    console.warn(`[Webhook] No clinic found for ${channel} businessId: ${businessId}`)
     return
   }
 
-  // 2. Find or create a Patient by phone number
-  const phoneRaw = msg.from  // e.g. "5215512345678"
-  // Strip country code prefix for matching (MX: "52" or "521")
-  const phoneForLookup = phoneRaw.replace(/^521?/, '')
-
-  let patient = await db.patient.findFirst({
-    where: {
-      clinicId: clinic.id,
-      phone: { contains: phoneForLookup },
-    },
-  })
-
-  if (!patient) {
-    // Create a new patient from the phone number
-    patient = await db.patient.create({
-      data: {
-        clinicId: clinic.id,
-        firstName: 'Paciente',
-        lastName: phoneRaw.slice(-4),
-        fullName: `Paciente ${phoneRaw.slice(-4)}`,
-        phone: phoneRaw,
-        source: 'whatsapp',
-        firstContactDate: new Date(),
-        preferredChannel: 'whatsapp',
-      },
-    })
+  // 2. Find or create a Patient
+  // For WhatsApp: use phone number
+  // For Instagram/Messenger: use platform user ID (no phone number available)
+  let patient: { id: string; [key: string]: unknown } | null = null
+  const channelSource: Record<string, string> = {
+    whatsapp: 'whatsapp',
+    instagram: 'instagram',
+    messenger: 'facebook',
   }
 
-  // 3. Find or create a Conversation for this patient+clinic
+  if (channel === 'whatsapp') {
+    const phoneRaw = msg.from // e.g. "5215512345678"
+    const phoneForLookup = phoneRaw.replace(/^521?/, '')
+
+    patient = await db.patient.findFirst({
+      where: {
+        clinicId: clinic.id,
+        phone: { contains: phoneForLookup },
+      },
+    })
+
+    if (!patient) {
+      patient = await db.patient.create({
+        data: {
+          clinicId: clinic.id,
+          firstName: 'Paciente',
+          lastName: phoneRaw.slice(-4),
+          fullName: `Paciente ${phoneRaw.slice(-4)}`,
+          phone: phoneRaw,
+          source: 'whatsapp',
+          firstContactDate: new Date(),
+          preferredChannel: 'whatsapp',
+        },
+      })
+    }
+  } else {
+    // Instagram or Messenger — use platform user ID as identifier
+    const platformUserId = msg.from
+    // Search by email field (store platform ID there as a fallback) or by phone field
+    // Since Instagram/Messenger users may not have phone numbers,
+    // we store the platform user ID in the phone field with a prefix
+    const idForLookup = `${channel}:${platformUserId}`
+
+    patient = await db.patient.findFirst({
+      where: {
+        clinicId: clinic.id,
+        phone: idForLookup,
+      },
+    })
+
+    if (!patient) {
+      patient = await db.patient.create({
+        data: {
+          clinicId: clinic.id,
+          firstName: 'Paciente',
+          lastName: platformUserId.slice(-4),
+          fullName: `Paciente ${platformUserId.slice(-4)}`,
+          phone: idForLookup,
+          source: channelSource[channel] || channel,
+          firstContactDate: new Date(),
+          preferredChannel: channel === 'instagram' ? 'instagram' : 'facebook',
+        },
+      })
+    }
+  }
+
+  if (!patient) {
+    console.warn(`[Webhook] Could not find or create patient for ${channel}`)
+    return
+  }
+
+  // 3. Find or create a Conversation for this patient+clinic+channel
   let conversation = await db.conversation.findFirst({
     where: {
       clinicId: clinic.id,
       patientId: patient.id,
       status: 'active',
-      channel: 'whatsapp',
+      channel: channel,
     },
   })
 
@@ -164,7 +266,7 @@ async function handleIncomingMessage(msg: {
       data: {
         clinicId: clinic.id,
         patientId: patient.id,
-        channel: 'whatsapp',
+        channel: channel,
         status: 'active',
         currentAgent: 'reception',
         isMock: false,
@@ -195,7 +297,7 @@ async function handleIncomingMessage(msg: {
       clinicId: clinic.id,
       conversationId: conversation.id,
       direction: 'inbound',
-      channel: 'whatsapp',
+      channel: channel,
       senderType: 'patient',
       content,
       messageType,
@@ -214,66 +316,134 @@ async function handleIncomingMessage(msg: {
   try {
     const aiResponse = await generateAIResponse(content, clinic.id, conversation.id)
 
-    // 8. Send AI response back via WhatsApp
+    // 8. Send AI response back via the appropriate channel
     if (aiResponse) {
-      const metaConfig = await getClinicMetaConfig(clinic.id)
-      if (metaConfig) {
-        const metaClient = new MetaClient(metaConfig)
-        try {
-          const sendResult = await metaClient.sendTextMessage(msg.from, aiResponse)
-
-          // 9. Persist the AI response as outbound Message with wamid
-          await db.message.create({
-            data: {
-              clinicId: clinic.id,
-              conversationId: conversation.id,
-              direction: 'outbound',
-              channel: 'whatsapp',
-              senderType: 'agent',
-              content: aiResponse,
-              messageType: 'text',
-              agentName: 'Sinap Desk',
-              aiGenerated: true,
-              wamid: sendResult.messageId,
-              isMock: false,
-            },
-          })
-
-          // Update conversation lastMessageAt again
-          await db.conversation.update({
-            where: { id: conversation.id },
-            data: { lastMessageAt: new Date() },
-          })
-        } catch (sendError) {
-          console.error('[Webhook] Failed to send WhatsApp response:', sendError)
-          // Still save the AI response without wamid
-          await db.message.create({
-            data: {
-              clinicId: clinic.id,
-              conversationId: conversation.id,
-              direction: 'outbound',
-              channel: 'whatsapp',
-              senderType: 'agent',
-              content: aiResponse,
-              messageType: 'text',
-              agentName: 'Sinap Desk',
-              aiGenerated: true,
-              isMock: false,
-            },
-          })
-        }
-      }
+      await sendAIResponse(aiResponse, clinic.id, channel, msg.from, conversation.id)
     }
   } catch (orchestratorError) {
     console.error('[Webhook] Orchestrator error:', orchestratorError)
   }
 
-  // Mark incoming message as read on WhatsApp
-  const metaConfig = await getClinicMetaConfig(clinic.id)
-  if (metaConfig) {
-    const metaClient = new MetaClient(metaConfig)
-    metaClient.markAsRead(msg.messageId).catch(() => {
-      // Silently ignore read receipt failures
+  // Mark incoming message as read (WhatsApp only)
+  if (channel === 'whatsapp') {
+    const metaConfig = await getClinicMetaConfig(clinic.id)
+    if (metaConfig) {
+      const metaClient = new MetaClient(metaConfig)
+      metaClient.markAsRead(msg.messageId).catch(() => {
+        // Silently ignore read receipt failures
+      })
+    }
+  }
+}
+
+// ─── Send AI response via the correct channel ──────────────
+async function sendAIResponse(
+  aiResponse: string,
+  clinicId: string,
+  channel: MetaChannel,
+  recipientId: string,
+  conversationId: string
+) {
+  if (!db) return
+
+  try {
+    // Try MetaConnection first (new source of truth)
+    const channelConfig = await getClinicMetaConnection(clinicId, channel)
+
+    if (channelConfig) {
+      const metaClient = MetaClient.createForChannel(channel, channelConfig)
+      const sendResult = await metaClient.sendTextMessage(recipientId, aiResponse)
+
+      // Persist the AI response
+      await db.message.create({
+        data: {
+          clinicId,
+          conversationId,
+          direction: 'outbound',
+          channel,
+          senderType: 'agent',
+          content: aiResponse,
+          messageType: 'text',
+          agentName: 'Sinap Desk',
+          aiGenerated: true,
+          wamid: sendResult.messageId,
+          isMock: false,
+        },
+      })
+
+      // Update conversation lastMessageAt
+      await db.conversation.update({
+        where: { id: conversationId },
+        data: { lastMessageAt: new Date() },
+      })
+      return
+    }
+
+    // Fallback: legacy Clinic table for WhatsApp only
+    if (channel === 'whatsapp') {
+      const metaConfig = await getClinicMetaConfig(clinicId)
+      if (metaConfig) {
+        const metaClient = new MetaClient(metaConfig)
+        const sendResult = await metaClient.sendTextMessage(recipientId, aiResponse)
+
+        await db.message.create({
+          data: {
+            clinicId,
+            conversationId,
+            direction: 'outbound',
+            channel: 'whatsapp',
+            senderType: 'agent',
+            content: aiResponse,
+            messageType: 'text',
+            agentName: 'Sinap Desk',
+            aiGenerated: true,
+            wamid: sendResult.messageId,
+            isMock: false,
+          },
+        })
+
+        await db.conversation.update({
+          where: { id: conversationId },
+          data: { lastMessageAt: new Date() },
+        })
+        return
+      }
+    }
+
+    // No connection found — save AI response without sending
+    console.warn(`[Webhook] No ${channel} connection for clinic ${clinicId} — saving response locally`)
+    await db.message.create({
+      data: {
+        clinicId,
+        conversationId,
+        direction: 'outbound',
+        channel,
+        senderType: 'agent',
+        content: aiResponse,
+        messageType: 'text',
+        agentName: 'Sinap Desk',
+        aiGenerated: true,
+        isMock: false,
+      },
+    })
+  } catch (sendError) {
+    console.error(`[Webhook] Failed to send ${channel} response:`, sendError)
+    // Still save the AI response without wamid
+    await db.message.create({
+      data: {
+        clinicId,
+        conversationId,
+        direction: 'outbound',
+        channel,
+        senderType: 'agent',
+        content: aiResponse,
+        messageType: 'text',
+        agentName: 'Sinap Desk',
+        aiGenerated: true,
+        isMock: false,
+      },
+    }).catch(() => {
+      // Ignore DB errors here
     })
   }
 }

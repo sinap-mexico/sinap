@@ -178,7 +178,11 @@ export function DeskInbox() {
   const [messageInput, setMessageInput] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [isTyping, setIsTyping] = useState(false)
-  const [whatsappConnected, setWhatsappConnected] = useState(false)
+  const [channelConnections, setChannelConnections] = useState<Record<string, boolean>>({
+    whatsapp: false,
+    instagram: false,
+    messenger: false,
+  })
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Resolve clinicId on mount if needed
@@ -200,21 +204,30 @@ export function DeskInbox() {
     resolveClinicId()
   }, [clinicId, clinicSlug, setClinicId])
 
-  // Check WhatsApp connection status
+  // Check channel connection statuses
   useEffect(() => {
-    async function checkWhatsApp() {
+    async function checkConnections() {
       if (!clinicId) return
       try {
         const res = await fetch(`/api/meta/connect?clinicId=${clinicId}`)
         if (res.ok) {
           const data = await res.json()
-          setWhatsappConnected(data.connected === true)
+          const connections = data.connections || []
+          const connMap: Record<string, boolean> = {
+            whatsapp: false,
+            instagram: false,
+            messenger: false,
+          }
+          connections.forEach((c: { channel: string; connected: boolean }) => {
+            connMap[c.channel] = c.connected
+          })
+          setChannelConnections(connMap)
         }
       } catch {
-        setWhatsappConnected(false)
+        setChannelConnections({ whatsapp: false, instagram: false, messenger: false })
       }
     }
-    checkWhatsApp()
+    checkConnections()
   }, [clinicId])
 
   // Fetch conversations from API
@@ -568,17 +581,34 @@ export function DeskInbox() {
                     </div>
                   </div>
                 </div>
-                {whatsappConnected ? (
-                  <Badge className="bg-[#E1F5EE] text-[#1D9E75] border-0 text-[10px]">
-                    <Wifi className="h-3 w-3 mr-1" />
-                    WhatsApp conectado
-                  </Badge>
-                ) : (
-                  <Badge className="bg-amber-100 text-amber-700 border-0 text-[10px]">
-                    <WifiOff className="h-3 w-3 mr-1" />
-                    Simulacion
-                  </Badge>
-                )}
+                <div className="flex items-center gap-1.5">
+                  {(['whatsapp', 'instagram', 'messenger'] as const).map((ch) => {
+                    const isConnected = channelConnections[ch]
+                    const iconMap = { whatsapp: Phone, instagram: Instagram, messenger: Facebook }
+                    const labelMap = { whatsapp: 'WhatsApp', instagram: 'Instagram', messenger: 'Messenger' }
+                    const ChIcon = iconMap[ch]
+                    return (
+                      <div
+                        key={ch}
+                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] ${
+                          isConnected
+                            ? 'bg-[#E1F5EE] text-[#1D9E75]'
+                            : 'bg-[#F1EFE8] text-[#888780]'
+                        }`}
+                      >
+                        <div className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-300'}`} />
+                        <ChIcon className="h-2.5 w-2.5" />
+                        <span className="hidden sm:inline">{labelMap[ch]}</span>
+                      </div>
+                    )
+                  })}
+                  {!channelConnections.whatsapp && !channelConnections.instagram && !channelConnections.messenger && (
+                    <Badge className="bg-amber-100 text-amber-700 border-0 text-[10px] ml-1">
+                      <WifiOff className="h-3 w-3 mr-1" />
+                      Simulacion
+                    </Badge>
+                  )}
+                </div>
               </div>
 
               {/* Messages */}
@@ -653,6 +683,14 @@ export function DeskInbox() {
 
               {/* Input */}
               <div className="px-4 py-3 border-t border-[#E1F5EE] shrink-0">
+                {selectedConversation && !channelConnections[selectedConversation.channel === 'facebook' ? 'messenger' : selectedConversation.channel] && (
+                  <div className="flex items-center gap-1.5 mb-2 px-1">
+                    <WifiOff className="h-3 w-3 text-amber-500" />
+                    <span className="text-[10px] text-amber-600">
+                      Este canal no esta conectado — mensaje solo se guarda localmente
+                    </span>
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
                   <Input
                     placeholder="Escribe un mensaje..."

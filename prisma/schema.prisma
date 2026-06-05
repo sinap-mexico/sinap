@@ -121,19 +121,20 @@ model Clinic {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  doctors        Doctor[]
-  patients       Patient[]
-  appointments   Appointment[]
-  invoices       Invoice[]
-  conversations  Conversation[]
-  messages       Message[]
-  featureFlags   FeatureFlag[]
-  events         EventBus[]
-  staff          Staff[]
-  services       Service[]
-  soapNotes      SoapNote[]
-  users          User[]
-  followUps      FollowUp[]
+  doctors          Doctor[]
+  patients         Patient[]
+  appointments     Appointment[]
+  invoices         Invoice[]
+  conversations    Conversation[]
+  messages         Message[]
+  featureFlags     FeatureFlag[]
+  events           EventBus[]
+  staff            Staff[]
+  services         Service[]
+  soapNotes        SoapNote[]
+  users            User[]
+  followUps        FollowUp[]
+  metaConnections  MetaConnection[]
 }
 
 model Doctor {
@@ -549,4 +550,38 @@ model FollowUp {
   @@index([clinicId, status])
   @@index([clinicId, dueDate])
   @@index([patientId])
+}
+
+// ─── META CONNECTIONS ────────────────────────────────────
+
+model MetaConnection {
+  id              String   @id @default(cuid())
+  clinicId        String
+  clinic          Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  // Channel type
+  channel         String   // "whatsapp" | "instagram" | "messenger"
+
+  // Meta credentials
+  businessId      String?  // WABA ID (whatsapp) or IG Business ID (instagram) or Page ID (messenger)
+  phoneNumberId   String?  // Only for WhatsApp
+  pageId          String?  // Facebook Page ID (for instagram DMs and messenger)
+  accessToken     String   // Access token for this channel
+  tokenExpiresAt  DateTime? // Null for permanent tokens
+
+  // Status
+  status          String   @default("active") // "active" | "disconnected" | "expired" | "pending"
+  businessName    String?  // Cached business/page name from Meta
+
+  // Embedded Signup (future)
+  oauthCode       String?  // Authorization code from Embedded Signup
+  scopes          String?  // Granted scopes as comma-separated string
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([clinicId, channel])  // One connection per channel per clinic
+  @@index([clinicId])
+  @@index([status])
+  @@map("meta_connections")
 }

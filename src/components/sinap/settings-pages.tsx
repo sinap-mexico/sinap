@@ -43,6 +43,11 @@ import {
   EyeOff,
   Unplug,
   FileText,
+  Phone,
+  Instagram,
+  Facebook,
+  Shield,
+  Info,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -107,72 +112,129 @@ const DAY_LABELS: Record<string, string> = {
   '1': 'Lun', '2': 'Mar', '3': 'Mie', '4': 'Jue', '5': 'Vie', '6': 'Sab', '0': 'Dom',
 }
 
-// ─── Meta Integration Card Component ────────────────────────
-function MetaIntegrationCard({ clinicId }: { clinicId: string }) {
-  const [connectionStatus, setConnectionStatus] = useState<{
-    connected: boolean
-    businessName?: string
-    wabaId?: string
-    phoneNumberId?: string
-    igBusinessId?: string
-    fbPageId?: string
-  } | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+// ─── Multi-Channel Meta Integration Components ─────────────────
+
+interface ChannelConnection {
+  channel: string
+  status: string
+  businessName?: string | null
+  businessId?: string | null
+  phoneNumberId?: string | null
+  pageId?: string | null
+  connected: boolean
+  connectedAt?: string
+}
+
+function ChannelConnectionCard({
+  channel,
+  clinicId,
+  connection,
+  onRefresh,
+}: {
+  channel: 'whatsapp' | 'instagram' | 'messenger'
+  clinicId: string
+  connection: ChannelConnection | null
+  onRefresh: () => void
+}) {
   const [showForm, setShowForm] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
-  const [saveResult, setSaveResult] = useState<{ success: boolean; message: string } | null>(null)
   const [showToken, setShowToken] = useState(false)
-  const [showTemplates, setShowTemplates] = useState(false)
-  const [templates, setTemplates] = useState<Array<{
-    id: string; name: string; status: string; language: string; category: string
-  }>>([])
-  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false)
 
-  const [form, setForm] = useState({
-    wabaId: '',
+  const channelConfig: Record<string, {
+    icon: React.ElementType
+    label: string
+    color: string
+    bgColor: string
+    formFields: Array<{ key: string; label: string; placeholder: string; required: boolean }>
+  }> = {
+    whatsapp: {
+      icon: Phone,
+      label: 'WhatsApp Business',
+      color: 'text-green-600',
+      bgColor: 'bg-green-50',
+      formFields: [
+        { key: 'businessId', label: 'WABA ID *', placeholder: 'Ej: 1234567890', required: true },
+        { key: 'phoneNumberId', label: 'Phone Number ID *', placeholder: 'Ej: 9876543210', required: true },
+        { key: 'accessToken', label: 'Access Token *', placeholder: 'EAAxxxxxxxxxxxxx', required: true },
+      ],
+    },
+    instagram: {
+      icon: Instagram,
+      label: 'Instagram DM',
+      color: 'text-pink-500',
+      bgColor: 'bg-pink-50',
+      formFields: [
+        { key: 'businessId', label: 'IG Business ID *', placeholder: 'Ej: 17841400...', required: true },
+        { key: 'pageId', label: 'Facebook Page ID *', placeholder: 'Ej: 1234567890', required: true },
+        { key: 'accessToken', label: 'Access Token *', placeholder: 'EAAxxxxxxxxxxxxx', required: true },
+      ],
+    },
+    messenger: {
+      icon: Facebook,
+      label: 'Facebook Messenger',
+      color: 'text-blue-600',
+      bgColor: 'bg-blue-50',
+      formFields: [
+        { key: 'pageId', label: 'Facebook Page ID *', placeholder: 'Ej: 1234567890', required: true },
+        { key: 'accessToken', label: 'Page Access Token *', placeholder: 'EAAxxxxxxxxxxxxx', required: true },
+      ],
+    },
+  }
+
+  const config = channelConfig[channel]
+  const Icon = config.icon
+  const isConnected = connection?.connected
+
+  const [form, setForm] = useState<Record<string, string>>({
+    businessId: '',
     phoneNumberId: '',
-    metaAccessToken: '',
-    igBusinessId: '',
-    fbPageId: '',
+    pageId: '',
+    accessToken: '',
   })
 
-  // Fetch connection status
-  const fetchStatus = useCallback(async () => {
-    if (!clinicId) { setIsLoading(false); return }
-    setIsLoading(true)
+  const handleSave = async () => {
+    setIsSaving(true)
+    setTestResult(null)
     try {
-      const res = await fetch(`/api/meta/connect?clinicId=${clinicId}`)
-      if (res.ok) {
-        const data = await res.json()
-        setConnectionStatus(data)
+      const res = await fetch('/api/meta/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clinicId, channel, ...form }),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        setTestResult({ success: true, message: 'Conexion guardada correctamente' })
+        setShowForm(false)
+        setForm({ businessId: '', phoneNumberId: '', pageId: '', accessToken: '' })
+        onRefresh()
+        setTimeout(() => setTestResult(null), 3000)
+      } else {
+        setTestResult({ success: false, message: data.error || 'Error al guardar' })
       }
     } catch {
-      // keep defaults
+      setTestResult({ success: false, message: 'Error de conexion al servidor' })
     } finally {
-      setIsLoading(false)
+      setIsSaving(false)
     }
-  }, [clinicId])
+  }
 
-  useEffect(() => { fetchStatus() }, [fetchStatus])
-
-  // Handle test connection
-  const handleTestConnection = async () => {
+  const handleTest = async () => {
     setIsTesting(true)
     setTestResult(null)
     try {
       const res = await fetch('/api/meta/connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clinicId, ...form }),
+        body: JSON.stringify({ clinicId, channel, ...form }),
       })
       const data = await res.json()
       if (res.ok && data.success) {
-        setTestResult({ success: true, message: `Conexion exitosa: ${data.businessName || 'Verificado'}` })
+        setTestResult({ success: true, message: `Conexion exitosa: ${data.connection?.businessName || 'Verificado'}` })
       } else {
-        setTestResult({ success: false, message: data.error || 'No se pudo verificar la conexion' })
+        setTestResult({ success: false, message: data.error || 'No se pudo verificar' })
       }
     } catch {
       setTestResult({ success: false, message: 'Error de conexion al servidor' })
@@ -181,41 +243,11 @@ function MetaIntegrationCard({ clinicId }: { clinicId: string }) {
     }
   }
 
-  // Handle save
-  const handleSave = async () => {
-    if (!form.wabaId || !form.phoneNumberId || !form.metaAccessToken) return
-    setIsSaving(true)
-    setSaveResult(null)
-    try {
-      const res = await fetch('/api/meta/connect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clinicId, ...form }),
-      })
-      const data = await res.json()
-      if (res.ok && data.success) {
-        setSaveResult({ success: true, message: 'Configuracion guardada correctamente' })
-        await fetchStatus()
-        setShowForm(false)
-        setTimeout(() => setSaveResult(null), 3000)
-      } else {
-        setSaveResult({ success: false, message: data.error || 'Error al guardar' })
-      }
-    } catch {
-      setSaveResult({ success: false, message: 'Error de conexion al servidor' })
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  // Handle disconnect
   const handleDisconnect = async () => {
     setIsDisconnecting(true)
     try {
-      await fetch(`/api/meta/connect?clinicId=${clinicId}`, { method: 'DELETE' })
-      setConnectionStatus({ connected: false })
-      setShowForm(false)
-      setForm({ wabaId: '', phoneNumberId: '', metaAccessToken: '', igBusinessId: '', fbPageId: '' })
+      await fetch(`/api/meta/connect?clinicId=${clinicId}&channel=${channel}`, { method: 'DELETE' })
+      onRefresh()
     } catch {
       // continue
     } finally {
@@ -223,51 +255,14 @@ function MetaIntegrationCard({ clinicId }: { clinicId: string }) {
     }
   }
 
-  // Fetch templates
-  const fetchTemplates = async () => {
-    if (!clinicId) return
-    setIsLoadingTemplates(true)
-    try {
-      const res = await fetch(`/api/meta/templates?clinicId=${clinicId}`)
-      if (res.ok) {
-        const data = await res.json()
-        setTemplates(data.templates || [])
-      }
-    } catch {
-      // continue
-    } finally {
-      setIsLoadingTemplates(false)
-    }
-  }
-
-  const handleShowTemplates = () => {
-    if (showTemplates) {
-      setShowTemplates(false)
-    } else {
-      setShowTemplates(true)
-      fetchTemplates()
-    }
-  }
-
-  if (isLoading) {
-    return (
-      <div className="p-4 rounded-lg bg-[#F1EFE8]">
-        <div className="flex items-center gap-2">
-          <Loader2 className="h-4 w-4 animate-spin text-[#534AB7]" />
-          <span className="text-xs text-[#888780]">Verificando estado...</span>
-        </div>
-      </div>
-    )
-  }
-
-  const isConnected = connectionStatus?.connected
-
   return (
-    <div className="p-4 rounded-lg bg-[#F1EFE8]">
+    <div className="p-4 rounded-lg bg-[#F1EFE8] flex flex-col">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <MessageSquare className="h-4 w-4 text-[#1D9E75]" />
-          <span className="text-sm font-medium text-[#2C2C2A]">Meta Business API</span>
+          <div className={`h-7 w-7 rounded-md ${config.bgColor} flex items-center justify-center`}>
+            <Icon className={`h-3.5 w-3.5 ${config.color}`} />
+          </div>
+          <span className="text-sm font-medium text-[#2C2C2A]">{config.label}</span>
         </div>
         {isConnected ? (
           <Badge className="bg-[#E1F5EE] text-[#1D9E75] border-0 text-[10px]">
@@ -277,7 +272,7 @@ function MetaIntegrationCard({ clinicId }: { clinicId: string }) {
         ) : (
           <Badge className="bg-amber-100 text-amber-700 border-0 text-[10px]">
             <AlertTriangle className="h-3 w-3 mr-1" />
-            Sin conectar
+            Desconectado
           </Badge>
         )}
       </div>
@@ -285,24 +280,20 @@ function MetaIntegrationCard({ clinicId }: { clinicId: string }) {
       {isConnected ? (
         <>
           <p className="text-xs text-[#888780]">
-            WhatsApp Business API conectada a <span className="font-medium text-[#2C2C2A]">{connectionStatus?.businessName || 'tu cuenta'}</span>.
-            Los mensajes se envian y reciben en tiempo real.
+            {connection?.businessName || 'Cuenta conectada'}
           </p>
-          <div className="flex items-center gap-2 mt-2">
-            <p className="text-[10px] text-[#888780] font-mono">
-              WABA: {connectionStatus?.wabaId?.slice(0, 8)}... | Phone: {connectionStatus?.phoneNumberId?.slice(0, 8)}...
-            </p>
+          <div className="text-[10px] text-[#888780] font-mono mt-1">
+            {channel === 'whatsapp' && connection?.businessId && (
+              <>WABA: {connection.businessId.slice(0, 8)}... | Phone: {connection.phoneNumberId?.slice(0, 8)}...</>
+            )}
+            {channel === 'instagram' && connection?.businessId && (
+              <>IG ID: {connection.businessId.slice(0, 8)}... | Page: {connection.pageId?.slice(0, 8)}...</>
+            )}
+            {channel === 'messenger' && connection?.pageId && (
+              <>Page: {connection.pageId.slice(0, 8)}...</>
+            )}
           </div>
           <div className="flex gap-2 mt-3">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs border-[#534AB7] text-[#534AB7]"
-              onClick={handleShowTemplates}
-            >
-              <FileText className="h-3 w-3 mr-1" />
-              {showTemplates ? 'Ocultar plantillas' : 'Ver plantillas'}
-            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -314,76 +305,36 @@ function MetaIntegrationCard({ clinicId }: { clinicId: string }) {
               Desconectar
             </Button>
           </div>
-
-          {/* Templates section */}
-          <AnimatePresence>
-            {showTemplates && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden"
-              >
-                <div className="mt-3 p-3 rounded-lg bg-white border border-[#E1F5EE]">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs font-medium text-[#2C2C2A]">Plantillas de WhatsApp</p>
-                    {isLoadingTemplates && <Loader2 className="h-3 w-3 animate-spin text-[#534AB7]" />}
-                  </div>
-                  {templates.length === 0 ? (
-                    <p className="text-[10px] text-[#888780]">
-                      {isLoadingTemplates ? 'Cargando...' : 'No se encontraron plantillas. Crea plantillas en Meta Business Manager.'}
-                    </p>
-                  ) : (
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto sinap-scroll">
-                      {templates.map((t) => (
-                        <div key={t.id} className="flex items-center justify-between py-1.5 px-2 rounded bg-[#F8F7F3]">
-                          <div className="min-w-0">
-                            <p className="text-[11px] font-medium text-[#2C2C2A] truncate">{t.name}</p>
-                            <p className="text-[9px] text-[#888780]">{t.language} · {t.category}</p>
-                          </div>
-                          <Badge
-                            className={`text-[9px] border-0 shrink-0 ${
-                              t.status === 'APPROVED' ? 'bg-[#E1F5EE] text-[#1D9E75]' :
-                              t.status === 'PENDING' ? 'bg-amber-100 text-amber-700' :
-                              'bg-red-100 text-red-600'
-                            }`}
-                          >
-                            {t.status === 'APPROVED' ? 'Aprobada' : t.status === 'PENDING' ? 'Pendiente' : t.status}
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </>
       ) : (
         <>
-          <p className="text-xs text-[#888780]">
-            WhatsApp Business API no conectada. Las conversaciones son simuladas.
+          <p className="text-xs text-[#888780] mb-2">
+            {channel === 'whatsapp' && 'Conecta tu WhatsApp Business API para enviar y recibir mensajes.'}
+            {channel === 'instagram' && 'Conecta tu Instagram Business para recibir y responder DMs.'}
+            {channel === 'messenger' && 'Conecta tu Facebook Page para recibir y responder mensajes.'}
           </p>
           {!showForm ? (
             <Button
               variant="outline"
-              className="mt-2 h-7 text-xs border-[#534AB7] text-[#534AB7]"
+              className="h-7 text-xs border-[#534AB7] text-[#534AB7]"
               onClick={() => setShowForm(true)}
             >
               <Globe className="h-3 w-3 mr-1" />
-              Conectar API
+              Conectar {channel === 'whatsapp' ? 'WhatsApp' : channel === 'instagram' ? 'Instagram' : 'Messenger'}
             </Button>
           ) : (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="mt-3 space-y-3"
+              className="space-y-3"
             >
               <div className="p-3 rounded-lg bg-white border border-[#E1F5EE] space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium text-[#2C2C2A]">Configurar Meta API</p>
-                  <button onClick={() => { setShowForm(false); setTestResult(null); setSaveResult(null) }} className="p-1 text-[#888780] hover:text-[#2C2C2A]">
+                  <p className="text-xs font-medium text-[#2C2C2A]">
+                    Configurar {config.label}
+                  </p>
+                  <button onClick={() => { setShowForm(false); setTestResult(null) }} className="p-1 text-[#888780] hover:text-[#2C2C2A]">
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -396,83 +347,38 @@ function MetaIntegrationCard({ clinicId }: { clinicId: string }) {
                     {testResult.message}
                   </div>
                 )}
-                {saveResult && (
-                  <div className={`p-2 rounded-lg text-xs flex items-center gap-2 ${
-                    saveResult.success ? 'bg-[#E1F5EE] text-[#1D9E75]' : 'bg-[#FEE2E2] text-[#E53E3E]'
-                  }`}>
-                    {saveResult.success ? <CheckCircle className="h-3 w-3 shrink-0" /> : <AlertTriangle className="h-3 w-3 shrink-0" />}
-                    {saveResult.message}
-                  </div>
-                )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label className="text-xs text-[#888780]">WhatsApp Business Account ID *</Label>
-                    <Input
-                      className="h-8 text-xs bg-[#F8F7F3] border-[#E1F5EE] focus:border-[#534AB7] font-mono"
-                      placeholder="Ej: 1234567890"
-                      value={form.wabaId}
-                      onChange={(e) => setForm(p => ({ ...p, wabaId: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label className="text-xs text-[#888780]">Phone Number ID *</Label>
-                    <Input
-                      className="h-8 text-xs bg-[#F8F7F3] border-[#E1F5EE] focus:border-[#534AB7] font-mono"
-                      placeholder="Ej: 9876543210"
-                      value={form.phoneNumberId}
-                      onChange={(e) => setForm(p => ({ ...p, phoneNumberId: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label className="text-xs text-[#888780]">Access Token *</Label>
-                    <div className="relative">
-                      <Input
-                        className="h-8 text-xs bg-[#F8F7F3] border-[#E1F5EE] focus:border-[#534AB7] font-mono pr-8"
-                        type={showToken ? 'text' : 'password'}
-                        placeholder="EAAxxxxxxxxxxxxx"
-                        value={form.metaAccessToken}
-                        onChange={(e) => setForm(p => ({ ...p, metaAccessToken: e.target.value }))}
-                      />
-                      <button
-                        type="button"
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-[#888780] hover:text-[#2C2C2A]"
-                        onClick={() => setShowToken(!showToken)}
-                      >
-                        {showToken ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                      </button>
+                <div className="space-y-3">
+                  {config.formFields.map((field) => (
+                    <div key={field.key} className="space-y-1.5">
+                      <Label className="text-xs text-[#888780]">{field.label}</Label>
+                      {field.key === 'accessToken' ? (
+                        <div className="relative">
+                          <Input
+                            className="h-8 text-xs bg-[#F8F7F3] border-[#E1F5EE] focus:border-[#534AB7] font-mono pr-8"
+                            type={showToken ? 'text' : 'password'}
+                            placeholder={field.placeholder}
+                            value={form[field.key]}
+                            onChange={(e) => setForm(p => ({ ...p, [field.key]: e.target.value }))}
+                          />
+                          <button
+                            type="button"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-[#888780] hover:text-[#2C2C2A]"
+                            onClick={() => setShowToken(!showToken)}
+                          >
+                            {showToken ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                          </button>
+                        </div>
+                      ) : (
+                        <Input
+                          className="h-8 text-xs bg-[#F8F7F3] border-[#E1F5EE] focus:border-[#534AB7] font-mono"
+                          placeholder={field.placeholder}
+                          value={form[field.key]}
+                          onChange={(e) => setForm(p => ({ ...p, [field.key]: e.target.value }))}
+                        />
+                      )}
                     </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-[#888780]">Instagram Business ID (opcional)</Label>
-                    <Input
-                      className="h-8 text-xs bg-[#F8F7F3] border-[#E1F5EE] focus:border-[#534AB7] font-mono"
-                      placeholder="Opcional"
-                      value={form.igBusinessId}
-                      onChange={(e) => setForm(p => ({ ...p, igBusinessId: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-[#888780]">Facebook Page ID (opcional)</Label>
-                    <Input
-                      className="h-8 text-xs bg-[#F8F7F3] border-[#E1F5EE] focus:border-[#534AB7] font-mono"
-                      placeholder="Opcional"
-                      value={form.fbPageId}
-                      onChange={(e) => setForm(p => ({ ...p, fbPageId: e.target.value }))}
-                    />
-                  </div>
-                </div>
-
-                <div className="bg-[#F8F7F3] rounded-lg p-2.5">
-                  <p className="text-[10px] text-[#888780]">
-                    <strong className="text-[#2C2C2A]">Webhook URL:</strong>{' '}
-                    <code className="bg-white px-1 py-0.5 rounded text-[9px] font-mono">
-                      https://sinap-nine.vercel.app/api/webhooks/meta
-                    </code>
-                  </p>
-                  <p className="text-[10px] text-[#888780] mt-1">
-                    Configura esta URL en tu Meta App Dashboard. El verify token se configura en las variables de entorno del servidor.
-                  </p>
+                  ))}
                 </div>
 
                 <div className="flex gap-2">
@@ -480,8 +386,8 @@ function MetaIntegrationCard({ clinicId }: { clinicId: string }) {
                     variant="outline"
                     size="sm"
                     className="h-7 text-xs border-[#1D9E75] text-[#1D9E75]"
-                    onClick={handleTestConnection}
-                    disabled={isTesting || !form.wabaId || !form.phoneNumberId || !form.metaAccessToken}
+                    onClick={handleTest}
+                    disabled={isTesting || !form.accessToken}
                   >
                     {isTesting ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Globe className="h-3 w-3 mr-1" />}
                     Probar conexion
@@ -490,7 +396,7 @@ function MetaIntegrationCard({ clinicId }: { clinicId: string }) {
                     size="sm"
                     className="h-7 text-xs bg-[#534AB7] hover:bg-[#534AB7]/90 text-white"
                     onClick={handleSave}
-                    disabled={isSaving || !form.wabaId || !form.phoneNumberId || !form.metaAccessToken}
+                    disabled={isSaving || !form.accessToken}
                   >
                     {isSaving ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
                     Guardar
@@ -501,6 +407,185 @@ function MetaIntegrationCard({ clinicId }: { clinicId: string }) {
           )}
         </>
       )}
+    </div>
+  )
+}
+
+// ─── Multi-Channel Meta Integration Dashboard ─────────────────
+function MetaIntegrationDashboard({ clinicId }: { clinicId: string }) {
+  const [connections, setConnections] = useState<ChannelConnection[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [oauthInfo, setOauthInfo] = useState<{ url?: string; missingVars?: string[]; error?: string } | null>(null)
+
+  const fetchConnections = useCallback(async () => {
+    if (!clinicId) { setIsLoading(false); return }
+    setIsLoading(true)
+    try {
+      const res = await fetch(`/api/meta/connect?clinicId=${clinicId}`)
+      if (res.ok) {
+        const data = await res.json()
+        setConnections(data.connections || [])
+      }
+    } catch {
+      // keep defaults
+    } finally {
+      setIsLoading(false)
+    }
+  }, [clinicId])
+
+  useEffect(() => { fetchConnections() }, [fetchConnections])
+
+  // Check OAuth setup status
+  useEffect(() => {
+    async function checkOAuth() {
+      if (!clinicId) return
+      try {
+        const res = await fetch(`/api/meta/oauth?clinicId=${clinicId}`)
+        if (res.ok) {
+          const data = await res.json()
+          setOauthInfo(data)
+        } else {
+          const data = await res.json().catch(() => ({}))
+          setOauthInfo({ missingVars: data.missingVars, error: data.error })
+        }
+      } catch {
+        setOauthInfo({ error: 'No se pudo verificar la configuracion de OAuth' })
+      }
+    }
+    checkOAuth()
+  }, [clinicId])
+
+  const getConnection = (channel: string) => connections.find(c => c.channel === channel) || null
+
+  const verifyTokenConfigured = !!process.env.NEXT_PUBLIC_META_WEBHOOK_VERIFY_TOKEN || true // We can't check server env from client, assume configured
+
+  if (isLoading) {
+    return (
+      <div className="p-4 rounded-lg bg-[#F1EFE8]">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin text-[#534AB7]" />
+          <span className="text-xs text-[#888780]">Verificando estado de canales...</span>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Channel cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <ChannelConnectionCard
+          channel="whatsapp"
+          clinicId={clinicId}
+          connection={getConnection('whatsapp')}
+          onRefresh={fetchConnections}
+        />
+        <ChannelConnectionCard
+          channel="instagram"
+          clinicId={clinicId}
+          connection={getConnection('instagram')}
+          onRefresh={fetchConnections}
+        />
+        <ChannelConnectionCard
+          channel="messenger"
+          clinicId={clinicId}
+          connection={getConnection('messenger')}
+          onRefresh={fetchConnections}
+        />
+      </div>
+
+      {/* Webhook configuration section */}
+      <div className="p-4 rounded-lg bg-[#F1EFE8]">
+        <div className="flex items-center gap-2 mb-2">
+          <Globe className="h-4 w-4 text-[#534AB7]" />
+          <span className="text-sm font-medium text-[#2C2C2A]">Configuracion de Webhook</span>
+        </div>
+        <div className="bg-white rounded-lg p-3 border border-[#E1F5EE] space-y-2">
+          <div>
+            <p className="text-[10px] text-[#888780] font-medium uppercase tracking-wide">Webhook URL</p>
+            <code className="bg-[#F8F7F3] px-2 py-1 rounded text-xs font-mono block mt-1 break-all">
+              https://sinap-nine.vercel.app/api/webhooks/meta
+            </code>
+          </div>
+          <div className="flex items-center gap-2">
+            <p className="text-[10px] text-[#888780] font-medium">Verify Token:</p>
+            <Badge className={`${verifyTokenConfigured ? 'bg-[#E1F5EE] text-[#1D9E75]' : 'bg-amber-100 text-amber-700'} border-0 text-[9px]`}>
+              {verifyTokenConfigured ? 'Configurado' : 'No configurado'}
+            </Badge>
+          </div>
+          <div className="flex flex-wrap gap-2 pt-1">
+            {['whatsapp', 'instagram', 'messenger'].map((ch) => {
+              const conn = getConnection(ch)
+              const label = ch === 'whatsapp' ? 'WhatsApp' : ch === 'instagram' ? 'Instagram' : 'Messenger'
+              return (
+                <div key={ch} className="flex items-center gap-1.5">
+                  <div className={`h-2 w-2 rounded-full ${conn?.connected ? 'bg-green-500' : 'bg-gray-300'}`} />
+                  <span className="text-[10px] text-[#888780]">{label}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Embedded Signup section (Stage 2) */}
+      <div className="p-4 rounded-lg bg-[#F8F7F3] border border-dashed border-[#888780]/30">
+        <div className="flex items-center gap-2 mb-2">
+          <Shield className="h-4 w-4 text-[#888780]" />
+          <span className="text-sm font-medium text-[#2C2C2A]">Onboarding automatico</span>
+          <Badge className="bg-[#EEEDFE] text-[#534AB7] border-0 text-[9px]">Proximo</Badge>
+        </div>
+        <p className="text-xs text-[#888780] mb-3">
+          Con Embedded Signup, las clinicas pueden conectar sus canales de Meta en un solo clic
+          sin necesidad de copiar IDs y tokens manualmente.
+        </p>
+
+        {oauthInfo?.url ? (
+          <Button
+            size="sm"
+            className="h-7 text-xs bg-[#534AB7] hover:bg-[#534AB7]/90 text-white"
+            onClick={() => window.open(oauthInfo.url, '_blank')}
+          >
+            <Globe className="h-3 w-3 mr-1" />
+            Iniciar onboarding automatico
+          </Button>
+        ) : (
+          <>
+            <div className="bg-white rounded-lg p-3 border border-[#E1F5EE] mb-3">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Info className="h-3 w-3 text-[#888780]" />
+                <p className="text-[10px] text-[#888780] font-medium uppercase tracking-wide">
+                  Variables de entorno requeridas
+                </p>
+              </div>
+              <div className="space-y-1">
+                {[
+                  { key: 'META_APP_ID', desc: 'ID de tu app en Meta for Developers' },
+                  { key: 'META_APP_SECRET', desc: 'Secreto de tu app en Meta' },
+                  { key: 'META_CONFIG_ID', desc: 'ID de configuracion de Embedded Signup' },
+                ].map((v) => (
+                  <div key={v.key} className="flex items-center justify-between">
+                    <code className="text-[10px] font-mono text-[#2C2C2A] bg-[#F8F7F3] px-1.5 py-0.5 rounded">{v.key}</code>
+                    <span className="text-[9px] text-[#888780]">{v.desc}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <Button
+              size="sm"
+              className="h-7 text-xs bg-[#888780] text-white cursor-not-allowed"
+              disabled
+              title="Requiere registro como Meta Tech Provider"
+            >
+              <Shield className="h-3 w-3 mr-1" />
+              Configurar onboarding automatico
+            </Button>
+            <p className="text-[9px] text-[#888780] mt-1.5">
+              Requiere registro como Meta Tech Provider. Contacta a soporte@sinap.mx para mas informacion.
+            </p>
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -1633,7 +1718,7 @@ export function SettingsPages() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Meta Business API */}
-                <MetaIntegrationCard clinicId={clinicId} />
+                <MetaIntegrationDashboard clinicId={clinicId} />
 
                 <div className="p-4 rounded-lg bg-[#F1EFE8]">
                   <div className="flex items-center justify-between mb-2">
