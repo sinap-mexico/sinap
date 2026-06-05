@@ -36,11 +36,14 @@ import {
   Stamp,
   CircleDot,
   ArrowRight,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ScrollArea } from '@/components/ui/scroll-area'
 
-type AppointmentStatus = 'confirmed' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'no-show'
+type AppointmentStatus = 'confirmed' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'no_show'
 
 interface AgendaAppointment {
   id: string
@@ -89,7 +92,7 @@ const statusConfig: Record<AppointmentStatus, { label: string; color: string; bg
   in_progress: { label: 'En consulta', color: '#1D9E75', bg: '#E1F5EE', icon: Clock },
   completed: { label: 'Completada', color: '#888780', bg: '#F1EFE8', icon: CheckCircle },
   cancelled: { label: 'Cancelada', color: '#888780', bg: '#F1EFE8', icon: XCircle },
-  'no-show': { label: 'No asistió', color: '#E53E3E', bg: '#FEE2E2', icon: AlertCircle },
+  'no_show': { label: 'No asistió', color: '#E53E3E', bg: '#FEE2E2', icon: AlertCircle },
 }
 
 function StatusBadge({ status }: { status: AppointmentStatus }) {
@@ -155,6 +158,16 @@ export function AgendaCalendar() {
   const [isCharging, setIsCharging] = useState(false)
   const [chargeMethod, setChargeMethod] = useState('01') // '01'=efectivo, '03'=transferencia, '04'=tarjeta
   const [showPaymentSuccess, setShowPaymentSuccess] = useState(false)
+
+  // Partial payment states
+  const [paymentAmount, setPaymentAmount] = useState<string>('')
+  const [paymentReference, setPaymentReference] = useState('')
+  const [paymentNotes, setPaymentNotes] = useState('')
+
+  // Payment history states
+  const [invoicePayments, setInvoicePayments] = useState<{ id: string; amount: number; formaPago: string; reference: string | null; notes: string | null; createdAt: string }[]>([])
+  const [showPaymentHistory, setShowPaymentHistory] = useState(false)
+  const [isLoadingPayments, setIsLoadingPayments] = useState(false)
 
   // Inline CFDI dialog states
   const [showInlineCFDI, setShowInlineCFDI] = useState(false)
@@ -329,8 +342,8 @@ export function AgendaCalendar() {
       if (res.ok) {
         const data = await res.json()
         const allApts = (data.appointments || []).map(mapApiAppointment)
-        const active = allApts.filter((a: AgendaAppointment) => a.status !== 'cancelled' && a.status !== 'no-show')
-        const cancelled = allApts.filter((a: AgendaAppointment) => a.status === 'cancelled' || a.status === 'no-show')
+        const active = allApts.filter((a: AgendaAppointment) => a.status !== 'cancelled' && a.status !== 'no_show')
+        const cancelled = allApts.filter((a: AgendaAppointment) => a.status === 'cancelled' || a.status === 'no_show')
         setAppointmentList(active)
         setCancelledAppointments(cancelled)
       }
@@ -369,6 +382,10 @@ export function AgendaCalendar() {
           metodoPago: inv.metodoPago as string,
           usoCFDI: inv.usoCFDI as string,
         } : null)
+        // Also fetch payments for this invoice
+        if (inv?.id) {
+          fetchInvoicePayments(inv.id as string)
+        }
       }
     } catch (err) {
       console.error('Failed to fetch invoice:', err)
@@ -377,6 +394,29 @@ export function AgendaCalendar() {
     }
   }, [selectedAppointment, clinicId])
 
+  // Fetch payment history for an invoice
+  const fetchInvoicePayments = useCallback(async (invoiceId: string) => {
+    setIsLoadingPayments(true)
+    try {
+      const res = await fetch(`/api/payments?invoiceId=${invoiceId}`)
+      if (res.ok) {
+        const data = await res.json()
+        setInvoicePayments((data.payments || []).map((p: Record<string, unknown>) => ({
+          id: p.id as string,
+          amount: p.amount as number,
+          formaPago: p.formaPago as string,
+          reference: p.reference as string | null,
+          notes: p.notes as string | null,
+          createdAt: p.createdAt as string,
+        })))
+      }
+    } catch (err) {
+      console.error('Failed to fetch payments:', err)
+    } finally {
+      setIsLoadingPayments(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (showDetailDialog && selectedAppointment?.status === 'completed') {
       fetchAppointmentInvoice()
@@ -384,33 +424,48 @@ export function AgendaCalendar() {
       setCfdiError(null)
       setShowInlineCFDI(false)
       setShowPaymentSuccess(false)
+      setShowPaymentHistory(false)
+      setPaymentAmount('')
+      setPaymentReference('')
+      setPaymentNotes('')
     } else if (!showDetailDialog) {
       setAppointmentInvoice(null)
       setCfdiResult(null)
       setCfdiError(null)
       setShowInlineCFDI(false)
       setShowPaymentSuccess(false)
+      setInvoicePayments([])
+      setShowPaymentHistory(false)
     }
   }, [showDetailDialog, selectedAppointment?.status, fetchAppointmentInvoice])
 
-  // Charge appointment (mark invoice as paid)
+  // Charge appointment (register payment via /api/payments)
   const handleChargeAppointment = async () => {
     if (!appointmentInvoice) return
     setIsCharging(true)
     try {
-      const res = await fetch('/api/invoices', {
-        method: 'PATCH',
+      const totalPaid = invoicePayments.reduce((sum, p) => sum + p.amount, 0)
+      const remaining = (Number(appointmentInvoice.total) || 0) - totalPaid
+      const amount = paymentAmount ? parseFloat(paymentAmount) : remaining
+
+      const res = await fetch('/api/payments', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           invoiceId: appointmentInvoice.id,
-          paymentStatus: 'paid',
+          amount,
           formaPago: chargeMethod,
+          reference: paymentReference || undefined,
+          notes: paymentNotes || undefined,
         }),
       })
       if (res.ok) {
         await fetchAppointmentInvoice()
         setShowPaymentSuccess(true)
         setTimeout(() => setShowPaymentSuccess(false), 2500)
+        setPaymentAmount('')
+        setPaymentReference('')
+        setPaymentNotes('')
       } else {
         const data = await res.json().catch(() => ({}))
         setActionError(data.error || 'Error al cobrar')
@@ -468,10 +523,10 @@ export function AgendaCalendar() {
     }
   }
 
-  // Revert payment (mark invoice as unpaid again)
+  // Revert payment (delete all Payment records and mark invoice as unpaid)
   const handleRevertAppointmentPayment = async () => {
     if (!appointmentInvoice) return
-    if (!confirm('¿Eliminar el pago? La factura volverá a pendiente.')) return
+    if (!confirm('¿Eliminar todos los pagos registrados? La factura volverá a pendiente.')) return
     try {
       const res = await fetch('/api/invoices', {
         method: 'PATCH',
@@ -483,6 +538,7 @@ export function AgendaCalendar() {
       })
       if (res.ok) {
         await fetchAppointmentInvoice()
+        setInvoicePayments([])
       } else {
         const data = await res.json().catch(() => ({}))
         setActionError(data.error || 'Error al eliminar pago')
@@ -657,7 +713,7 @@ export function AgendaCalendar() {
   }, [allDayAppointments, currentDate, weekAppointments])
 
   const getAppointmentAtSlot = useCallback((timeMinutes: number, dateAppointments: AgendaAppointment[], includeCancelled = true) => {
-    const apts = includeCancelled ? dateAppointments : dateAppointments.filter(a => a.status !== 'cancelled' && a.status !== 'no-show')
+    const apts = includeCancelled ? dateAppointments : dateAppointments.filter(a => a.status !== 'cancelled' && a.status !== 'no_show')
     return apts.find(apt => {
       const aptStart = parseTime(apt.time)
       const aptEnd = aptStart + apt.duration
@@ -667,7 +723,7 @@ export function AgendaCalendar() {
 
   const getCancelledAtSlot = useCallback((timeMinutes: number, dateAppointments: AgendaAppointment[]) => {
     return dateAppointments.find(apt => {
-      if (apt.status !== 'cancelled' && apt.status !== 'no-show') return false
+      if (apt.status !== 'cancelled' && apt.status !== 'no_show') return false
       const aptStart = parseTime(apt.time)
       const aptEnd = aptStart + apt.duration
       return timeMinutes >= aptStart && timeMinutes < aptEnd
@@ -1008,8 +1064,8 @@ export function AgendaCalendar() {
                     const dateApts = getAppointmentsForDate(currentDate)
                     const apt = getAppointmentAtSlot(minutes, dateApts, true)
                     const isStart = apt && parseTime(apt.time) === minutes
-                    const cancelledApt = apt?.status === 'cancelled' || apt?.status === 'no-show' ? apt : getCancelledAtSlot(minutes, dateApts)
-                    const hasActiveApt = apt && apt.status !== 'cancelled' && apt.status !== 'no-show'
+                    const cancelledApt = apt?.status === 'cancelled' || apt?.status === 'no_show' ? apt : getCancelledAtSlot(minutes, dateApts)
+                    const hasActiveApt = apt && apt.status !== 'cancelled' && apt.status !== 'no_show'
 
                     if (apt && !isStart) return null
 
@@ -1020,7 +1076,7 @@ export function AgendaCalendar() {
                         onClick={() => !hasActiveApt && handleSlotClick(formatTimeSlot(minutes))}
                       >
                         {/* Cancelled appointment shown as faded/struck-through */}
-                        {isStart && apt && (apt.status === 'cancelled' || apt.status === 'no-show') && (
+                        {isStart && apt && (apt.status === 'cancelled' || apt.status === 'no_show') && (
                           <motion.button
                             onClick={(e) => {
                               e.stopPropagation()
@@ -1057,7 +1113,7 @@ export function AgendaCalendar() {
                         )}
 
                         {/* Active appointment */}
-                        {isStart && apt && apt.status !== 'cancelled' && apt.status !== 'no-show' && (
+                        {isStart && apt && apt.status !== 'cancelled' && apt.status !== 'no_show' && (
                           <motion.button
                             onClick={(e) => {
                               e.stopPropagation()
@@ -1099,7 +1155,7 @@ export function AgendaCalendar() {
                         )}
 
                         {/* Empty slot with only cancelled in history - show + for re-booking */}
-                        {!hasActiveApt && cancelledApt && (!apt || (apt.status === 'cancelled' || apt.status === 'no-show')) && (
+                        {!hasActiveApt && cancelledApt && (!apt || (apt.status === 'cancelled' || apt.status === 'no_show')) && (
                           <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
                             <Plus className="h-4 w-4 text-[#1D9E75]" />
                           </div>
@@ -1162,7 +1218,7 @@ export function AgendaCalendar() {
                       {weekDays.map((day, i) => {
                         const dayApts = getAppointmentsForDate(day)
                         const apt = getAppointmentAtSlot(minutes, dayApts, true)
-                        const isCancelled = apt?.status === 'cancelled' || apt?.status === 'no-show'
+                        const isCancelled = apt?.status === 'cancelled' || apt?.status === 'no_show'
                         return (
                           <div
                             key={i}
@@ -1439,7 +1495,7 @@ export function AgendaCalendar() {
               )}
 
               {/* Action buttons */}
-              {selectedAppointment.status !== 'cancelled' && selectedAppointment.status !== 'no-show' && (
+              {selectedAppointment.status !== 'cancelled' && selectedAppointment.status !== 'no_show' && (
                 <div className="flex gap-2">
                   {selectedAppointment.status !== 'confirmed' && selectedAppointment.status !== 'completed' && (
                     <motion.div whileTap={{ scale: 0.97 }} className="flex-1">
@@ -1471,41 +1527,47 @@ export function AgendaCalendar() {
                 </div>
               )}
 
-              {/* Completed appointment: Visual stepper Cita → Cobrar → CFDI */}
+              {/* Completed appointment: Visual stepper Cita → Cobro ($X de $Y) → CFDI */}
               {selectedAppointment.status === 'completed' && (
                 <div className="p-3 rounded-lg bg-[#F1EFE8] border border-[#E1F5EE] space-y-3">
                   {/* Step Indicator */}
                   <div className="flex items-center gap-1 px-1">
-                    {[
-                      { key: 'cita', label: 'Cita', icon: CheckCircle, done: true },
-                      { key: 'cobrar', label: 'Cobrar', icon: DollarSign, done: appointmentInvoice?.paymentStatus === 'paid' },
-                      { key: 'cfdi', label: 'CFDI', icon: Receipt, done: appointmentInvoice?.status === 'timbrada' },
-                    ].map((step, i) => {
-                      const Icon = step.icon
-                      return (
-                        <div key={step.key} className="flex items-center flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <motion.div
-                              className={`h-5 w-5 rounded-full flex items-center justify-center text-[9px] font-bold ${
-                                step.done
-                                  ? 'bg-[#1D9E75] text-white'
-                                  : 'bg-white border border-[#888780]/30 text-[#888780]'
-                              }`}
-                              animate={step.done ? { scale: [1, 1.15, 1] } : {}}
-                              transition={{ duration: 0.3, delay: i * 0.1 }}
-                            >
-                              {step.done ? <Icon className="h-3 w-3" /> : (i + 1)}
-                            </motion.div>
-                            <span className={`text-[10px] font-medium ${step.done ? 'text-[#1D9E75]' : 'text-[#888780]'}`}>
-                              {step.label}
-                            </span>
+                    {(() => {
+                      const totalPaid = invoicePayments.reduce((sum, p) => sum + p.amount, 0)
+                      const total = Number(appointmentInvoice?.total) || 0
+                      const isPaid = appointmentInvoice?.paymentStatus === 'paid' || appointmentInvoice?.paymentStatus === 'partial'
+                      const steps = [
+                        { key: 'cita', label: 'Cita', icon: CheckCircle, done: true },
+                        { key: 'cobro', label: `Cobro${total > 0 ? ` ($${totalPaid.toLocaleString('es-MX')} de $${total.toLocaleString('es-MX')})` : ''}`, icon: DollarSign, done: isPaid },
+                        { key: 'cfdi', label: 'CFDI', icon: Receipt, done: appointmentInvoice?.status === 'timbrada' },
+                      ]
+                      return steps.map((step, i) => {
+                        const Icon = step.icon
+                        return (
+                          <div key={step.key} className="flex items-center flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <motion.div
+                                className={`h-5 w-5 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                                  step.done
+                                    ? 'bg-[#1D9E75] text-white'
+                                    : 'bg-white border border-[#888780]/30 text-[#888780]'
+                                }`}
+                                animate={step.done ? { scale: [1, 1.15, 1] } : {}}
+                                transition={{ duration: 0.3, delay: i * 0.1 }}
+                              >
+                                {step.done ? <Icon className="h-3 w-3" /> : (i + 1)}
+                              </motion.div>
+                              <span className={`text-[10px] font-medium ${step.done ? 'text-[#1D9E75]' : 'text-[#888780]'}`}>
+                                {step.label}
+                              </span>
+                            </div>
+                            {i < 2 && (
+                              <div className={`flex-1 h-px mx-1.5 ${step.done ? 'bg-[#1D9E75]' : 'bg-[#888780]/20'}`} />
+                            )}
                           </div>
-                          {i < 2 && (
-                            <div className={`flex-1 h-px mx-1.5 ${step.done ? 'bg-[#1D9E75]' : 'bg-[#888780]/20'}`} />
-                          )}
-                        </div>
-                      )
-                    })}
+                        )
+                      })
+                    })()}
                   </div>
 
                   {/* Payment success animation */}
@@ -1546,52 +1608,169 @@ export function AgendaCalendar() {
                         Crear cuenta
                       </Button>
                     </div>
-                  ) : appointmentInvoice.paymentStatus === 'unpaid' ? (
-                    /* Unpaid invoice - charge it */
+                  ) : appointmentInvoice.paymentStatus === 'unpaid' || appointmentInvoice.paymentStatus === 'partial' ? (
+                    /* Unpaid/partial invoice - charge it */
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between p-2 rounded-lg bg-white">
-                        <div>
-                          <p className="text-xs font-medium text-[#2C2C2A]">{appointmentInvoice.concepto || 'Consulta'}</p>
-                          <p className="text-[10px] text-[#888780]">Pendiente de cobro</p>
-                        </div>
-                        <p className="text-sm font-semibold text-[#2C2C2A]">${(Number(appointmentInvoice.total) || 0).toLocaleString('es-MX')}</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Select value={chargeMethod} onValueChange={setChargeMethod}>
-                          <SelectTrigger className="h-8 text-xs w-[130px] bg-white border-[#E1F5EE]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="01">Efectivo</SelectItem>
-                            <SelectItem value="03">Transferencia</SelectItem>
-                            <SelectItem value="04">Tarjeta</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          className="flex-1 h-8 text-xs bg-[#1D9E75] hover:bg-[#1D9E75]/90 text-white"
-                          onClick={handleChargeAppointment}
-                          disabled={isCharging}
-                        >
-                          {isCharging ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <DollarSign className="h-3.5 w-3.5 mr-1" />}
-                          Cobrar
-                        </Button>
-                      </div>
+                      {(() => {
+                        const totalPaid = invoicePayments.reduce((sum, p) => sum + p.amount, 0)
+                        const total = Number(appointmentInvoice.total) || 0
+                        const remaining = total - totalPaid
+                        return (
+                          <>
+                            <div className="flex items-center justify-between p-2 rounded-lg bg-white">
+                              <div>
+                                <p className="text-xs font-medium text-[#2C2C2A]">{appointmentInvoice.concepto || 'Consulta'}</p>
+                                <p className="text-[10px] text-[#888780]">
+                                  {appointmentInvoice.paymentStatus === 'partial'
+                                    ? `Pago parcial — Saldo: $${remaining.toLocaleString('es-MX')}`
+                                    : 'Pendiente de cobro'}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-semibold text-[#2C2C2A]">${total.toLocaleString('es-MX')}</p>
+                                {totalPaid > 0 && (
+                                  <p className="text-[10px] text-[#1D9E75]">Cobrado: $${totalPaid.toLocaleString('es-MX')}</p>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Payment history (collapsible) */}
+                            {invoicePayments.length > 0 && (
+                              <div>
+                                <button
+                                  className="flex items-center gap-1 text-[10px] text-[#534AB7] font-medium hover:underline"
+                                  onClick={() => setShowPaymentHistory(!showPaymentHistory)}
+                                >
+                                  {showPaymentHistory ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                                  Historial de pagos ({invoicePayments.length})
+                                </button>
+                                {showPaymentHistory && (
+                                  <div className="mt-1 space-y-1">
+                                    {invoicePayments.map((p) => (
+                                      <div key={p.id} className="flex items-center justify-between p-1.5 rounded bg-white text-[10px]">
+                                        <div>
+                                          <span className="font-medium text-[#2C2C2A]">${p.amount.toLocaleString('es-MX')}</span>
+                                          <span className="text-[#888780] ml-1.5">
+                                            {p.formaPago === '01' ? 'Efectivo' : p.formaPago === '03' ? 'Transferencia' : 'Tarjeta'}
+                                          </span>
+                                          {p.reference && <span className="text-[#888780] ml-1">ref: {p.reference}</span>}
+                                        </div>
+                                        <span className="text-[#888780]">{new Date(p.createdAt).toLocaleDateString('es-MX')}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Payment form */}
+                            <div className="space-y-2">
+                              <div className="flex gap-2">
+                                <div className="flex-1">
+                                  <Label className="text-[9px] text-[#888780]">Monto</Label>
+                                  <Input
+                                    type="number"
+                                    className="h-7 text-xs bg-white border-[#E1F5EE]"
+                                    placeholder={`$${remaining.toLocaleString('es-MX')}`}
+                                    value={paymentAmount}
+                                    onChange={(e) => setPaymentAmount(e.target.value)}
+                                    min={0}
+                                    max={remaining}
+                                    step={0.01}
+                                  />
+                                </div>
+                                <div className="w-[120px]">
+                                  <Label className="text-[9px] text-[#888780]">Forma de pago</Label>
+                                  <Select value={chargeMethod} onValueChange={setChargeMethod}>
+                                    <SelectTrigger className="h-7 text-xs bg-white border-[#E1F5EE]">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="01">Efectivo</SelectItem>
+                                      <SelectItem value="03">Transferencia</SelectItem>
+                                      <SelectItem value="04">Tarjeta</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                <div className="flex-1">
+                                  <Label className="text-[9px] text-[#888780]">Referencia (opcional)</Label>
+                                  <Input
+                                    className="h-7 text-xs bg-white border-[#E1F5EE]"
+                                    placeholder="Ej: #transferencia"
+                                    value={paymentReference}
+                                    onChange={(e) => setPaymentReference(e.target.value)}
+                                  />
+                                </div>
+                              </div>
+                              <Button
+                                className="w-full h-8 text-xs bg-[#1D9E75] hover:bg-[#1D9E75]/90 text-white"
+                                onClick={handleChargeAppointment}
+                                disabled={isCharging}
+                              >
+                                {isCharging ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <DollarSign className="h-3.5 w-3.5 mr-1" />}
+                                Registrar pago
+                              </Button>
+                              {remaining > 0 && (
+                                <p className="text-[9px] text-[#888780] text-center">
+                                  Saldo restante después del pago: ${((remaining - (paymentAmount ? parseFloat(paymentAmount) : remaining)) > 0 ? (remaining - (paymentAmount ? parseFloat(paymentAmount) : remaining)) : 0).toLocaleString('es-MX')}
+                                </p>
+                              )}
+                            </div>
+                          </>
+                        )
+                      })()}
                     </div>
                   ) : (
                     /* Paid invoice */
                     <div className="space-y-2">
-                      <div className="flex items-center gap-2 p-2 rounded-lg bg-[#E1F5EE]">
-                        <CheckCircle className="h-4 w-4 text-[#1D9E75]" />
-                        <div className="flex-1">
-                          <p className="text-xs font-medium text-[#1D9E75]">Pagado</p>
-                          <p className="text-[10px] text-[#888780]">
-                            ${(Number(appointmentInvoice.total) || 0).toLocaleString('es-MX')} — {
-                              appointmentInvoice.formaPago === '01' ? 'Efectivo' :
-                              appointmentInvoice.formaPago === '03' ? 'Transferencia' : 'Tarjeta'
-                            }
-                          </p>
+                      {(() => {
+                        const totalPaid = invoicePayments.reduce((sum, p) => sum + p.amount, 0)
+                        return (
+                          <div className="flex items-center gap-2 p-2 rounded-lg bg-[#E1F5EE]">
+                            <CheckCircle className="h-4 w-4 text-[#1D9E75]" />
+                            <div className="flex-1">
+                              <p className="text-xs font-medium text-[#1D9E75]">Pagado</p>
+                              <p className="text-[10px] text-[#888780]">
+                                ${totalPaid.toLocaleString('es-MX')} — {
+                                  appointmentInvoice.formaPago === '01' ? 'Efectivo' :
+                                  appointmentInvoice.formaPago === '03' ? 'Transferencia' : 'Tarjeta'
+                                }
+                              </p>
+                            </div>
+                          </div>
+                        )
+                      })()}
+
+                      {/* Payment history (collapsible) */}
+                      {invoicePayments.length > 0 && (
+                        <div>
+                          <button
+                            className="flex items-center gap-1 text-[10px] text-[#534AB7] font-medium hover:underline"
+                            onClick={() => setShowPaymentHistory(!showPaymentHistory)}
+                          >
+                            {showPaymentHistory ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                            Historial de pagos ({invoicePayments.length})
+                          </button>
+                          {showPaymentHistory && (
+                            <div className="mt-1 space-y-1">
+                              {invoicePayments.map((p) => (
+                                <div key={p.id} className="flex items-center justify-between p-1.5 rounded bg-white text-[10px]">
+                                  <div>
+                                    <span className="font-medium text-[#2C2C2A]">${p.amount.toLocaleString('es-MX')}</span>
+                                    <span className="text-[#888780] ml-1.5">
+                                      {p.formaPago === '01' ? 'Efectivo' : p.formaPago === '03' ? 'Transferencia' : 'Tarjeta'}
+                                    </span>
+                                    {p.reference && <span className="text-[#888780] ml-1">ref: {p.reference}</span>}
+                                  </div>
+                                  <span className="text-[#888780]">{new Date(p.createdAt).toLocaleDateString('es-MX')}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      </div>
+                      )}
 
                       {/* CFDI section */}
                       {appointmentInvoice.status === 'timbrada' ? (
@@ -1725,7 +1904,7 @@ export function AgendaCalendar() {
               )}
 
               {/* No-show can be re-booked or deleted */}
-              {selectedAppointment.status === 'no-show' && (
+              {selectedAppointment.status === 'no_show' && (
                 <div className="flex gap-2">
                   <Button
                     variant="outline"

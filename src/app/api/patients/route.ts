@@ -82,9 +82,14 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'clinicId is required' }, { status: 400 })
     }
 
+    // Filter by isActive by default (unless includeInactive=true)
+    const includeInactive = searchParams.get('includeInactive') === 'true'
+
     // Helper: return mock data filtered by search/segment
     const getFilteredMock = () => {
       let patients = getMockPatients(clinicId)
+      // Mock patients are always active
+      if (!includeInactive) patients = patients.filter(p => (p as Record<string, unknown>).isActive !== false)
       if (segment) patients = patients.filter(p => p.segment === segment)
       if (search) {
         const q = search.toLowerCase()
@@ -94,7 +99,9 @@ export async function GET(req: NextRequest) {
           p.phone?.includes(q)
         )
       }
-      return NextResponse.json({ patients, total: patients.length, page, limit })
+      const total = patients.length
+      const paged = patients.slice(skip, skip + limit)
+      return NextResponse.json({ patients: paged, total, page, limit })
     }
 
     // Fallback to mock data when DB is unavailable (demo mode)
@@ -106,6 +113,9 @@ export async function GET(req: NextRequest) {
     try {
       // Build where clause
       const where: Record<string, unknown> = { clinicId }
+      if (!includeInactive) {
+        where.isActive = true
+      }
       if (segment) {
         where.segment = segment
       }
@@ -158,7 +168,9 @@ export async function POST(req: NextRequest) {
     const {
       clinicId, firstName, lastName, fullName, phone, email,
       birthDate, gender, rfc, address, source, allergies,
-      medicalHistory, notes
+      medicalHistory, notes,
+      emergencyContactName, emergencyContactPhone, emergencyContactRelation,
+      insuranceProvider, insurancePolicyNumber,
     } = body
 
     if (!clinicId || !fullName) {
@@ -192,10 +204,16 @@ export async function POST(req: NextRequest) {
           rfc: rfc || null,
           address: address || null,
           source: source || 'walk_in',
+          firstContactDate: new Date(),
           segment: 'new',
           allergies: allergies || null,
           medicalHistory: medicalHistory || null,
           notes: notes || null,
+          emergencyContactName: emergencyContactName || null,
+          emergencyContactPhone: emergencyContactPhone || null,
+          emergencyContactRelation: emergencyContactRelation || null,
+          insuranceProvider: insuranceProvider || null,
+          insurancePolicyNumber: insurancePolicyNumber || null,
         },
       })
 

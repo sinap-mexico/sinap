@@ -26,6 +26,8 @@ import {
   Calendar,
   FileText,
   Sparkles,
+  Wifi,
+  WifiOff,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -176,6 +178,7 @@ export function DeskInbox() {
   const [messageInput, setMessageInput] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [isTyping, setIsTyping] = useState(false)
+  const [whatsappConnected, setWhatsappConnected] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Resolve clinicId on mount if needed
@@ -196,6 +199,23 @@ export function DeskInbox() {
     }
     resolveClinicId()
   }, [clinicId, clinicSlug, setClinicId])
+
+  // Check WhatsApp connection status
+  useEffect(() => {
+    async function checkWhatsApp() {
+      if (!clinicId) return
+      try {
+        const res = await fetch(`/api/meta/connect?clinicId=${clinicId}`)
+        if (res.ok) {
+          const data = await res.json()
+          setWhatsappConnected(data.connected === true)
+        }
+      } catch {
+        setWhatsappConnected(false)
+      }
+    }
+    checkWhatsApp()
+  }, [clinicId])
 
   // Fetch conversations from API
   const fetchConversations = useCallback(async () => {
@@ -548,10 +568,17 @@ export function DeskInbox() {
                     </div>
                   </div>
                 </div>
-                <Badge className="bg-amber-100 text-amber-700 border-0 text-[10px]">
-                  <AlertTriangle className="h-3 w-3 mr-1" />
-                  Simulacion
-                </Badge>
+                {whatsappConnected ? (
+                  <Badge className="bg-[#E1F5EE] text-[#1D9E75] border-0 text-[10px]">
+                    <Wifi className="h-3 w-3 mr-1" />
+                    WhatsApp conectado
+                  </Badge>
+                ) : (
+                  <Badge className="bg-amber-100 text-amber-700 border-0 text-[10px]">
+                    <WifiOff className="h-3 w-3 mr-1" />
+                    Simulacion
+                  </Badge>
+                )}
               </div>
 
               {/* Messages */}

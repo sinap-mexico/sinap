@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
 
     // By default, exclude cancelled/no-show unless history is requested
     if (!includeHistory) {
-      where.status = { notIn: ['cancelled', 'no-show'] }
+      where.status = { notIn: ['cancelled', 'no_show'] }
     }
 
     const appointments = await db.appointment.findMany({
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
         doctorId,
         date: new Date(date),
         startTime,
-        status: { notIn: ['cancelled', 'no-show'] },
+        status: { notIn: ['cancelled', 'no_show'] },
       },
     })
 

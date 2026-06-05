@@ -38,6 +38,9 @@ import {
   Download,
   FileDown,
   Sparkles,
+  ExternalLink,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -73,6 +76,8 @@ interface CFDIInvoice {
   paymentMethod: string
   isSimulated?: boolean
   appointmentId?: string | null
+  appointmentDate?: string | null
+  appointmentDoctor?: string | null
 }
 
 interface PatientOption {
@@ -115,7 +120,13 @@ export function BillDashboard() {
   // Mark as paid state
   const [payTarget, setPayTarget] = useState<CFDIInvoice | null>(null)
   const [payMethod, setPayMethod] = useState('01')
+  const [payAmount, setPayAmount] = useState<string>('')
+  const [payReference, setPayReference] = useState('')
   const [isMarkingPaid, setIsMarkingPaid] = useState(false)
+
+  // Payment history state
+  const [expandedInvoice, setExpandedInvoice] = useState<string | null>(null)
+  const [invoicePayments, setInvoicePayments] = useState<Record<string, { id: string; amount: number; formaPago: string; reference: string | null; createdAt: string }[]>>({})
 
   // Clinic billing config from DB
   const [clinicBilling, setClinicBilling] = useState<ClinicBillingConfig | null>(null)
@@ -201,19 +212,24 @@ export function BillDashboard() {
       const res = await fetch(`/api/invoices?clinicId=${clinicId}`)
       if (res.ok) {
         const data = await res.json()
-        const mapped: CFDIInvoice[] = (data.invoices || []).map((inv: Record<string, unknown>) => ({
-          id: inv.id as string,
-          uuid: (inv.cfdiUuid as string) || 'PENDING',
-          patientName: (inv.patient as Record<string, unknown>)?.fullName as string || 'Desconocido',
-          concept: (inv.concepto as string) || '',
-          total: (inv.total as number) || 0,
-          status: (inv.status as string) || 'pending',
-          paymentStatus: (inv.paymentStatus as string) || 'unpaid',
-          date: inv.createdAt ? new Date(inv.createdAt as string).toISOString().split('T')[0] : '',
-          paymentMethod: (inv.formaPago as string) === '01' ? 'Efectivo' : (inv.formaPago as string) === '03' ? 'Transferencia' : 'Tarjeta',
-          isSimulated: false,
-          appointmentId: (inv.appointmentId as string) || null,
-        }))
+        const mapped: CFDIInvoice[] = (data.invoices || []).map((inv: Record<string, unknown>) => {
+          const apt = inv.appointment as Record<string, unknown> | null
+          return {
+            id: inv.id as string,
+            uuid: (inv.cfdiUuid as string) || 'PENDING',
+            patientName: (inv.patient as Record<string, unknown>)?.fullName as string || 'Desconocido',
+            concept: (inv.concepto as string) || '',
+            total: (inv.total as number) || 0,
+            status: (inv.status as string) || 'pending',
+            paymentStatus: (inv.paymentStatus as string) || 'unpaid',
+            date: inv.createdAt ? new Date(inv.createdAt as string).toISOString().split('T')[0] : '',
+            paymentMethod: (inv.formaPago as string) === '01' ? 'Efectivo' : (inv.formaPago as string) === '03' ? 'Transferencia' : 'Tarjeta',
+            isSimulated: false,
+            appointmentId: (inv.appointmentId as string) || null,
+            appointmentDate: apt?.date ? new Date(apt.date as string).toLocaleDateString('es-MX') : null,
+            appointmentDoctor: (apt?.doctor as Record<string, unknown>)?.name as string || null,
+          }
+        })
         setInvoiceList(mapped)
       }
     } catch (err) {
@@ -465,24 +481,22 @@ export function BillDashboard() {
 
     setIsMarkingPaid(true)
     try {
-      const response = await fetch('/api/invoices', {
-        method: 'PATCH',
+      // Use the payments API to create a proper payment record
+      const amount = payAmount ? parseFloat(payAmount) : payTarget.total
+      const response = await fetch('/api/payments', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           invoiceId: payTarget.id,
-          paymentStatus: 'paid',
+          amount,
           formaPago: payMethod,
+          reference: payReference || undefined,
         }),
       })
 
       if (response.ok) {
-        setInvoiceList(prev => prev.map(i =>
-          i.id === payTarget.id ? {
-            ...i,
-            paymentStatus: 'paid',
-            paymentMethod: payMethod === '01' ? 'Efectivo' : payMethod === '03' ? 'Transferencia' : 'Tarjeta',
-          } : i
-        ))
+        // Refresh invoice list from server to get updated payment status
+        fetchInvoices()
       }
     } catch {
       // Error handling
@@ -490,6 +504,37 @@ export function BillDashboard() {
       setIsMarkingPaid(false)
       setPayTarget(null)
       setPayMethod('01')
+      setPayAmount('')
+      setPayReference('')
+    }
+  }
+
+  // Fetch payments for an invoice (expandable section)
+  const handleTogglePayments = async (invoiceId: string) => {
+    if (expandedInvoice === invoiceId) {
+      setExpandedInvoice(null)
+      return
+    }
+    setExpandedInvoice(invoiceId)
+    if (!invoicePayments[invoiceId]) {
+      try {
+        const res = await fetch(`/api/payments?invoiceId=${invoiceId}`)
+        if (res.ok) {
+          const data = await res.json()
+          setInvoicePayments(prev => ({
+            ...prev,
+            [invoiceId]: (data.payments || []).map((p: Record<string, unknown>) => ({
+              id: p.id as string,
+              amount: p.amount as number,
+              formaPago: p.formaPago as string,
+              reference: p.reference as string | null,
+              createdAt: p.createdAt as string,
+            })),
+          }))
+        }
+      } catch (err) {
+        console.error('Failed to fetch payments:', err)
+      }
     }
   }
 
@@ -711,12 +756,25 @@ export function BillDashboard() {
                     </thead>
                     <tbody>
                       {invoiceList.map((inv) => (
-                        <tr
-                          key={inv.id}
-                          className="border-b border-[#E1F5EE]/50 hover:bg-[#F1EFE8] transition-colors group"
-                        >
+                        <>
+                          <tr
+                            key={inv.id}
+                            className="border-b border-[#E1F5EE]/50 hover:bg-[#F1EFE8] transition-colors group"
+                          >
                           <td className="py-3 pr-4">
                             <span className="text-sm text-[#2C2C2A]">{inv.patientName}</span>
+                            {inv.appointmentId && (
+                              <button
+                                className="flex items-center gap-1 text-[10px] text-[#534AB7] hover:underline mt-0.5"
+                                onClick={() => {
+                                  const { setActiveModule } = useSinapStore.getState()
+                                  setActiveModule('desk')
+                                }}
+                              >
+                                <ExternalLink className="h-2.5 w-2.5" />
+                                {inv.appointmentDate && inv.appointmentDoctor ? `${inv.appointmentDate} — Dr. ${inv.appointmentDoctor}` : 'Ver cita'}
+                              </button>
+                            )}
                           </td>
                           <td className="py-3 pr-4">
                             <span className="text-xs text-[#888780]">{inv.concept}</span>
@@ -730,19 +788,30 @@ export function BillDashboard() {
                             <InvoiceStatusBadge status={inv.status} />
                           </td>
                           <td className="py-3 pr-4 text-center">
-                            <Badge
-                              className="text-[10px] border-0 font-medium flex items-center gap-1 mx-auto w-fit"
-                              style={{
-                                backgroundColor: inv.paymentStatus === 'paid' ? '#E1F5EE' : '#FEF3C7',
-                                color: inv.paymentStatus === 'paid' ? '#1D9E75' : '#D97706',
-                              }}
-                            >
-                              {inv.paymentStatus === 'paid' ? (
-                                <><CheckCircle2 className="h-3 w-3" />Pagado</>
-                              ) : (
-                                <><Clock className="h-3 w-3" />Pendiente</>
-                              )}
-                            </Badge>
+                            <div className="flex flex-col items-center gap-1">
+                              <Badge
+                                className="text-[10px] border-0 font-medium flex items-center gap-1 mx-auto w-fit"
+                                style={{
+                                  backgroundColor: inv.paymentStatus === 'paid' ? '#E1F5EE' : inv.paymentStatus === 'partial' ? '#FEF3C7' : '#FEF3C7',
+                                  color: inv.paymentStatus === 'paid' ? '#1D9E75' : inv.paymentStatus === 'partial' ? '#D97706' : '#D97706',
+                                }}
+                              >
+                                {inv.paymentStatus === 'paid' ? (
+                                  <><CheckCircle2 className="h-3 w-3" />Pagado</>
+                                ) : inv.paymentStatus === 'partial' ? (
+                                  <><DollarSign className="h-3 w-3" />Parcial</>
+                                ) : (
+                                  <><Clock className="h-3 w-3" />Pendiente</>
+                                )}
+                              </Badge>
+                              <button
+                                className="flex items-center gap-0.5 text-[9px] text-[#534AB7] hover:underline"
+                                onClick={() => handleTogglePayments(inv.id)}
+                              >
+                                {expandedInvoice === inv.id ? <ChevronUp className="h-2.5 w-2.5" /> : <ChevronDown className="h-2.5 w-2.5" />}
+                                Pagos
+                              </button>
+                            </div>
                           </td>
                           <td className="py-3 pr-4">
                             <span className="text-xs text-[#888780]">{inv.date}</span>
@@ -818,6 +887,42 @@ export function BillDashboard() {
                             </div>
                           </td>
                         </tr>
+                        {/* Expanded payment history row */}
+                        {expandedInvoice === inv.id && (
+                          <tr key={`${inv.id}-payments`}>
+                            <td colSpan={7} className="p-0">
+                              <div className="px-6 py-3 bg-[#F1EFE8] border-b border-[#E1F5EE]">
+                                <p className="text-[10px] font-semibold text-[#888780] uppercase tracking-wide mb-2">Historial de pagos</p>
+                                {invoicePayments[inv.id] ? (
+                                  invoicePayments[inv.id].length > 0 ? (
+                                    <div className="space-y-1">
+                                      {invoicePayments[inv.id].map((p) => (
+                                        <div key={p.id} className="flex items-center justify-between p-2 rounded bg-white text-xs">
+                                          <div className="flex items-center gap-3">
+                                            <span className="font-medium text-[#2C2C2A]">${p.amount.toLocaleString('es-MX')}</span>
+                                            <span className="text-[#888780]">
+                                              {p.formaPago === '01' ? 'Efectivo' : p.formaPago === '03' ? 'Transferencia' : 'Tarjeta'}
+                                            </span>
+                                            {p.reference && <span className="text-[#888780]">ref: {p.reference}</span>}
+                                          </div>
+                                          <span className="text-[#888780]">{new Date(p.createdAt).toLocaleDateString('es-MX')}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p className="text-xs text-[#888780]">Sin pagos registrados</p>
+                                  )
+                                ) : (
+                                  <div className="flex items-center gap-2">
+                                    <Loader2 className="h-3 w-3 animate-spin text-[#534AB7]" />
+                                    <span className="text-xs text-[#888780]">Cargando pagos...</span>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        </>
                       ))}
                     </tbody>
                   </table>
@@ -1043,8 +1148,8 @@ export function BillDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Mark as Paid Dialog */}
-      <Dialog open={!!payTarget} onOpenChange={() => { setPayTarget(null); setPayMethod('01') }}>
+      {/* Mark as Paid Dialog — now supports partial payments */}
+      <Dialog open={!!payTarget} onOpenChange={() => { setPayTarget(null); setPayMethod('01'); setPayAmount(''); setPayReference('') }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-base font-medium tracking-[-0.03em] flex items-center gap-2">
@@ -1056,11 +1161,28 @@ export function BillDashboard() {
             {payTarget && (
               <div className="p-3 rounded-lg bg-[#E1F5EE] text-sm">
                 <p className="font-medium text-[#2C2C2A]">{payTarget.patientName}</p>
-                <p className="text-xs text-[#888780]">{payTarget.concept} - ${payTarget.total.toLocaleString('es-MX')} MXN</p>
+                <p className="text-xs text-[#888780]">{payTarget.concept} — ${payTarget.total.toLocaleString('es-MX')} MXN</p>
+                {payTarget.paymentStatus === 'partial' && (
+                  <p className="text-[10px] text-[#D97706] mt-1">Pago parcial — permite registrar abonos</p>
+                )}
               </div>
             )}
             <div className="space-y-2">
-              <Label className="text-xs text-[#888780]">Metodo de pago</Label>
+              <Label className="text-xs text-[#888780]">Monto del pago</Label>
+              <Input
+                type="number"
+                className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE]"
+                placeholder={payTarget ? `$${payTarget.total.toLocaleString('es-MX')}` : '$0.00'}
+                value={payAmount}
+                onChange={(e) => setPayAmount(e.target.value)}
+                min={0}
+                max={payTarget?.total}
+                step={0.01}
+              />
+              <p className="text-[10px] text-[#888780]">Dejar vacío para pagar el total</p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-[#888780]">Método de pago</Label>
               <Select value={payMethod} onValueChange={setPayMethod}>
                 <SelectTrigger className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE]">
                   <SelectValue />
@@ -1068,15 +1190,24 @@ export function BillDashboard() {
                 <SelectContent>
                   <SelectItem value="01">Efectivo</SelectItem>
                   <SelectItem value="03">Transferencia</SelectItem>
-                  <SelectItem value="04">Tarjeta de credito</SelectItem>
-                  <SelectItem value="28">Tarjeta de debito</SelectItem>
+                  <SelectItem value="04">Tarjeta de crédito</SelectItem>
+                  <SelectItem value="28">Tarjeta de débito</SelectItem>
                   <SelectItem value="99">Otros</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-[#888780]">Referencia (opcional)</Label>
+              <Input
+                className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE]"
+                placeholder="Ej: #transferencia, últimos 4 dígitos"
+                value={payReference}
+                onChange={(e) => setPayReference(e.target.value)}
+              />
+            </div>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" className="text-sm" onClick={() => setPayTarget(null)}>
+            <Button variant="outline" className="text-sm" onClick={() => { setPayTarget(null); setPayAmount(''); setPayReference('') }}>
               Cancelar
             </Button>
             <Button
@@ -1087,7 +1218,7 @@ export function BillDashboard() {
               {isMarkingPaid ? (
                 <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Guardando...</>
               ) : (
-                <><CheckCircle2 className="h-4 w-4 mr-1" />Marcar como pagado</>
+                <><DollarSign className="h-4 w-4 mr-1" />Registrar pago</>
               )}
             </Button>
           </DialogFooter>

@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { useSinapStore, type FeatureFlagState } from '@/lib/sinap-store'
+import { Receipt } from 'lucide-react'
 import { eventBus } from '@/lib/event-bus'
 import {
   Activity,
@@ -186,6 +187,9 @@ export function FlowClinical() {
 
   // PDF export state
   const [isExportingPDF, setIsExportingPDF] = useState(false)
+
+  // Invoice creation notification state
+  const [invoiceNotification, setInvoiceNotification] = useState<{ amount: number; show: boolean }>({ amount: 0, show: false })
 
   // Ref for auto-scrolling to the generate button when pre-consulta completes
   const generateButtonRef = useRef<HTMLDivElement>(null)
@@ -625,6 +629,7 @@ export function FlowClinical() {
 
           // Auto-create a pending invoice for the completed appointment
           // The invoice links to the appointment and pre-fills data from it
+          let createdInvoiceAmount = 0
           if (aptRes.ok && clinicId) {
             try {
               // Fetch the appointment to get service/price info
@@ -643,6 +648,7 @@ export function FlowClinical() {
                   // Get service price from the appointment's service
                   const serviceName = apt.service?.name || 'Consulta'
                   const servicePrice = apt.service?.price || 0
+                  createdInvoiceAmount = servicePrice
 
                   await fetch('/api/invoices', {
                     method: 'POST',
@@ -673,6 +679,17 @@ export function FlowClinical() {
             } catch (e) {
               console.error('Failed to auto-create invoice:', e)
             }
+          }
+
+          // Show invoice creation notification
+          if (createdInvoiceAmount > 0) {
+            setInvoiceNotification({
+              amount: createdInvoiceAmount,
+              show: true,
+            })
+            setTimeout(() => {
+              setInvoiceNotification(prev => ({ ...prev, show: false }))
+            }, 5000)
           }
         } catch (e) {
           console.error('Failed to update appointment status to completed:', e)
@@ -902,6 +919,46 @@ export function FlowClinical() {
           </Button>
         </motion.div>
       )}
+
+      {/* Invoice creation notification */}
+      <AnimatePresence>
+        {invoiceNotification.show && (
+          <motion.div
+            className="rounded-lg bg-[#E1F5EE] border border-[#1D9E75]/30 p-3 flex items-center gap-3"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+          >
+            <Receipt className="h-5 w-5 text-[#1D9E75] shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-[#1D9E75]">Factura creada — ${invoiceNotification.amount.toLocaleString('es-MX')}</p>
+              <p className="text-xs text-[#888780]">Se generó una cuenta pendiente de cobro para esta consulta</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs border-[#1D9E75] text-[#1D9E75] hover:bg-[#E1F5EE]"
+                onClick={() => {
+                  const { setActiveModule } = useSinapStore.getState()
+                  setActiveModule('bill')
+                  setInvoiceNotification(prev => ({ ...prev, show: false }))
+                }}
+              >
+                Ir a Facturación
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-[#888780] hover:text-[#2C2C2A]"
+                onClick={() => setInvoiceNotification(prev => ({ ...prev, show: false }))}
+              >
+                Cerrar
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Feature flags indicator */}
       <div className="flex items-center gap-4 flex-wrap">

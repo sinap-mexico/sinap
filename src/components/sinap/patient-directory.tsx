@@ -41,6 +41,8 @@ import {
   Users,
   Activity,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Clock,
   AlertCircle,
   Heart,
@@ -56,6 +58,13 @@ import {
   MessageSquare,
   Bell,
   CalendarClock,
+  Shield,
+  Siren,
+  Filter,
+  ArrowUpDown,
+  Send,
+  UserCheck,
+  UserX,
 } from 'lucide-react'
 
 // ─── TYPES ──────────────────────────────────────────────
@@ -80,6 +89,13 @@ interface PatientListItem {
   notes: string | null
   preferredChannel: string | null
   lastVisitDate: string | null
+  firstContactDate: string | null
+  isActive: boolean
+  emergencyContactName: string | null
+  emergencyContactPhone: string | null
+  emergencyContactRelation: string | null
+  insuranceProvider: string | null
+  insurancePolicyNumber: string | null
   createdAt: string
   updatedAt: string
   _count?: {
@@ -133,6 +149,24 @@ interface FollowUpItem {
   patient?: { fullName: string; phone: string | null }
 }
 
+interface ConversationItem {
+  id: string
+  channel: string
+  status: string
+  lastMessageAt: string
+  createdAt: string
+  messages: MessageItem[]
+}
+
+interface MessageItem {
+  id: string
+  direction: string
+  senderType: string
+  content: string
+  createdAt: string
+  channel: string
+}
+
 interface PatientProfile extends PatientListItem {
   address: string | null
   firstContactDate: string | null
@@ -143,10 +177,12 @@ interface PatientProfile extends PatientListItem {
   appointments: AppointmentItem[]
   soapNotes: SoapNoteItem[]
   invoices: InvoiceItem[]
+  conversations: ConversationItem[]
   _count?: {
     appointments: number
     soapNotes: number
     invoices: number
+    conversations: number
   }
 }
 
@@ -310,12 +346,21 @@ export function PatientDirectory() {
   const [segmentFilter, setSegmentFilter] = useState('all')
   const [showCreateDialog, setShowCreateDialog] = useState(false)
 
+  // Pagination & sort state
+  const [page, setPage] = useState(1)
+  const [limit] = useState(12)
+  const [sortBy, setSortBy] = useState('createdAt')
+  const [includeInactive, setIncludeInactive] = useState(false)
+
   // Data state
   const [patients, setPatients] = useState<PatientListItem[]>([])
   const [totalPatients, setTotalPatients] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [selectedPatient, setSelectedPatient] = useState<PatientProfile | null>(null)
   const [isLoadingProfile, setIsLoadingProfile] = useState(false)
+
+  // Conversations expanded state
+  const [expandedConversation, setExpandedConversation] = useState<string | null>(null)
 
   // Create form state
   const [createForm, setCreateForm] = useState({
@@ -328,9 +373,15 @@ export function PatientDirectory() {
     allergies: '',
     notes: '',
     source: 'walk_in',
+    emergencyContactName: '',
+    emergencyContactPhone: '',
+    emergencyContactRelation: '',
+    insuranceProvider: '',
+    insurancePolicyNumber: '',
   })
   const [isCreating, setIsCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+  const [showAdditionalFields, setShowAdditionalFields] = useState(false)
 
   // Edit form state
   const [editForm, setEditForm] = useState<Record<string, unknown>>({})
@@ -383,9 +434,10 @@ export function PatientDirectory() {
     if (!clinicId) return
     setIsLoading(true)
     try {
-      const params = new URLSearchParams({ clinicId })
+      const params = new URLSearchParams({ clinicId, page: String(page), limit: String(limit) })
       if (searchQuery) params.set('search', searchQuery)
       if (segmentFilter && segmentFilter !== 'all') params.set('segment', segmentFilter)
+      if (includeInactive) params.set('includeInactive', 'true')
       const res = await fetch(`/api/patients?${params}`)
       if (res.ok) {
         const data = await res.json()
@@ -397,7 +449,7 @@ export function PatientDirectory() {
     } finally {
       setIsLoading(false)
     }
-  }, [clinicId, searchQuery, segmentFilter])
+  }, [clinicId, searchQuery, segmentFilter, page, limit, includeInactive])
 
   useEffect(() => {
     fetchPatients()
@@ -428,6 +480,11 @@ export function PatientDirectory() {
             segment: data.patient.segment,
             preferredChannel: data.patient.preferredChannel || 'whatsapp',
             address: data.patient.address || '',
+            emergencyContactName: data.patient.emergencyContactName || '',
+            emergencyContactPhone: data.patient.emergencyContactPhone || '',
+            emergencyContactRelation: data.patient.emergencyContactRelation || '',
+            insuranceProvider: data.patient.insuranceProvider || '',
+            insurancePolicyNumber: data.patient.insurancePolicyNumber || '',
           })
         }
       } catch (err) {
@@ -529,6 +586,7 @@ export function PatientDirectory() {
     setView('list')
     setSelectedPatientId(null)
     setSelectedPatient(null)
+    setPage(1)
     fetchPatients()
   }
 
@@ -553,6 +611,11 @@ export function PatientDirectory() {
           source: createForm.source,
           allergies: createForm.allergies || null,
           notes: createForm.notes || null,
+          emergencyContactName: createForm.emergencyContactName || null,
+          emergencyContactPhone: createForm.emergencyContactPhone || null,
+          emergencyContactRelation: createForm.emergencyContactRelation || null,
+          insuranceProvider: createForm.insuranceProvider || null,
+          insurancePolicyNumber: createForm.insurancePolicyNumber || null,
         }),
       })
       if (res.ok) {
@@ -568,7 +631,13 @@ export function PatientDirectory() {
           allergies: '',
           notes: '',
           source: 'walk_in',
+          emergencyContactName: '',
+          emergencyContactPhone: '',
+          emergencyContactRelation: '',
+          insuranceProvider: '',
+          insurancePolicyNumber: '',
         })
+        setShowAdditionalFields(false)
         setToast({ message: 'Paciente creado exitosamente', type: 'success' })
         fetchPatients()
         // Optionally open the new patient's profile
@@ -654,6 +723,47 @@ export function PatientDirectory() {
     }
   }
 
+  // ─── SOFT DELETE / REACTIVATE PATIENT ──────────────
+
+  const handleDeactivatePatient = async () => {
+    if (!selectedPatientId) return
+    if (!confirm('¿Desactivar este paciente? El paciente ya no aparecerá en el directorio activo.')) return
+    try {
+      const res = await fetch(`/api/patients/${selectedPatientId}`, {
+        method: 'DELETE',
+      })
+      if (res.ok) {
+        setToast({ message: 'Paciente desactivado', type: 'success' })
+        fetchPatientProfile(selectedPatientId)
+        fetchPatients()
+      } else {
+        setToast({ message: 'Error al desactivar paciente', type: 'error' })
+      }
+    } catch {
+      setToast({ message: 'Error de conexión', type: 'error' })
+    }
+  }
+
+  const handleReactivatePatient = async () => {
+    if (!selectedPatientId) return
+    try {
+      const res = await fetch(`/api/patients/${selectedPatientId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: true }),
+      })
+      if (res.ok) {
+        setToast({ message: 'Paciente reactivado', type: 'success' })
+        fetchPatientProfile(selectedPatientId)
+        fetchPatients()
+      } else {
+        setToast({ message: 'Error al reactivar paciente', type: 'error' })
+      }
+    } catch {
+      setToast({ message: 'Error de conexión', type: 'error' })
+    }
+  }
+
   // ─── TOAST COMPONENT ────────────────────────────────
 
   const ToastNotification = () => {
@@ -703,15 +813,24 @@ export function PatientDirectory() {
             {isLoading ? 'Cargando...' : `${totalPatients} paciente${totalPatients !== 1 ? 's' : ''} registrado${totalPatients !== 1 ? 's' : ''}`}
           </p>
         </div>
-        <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-          <DialogTrigger asChild>
-            <motion.div whileTap={{ scale: 0.97 }}>
-              <Button className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white gap-2 h-9 text-sm">
-                <UserPlus className="h-4 w-4" />
-                Nuevo paciente
-              </Button>
-            </motion.div>
-          </DialogTrigger>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={includeInactive ? 'default' : 'outline'}
+            className={`h-9 text-xs gap-1.5 ${includeInactive ? 'bg-[#534AB7] hover:bg-[#534AB7]/90 text-white' : 'border-[#E1F5EE] text-[#888780] hover:bg-[#F1EFE8]'}`}
+            onClick={() => { setIncludeInactive(!includeInactive); setPage(1) }}
+          >
+            {includeInactive ? <UserCheck className="h-3.5 w-3.5" /> : <UserX className="h-3.5 w-3.5" />}
+            {includeInactive ? 'Incluir inactivos' : 'Inactivos'}
+          </Button>
+          <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+            <DialogTrigger asChild>
+              <motion.div whileTap={{ scale: 0.97 }}>
+                <Button className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white gap-2 h-9 text-sm">
+                  <UserPlus className="h-4 w-4" />
+                  Nuevo paciente
+                </Button>
+              </motion.div>
+            </DialogTrigger>
           <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-base font-medium tracking-[-0.03em]">
@@ -829,6 +948,94 @@ export function PatientDirectory() {
                   onChange={(e) => setCreateForm((f) => ({ ...f, notes: e.target.value }))}
                 />
               </div>
+
+              {/* Collapsible: Datos adicionales */}
+              <div className="border border-[#E1F5EE] rounded-lg overflow-hidden">
+                <button
+                  type="button"
+                  className="w-full flex items-center justify-between px-3 py-2.5 bg-[#F1EFE8] hover:bg-[#E1F5EE]/50 transition-colors"
+                  onClick={() => setShowAdditionalFields(!showAdditionalFields)}
+                >
+                  <span className="text-xs font-medium text-[#888780] flex items-center gap-1.5">
+                    <Shield className="h-3.5 w-3.5" />
+                    Datos adicionales
+                  </span>
+                  {showAdditionalFields ? (
+                    <ChevronUp className="h-3.5 w-3.5 text-[#888780]" />
+                  ) : (
+                    <ChevronDown className="h-3.5 w-3.5 text-[#888780]" />
+                  )}
+                </button>
+                {showAdditionalFields && (
+                  <div className="p-3 space-y-3">
+                    <p className="text-[10px] text-[#888780] uppercase tracking-wide font-medium flex items-center gap-1">
+                      <Siren className="h-3 w-3 text-red-400" />
+                      Contacto de emergencia
+                    </p>
+                    <div className="space-y-2">
+                      <Input
+                        placeholder="Nombre del contacto"
+                        className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7] focus:ring-[#534AB7]/20"
+                        value={createForm.emergencyContactName}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, emergencyContactName: e.target.value }))}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Input
+                          placeholder="Teléfono del contacto"
+                          className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7] focus:ring-[#534AB7]/20"
+                          value={createForm.emergencyContactPhone}
+                          onChange={(e) => setCreateForm((f) => ({ ...f, emergencyContactPhone: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Select
+                          value={createForm.emergencyContactRelation}
+                          onValueChange={(v) => setCreateForm((f) => ({ ...f, emergencyContactRelation: v }))}
+                        >
+                          <SelectTrigger className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7]">
+                            <SelectValue placeholder="Relación" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="esposo/a">Esposo/a</SelectItem>
+                            <SelectItem value="padre">Padre</SelectItem>
+                            <SelectItem value="madre">Madre</SelectItem>
+                            <SelectItem value="hijo/a">Hijo/a</SelectItem>
+                            <SelectItem value="amigo">Amigo</SelectItem>
+                            <SelectItem value="otro">Otro</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <Separator className="bg-[#E1F5EE]" />
+
+                    <p className="text-[10px] text-[#888780] uppercase tracking-wide font-medium flex items-center gap-1">
+                      <Shield className="h-3 w-3 text-[#1D9E75]" />
+                      Seguro médico
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Input
+                          placeholder="Aseguradora"
+                          className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7] focus:ring-[#534AB7]/20"
+                          value={createForm.insuranceProvider}
+                          onChange={(e) => setCreateForm((f) => ({ ...f, insuranceProvider: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Input
+                          placeholder="Número de póliza"
+                          className="h-9 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7] focus:ring-[#534AB7]/20"
+                          value={createForm.insurancePolicyNumber}
+                          onChange={(e) => setCreateForm((f) => ({ ...f, insurancePolicyNumber: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
             <DialogFooter className="gap-2">
               <Button
@@ -859,8 +1066,71 @@ export function PatientDirectory() {
           </DialogContent>
         </Dialog>
       </div>
+      </div>
 
-      {/* Search + Filter */}
+      {/* Quick stats banner */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+          <Card className="border-[#E1F5EE] bg-white">
+            <CardContent className="p-3 flex items-center gap-3">
+              <div className="h-8 w-8 rounded-md bg-[#EEEDFE] flex items-center justify-center shrink-0">
+                <Users className="h-4 w-4 text-[#534AB7]" />
+              </div>
+              <div>
+                <p className="text-lg font-semibold text-[#2C2C2A] tracking-[-0.03em]">{totalPatients}</p>
+                <p className="text-[10px] text-[#888780] uppercase tracking-wide font-medium">Total pacientes</p>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+          <Card className="border-[#E1F5EE] bg-white">
+            <CardContent className="p-3 flex items-center gap-3">
+              <div className="h-8 w-8 rounded-md bg-[#E1F5EE] flex items-center justify-center shrink-0">
+                <UserPlus className="h-4 w-4 text-[#1D9E75]" />
+              </div>
+              <div>
+                <p className="text-lg font-semibold text-[#2C2C2A] tracking-[-0.03em]">
+                  {patients.filter(p => { const d = new Date(p.createdAt); const now = new Date(); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); }).length}
+                </p>
+                <p className="text-[10px] text-[#888780] uppercase tracking-wide font-medium">Nuevos este mes</p>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+          <Card className="border-[#E1F5EE] bg-white">
+            <CardContent className="p-3 flex items-center gap-3">
+              <div className="h-8 w-8 rounded-md bg-[#E1F5EE] flex items-center justify-center shrink-0">
+                <Activity className="h-4 w-4 text-[#1D9E75]" />
+              </div>
+              <div>
+                <p className="text-lg font-semibold text-[#2C2C2A] tracking-[-0.03em]">
+                  {patients.filter(p => p.segment === 'active' || p.segment === 'vip').length}
+                </p>
+                <p className="text-[10px] text-[#888780] uppercase tracking-wide font-medium">Activos</p>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+          <Card className="border-[#E1F5EE] bg-white">
+            <CardContent className="p-3 flex items-center gap-3">
+              <div className="h-8 w-8 rounded-md bg-[#FEF3C7] flex items-center justify-center shrink-0">
+                <Sparkles className="h-4 w-4 text-[#92400E]" />
+              </div>
+              <div>
+                <p className="text-lg font-semibold text-[#2C2C2A] tracking-[-0.03em]">
+                  {patients.filter(p => p.segment === 'vip').length}
+                </p>
+                <p className="text-[10px] text-[#888780] uppercase tracking-wide font-medium">VIP</p>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+
+      {/* Search + Sort + Filter */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-[#888780]" />
@@ -868,9 +1138,21 @@ export function PatientDirectory() {
             placeholder="Buscar por nombre, telefono o email..."
             className="pl-8 h-9 text-sm bg-white border-[#E1F5EE] focus:border-[#534AB7] focus:ring-[#534AB7]/20 transition-colors"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => { setSearchQuery(e.target.value); setPage(1) }}
           />
         </div>
+        <Select value={sortBy} onValueChange={setSortBy}>
+          <SelectTrigger className="h-9 w-full sm:w-[180px] text-xs bg-white border-[#E1F5EE]">
+            <ArrowUpDown className="h-3 w-3 mr-1.5 text-[#888780]" />
+            <SelectValue placeholder="Ordenar por" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="createdAt">Fecha de registro</SelectItem>
+            <SelectItem value="name">Nombre</SelectItem>
+            <SelectItem value="lastVisitDate">Última visita</SelectItem>
+            <SelectItem value="totalSpent">Gasto total</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Segment filter tabs */}
@@ -929,7 +1211,17 @@ export function PatientDirectory() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <AnimatePresence>
-            {patients.map((patient, i) => (
+            {(() => {
+              const sorted = [...patients].sort((a, b) => {
+                switch (sortBy) {
+                  case 'name': return a.fullName.localeCompare(b.fullName)
+                  case 'lastVisitDate': return new Date(b.lastVisitDate || 0).getTime() - new Date(a.lastVisitDate || 0).getTime()
+                  case 'totalSpent': return b.totalSpent - a.totalSpent
+                  default: return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                }
+              })
+              return sorted
+            })().map((patient, i) => (
               <motion.div
                 key={patient.id}
                 initial={{ opacity: 0, y: 8 }}
@@ -994,8 +1286,12 @@ export function PatientDirectory() {
                           </div>
                         </div>
 
-                        {/* Ver ficha button */}
                         <div className="flex items-center justify-end mt-3">
+                          {!patient.isActive && (
+                            <Badge className="bg-[#FEE2E2] text-[#991B1B] border-0 text-[10px] font-medium px-2 py-0.5 mr-2">
+                              Desactivado
+                            </Badge>
+                          )}
                           <Button
                             variant="ghost"
                             className="h-7 text-xs text-[#534AB7] hover:text-[#534AB7] hover:bg-[#EEEDFE] gap-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
@@ -1012,6 +1308,38 @@ export function PatientDirectory() {
               </motion.div>
             ))}
           </AnimatePresence>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPatients > 0 && (
+        <div className="flex items-center justify-between pt-2">
+          <p className="text-xs text-[#888780]">
+            Mostrando {((page - 1) * limit) + 1}-{Math.min(page * limit, totalPatients)} de {totalPatients} pacientes
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs border-[#E1F5EE] text-[#888780] hover:bg-[#F1EFE8]"
+              disabled={page <= 1}
+              onClick={() => setPage(page - 1)}
+            >
+              Anterior
+            </Button>
+            <span className="text-xs text-[#888780]">
+              Página {page} de {Math.max(1, Math.ceil(totalPatients / limit))}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs border-[#E1F5EE] text-[#888780] hover:bg-[#F1EFE8]"
+              disabled={page >= Math.ceil(totalPatients / limit)}
+              onClick={() => setPage(page + 1)}
+            >
+              Siguiente
+            </Button>
+          </div>
         </div>
       )}
     </motion.div>
@@ -1075,6 +1403,11 @@ export function PatientDirectory() {
                   </h2>
                   <SegmentBadge segment={p.segment} />
                   <SourceBadge source={p.source} />
+                  {!p.isActive && (
+                    <Badge className="bg-[#FEE2E2] text-[#991B1B] border-0 text-[10px] font-medium px-2 py-0.5">
+                      Desactivado
+                    </Badge>
+                  )}
                 </div>
                 <div className="flex items-center gap-4 mt-1.5 flex-wrap">
                   {p.phone && (
@@ -1093,6 +1426,12 @@ export function PatientDirectory() {
                     <Calendar className="h-3 w-3" />
                     Registrado {formatDate(p.createdAt)}
                   </span>
+                  {p.firstContactDate && (
+                    <span className="text-xs text-[#888780] flex items-center gap-1.5">
+                      <CalendarClock className="h-3 w-3" />
+                      Primer contacto {formatDate(p.firstContactDate)}
+                    </span>
+                  )}
                 </div>
                 {p.allergies && (
                   <div className="flex items-center gap-1.5 mt-2">
@@ -1102,16 +1441,41 @@ export function PatientDirectory() {
                     </span>
                   </div>
                 )}
+                {/* Emergency Contact + Insurance quick info */}
+                <div className="flex items-center gap-3 mt-2 flex-wrap">
+                  {p.emergencyContactName && (
+                    <span className="text-[10px] text-[#991B1B] bg-[#FEE2E2]/60 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Siren className="h-2.5 w-2.5" />
+                      Emergencia: {p.emergencyContactName}{p.emergencyContactPhone ? ` ${p.emergencyContactPhone}` : ''}
+                    </span>
+                  )}
+                  {p.insuranceProvider && (
+                    <span className="text-[10px] text-[#1D9E75] bg-[#E1F5EE]/60 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Shield className="h-2.5 w-2.5" />
+                      {p.insuranceProvider}{p.insurancePolicyNumber ? ` — ${p.insurancePolicyNumber}` : ''}
+                    </span>
+                  )}
+                </div>
               </div>
               {/* Quick actions */}
               <div className="flex items-center gap-2 shrink-0">
-                <Button
-                  className="bg-[#1D9E75] hover:bg-[#1D9E75]/90 text-white h-8 text-xs gap-1.5"
-                  onClick={() => setActiveModule('agenda')}
-                >
-                  <Calendar className="h-3.5 w-3.5" />
-                  Agendar cita
-                </Button>
+                {p.isActive ? (
+                  <Button
+                    className="bg-[#1D9E75] hover:bg-[#1D9E75]/90 text-white h-8 text-xs gap-1.5"
+                    onClick={() => setActiveModule('agenda')}
+                  >
+                    <Calendar className="h-3.5 w-3.5" />
+                    Agendar cita
+                  </Button>
+                ) : (
+                  <Button
+                    className="bg-[#1D9E75] hover:bg-[#1D9E75]/90 text-white h-8 text-xs gap-1.5"
+                    onClick={handleReactivatePatient}
+                  >
+                    <UserCheck className="h-3.5 w-3.5" />
+                    Reactivar
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   className="h-8 text-xs gap-1.5 border-[#534AB7] text-[#534AB7] hover:bg-[#EEEDFE]"
@@ -1120,6 +1484,16 @@ export function PatientDirectory() {
                   <Stethoscope className="h-3.5 w-3.5" />
                   Nota clínica
                 </Button>
+                {p.isActive && (
+                  <Button
+                    variant="outline"
+                    className="h-8 text-xs gap-1.5 border-red-200 text-red-500 hover:bg-red-50"
+                    onClick={handleDeactivatePatient}
+                  >
+                    <UserX className="h-3.5 w-3.5" />
+                    Desactivar
+                  </Button>
+                )}
               </div>
             </div>
           </CardContent>
@@ -1198,8 +1572,15 @@ export function PatientDirectory() {
         </div>
 
         {/* Tabs */}
-        <Tabs defaultValue="info" className="space-y-4">
-          <TabsList className="bg-[#F1EFE8] h-9 p-0.5">
+        <Tabs defaultValue="activity" className="space-y-4">
+          <TabsList className="bg-[#F1EFE8] h-9 p-0.5 flex-wrap">
+            <TabsTrigger
+              value="activity"
+              className="text-xs h-8 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md data-[state=active]:text-[#534AB7]"
+            >
+              <Activity className="h-3.5 w-3.5 mr-1.5" />
+              Actividad
+            </TabsTrigger>
             <TabsTrigger
               value="info"
               className="text-xs h-8 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md data-[state=active]:text-[#534AB7]"
@@ -1229,11 +1610,11 @@ export function PatientDirectory() {
               Facturacion
             </TabsTrigger>
             <TabsTrigger
-              value="timeline"
+              value="conversations"
               className="text-xs h-8 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md data-[state=active]:text-[#534AB7]"
             >
-              <Activity className="h-3.5 w-3.5 mr-1.5" />
-              Timeline
+              <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
+              Conversaciones
             </TabsTrigger>
             <TabsTrigger
               value="followups"
@@ -1243,6 +1624,144 @@ export function PatientDirectory() {
               Seguimientos
             </TabsTrigger>
           </TabsList>
+
+          {/* TAB: Actividad (Activity Timeline) */}
+          <TabsContent value="activity">
+            <Card className="border-[#E1F5EE] bg-white">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium tracking-[-0.03em]">
+                  Actividad del paciente
+                </CardTitle>
+              </CardHeader>
+              <Separator className="bg-[#E1F5EE]" />
+              <CardContent className="p-4">
+                {(() => {
+                  type TimelineEntry = { id: string; date: string; type: 'created' | 'appointment' | 'soap' | 'invoice' | 'followup' | 'conversation'; label: string; detail: string; module?: string }
+                  const entries: TimelineEntry[] = []
+
+                  // Patient created
+                  entries.push({
+                    id: `created-${p.id}`,
+                    date: p.createdAt,
+                    type: 'created',
+                    label: 'Paciente registrado',
+                    detail: `${p.fullName} fue dado de alta en el sistema`,
+                  })
+
+                  // Appointments
+                  for (const apt of p.appointments) {
+                    entries.push({
+                      id: apt.id,
+                      date: apt.date,
+                      type: 'appointment',
+                      label: apt.status === 'completed' ? 'Cita completada' : apt.status === 'cancelled' ? 'Cita cancelada' : apt.status === 'no_show' ? 'No asistió a cita' : apt.status === 'confirmed' ? 'Cita confirmada' : 'Cita agendada',
+                      detail: `${apt.startTime} - ${apt.service?.name || 'Consulta'} ${apt.doctor ? `(${apt.doctor.name})` : ''}`,
+                      module: 'agenda',
+                    })
+                  }
+
+                  // SOAP notes
+                  for (const note of p.soapNotes) {
+                    entries.push({
+                      id: note.id,
+                      date: note.createdAt,
+                      type: 'soap',
+                      label: 'Nota clínica firmada',
+                      detail: note.diagnosis || note.assessment?.slice(0, 60) || 'Nota SOAP',
+                      module: 'flow',
+                    })
+                  }
+
+                  // Invoices
+                  for (const inv of p.invoices) {
+                    entries.push({
+                      id: inv.id,
+                      date: inv.createdAt,
+                      type: 'invoice',
+                      label: inv.paymentStatus === 'paid' ? 'Pago recibido' : inv.status === 'timbrada' ? 'CFDI timbrada' : 'Factura generada',
+                      detail: `${formatCurrency(inv.total)} — ${inv.concepto || 'Consulta'}`,
+                      module: 'bill',
+                    })
+                  }
+
+                  // Follow-ups
+                  for (const fu of followUps) {
+                    entries.push({
+                      id: fu.id,
+                      date: fu.completedAt || fu.createdAt,
+                      type: 'followup',
+                      label: fu.status === 'completed' ? 'Seguimiento completado' : 'Seguimiento creado',
+                      detail: `${fu.type === 'call' ? 'Llamada' : fu.type === 'message' ? 'Mensaje' : fu.type === 'reminder' ? 'Recordatorio' : fu.type === 'appointment' ? 'Agendar cita' : 'Nota'}${fu.notes ? `: ${fu.notes.slice(0, 40)}` : ''}`,
+                    })
+                  }
+
+                  // Conversations
+                  if (p.conversations) {
+                    for (const conv of p.conversations) {
+                      entries.push({
+                        id: conv.id,
+                        date: conv.lastMessageAt,
+                        type: 'conversation',
+                        label: `Conversación por ${conv.channel === 'whatsapp' ? 'WhatsApp' : conv.channel === 'instagram' ? 'Instagram' : 'Messenger'}`,
+                        detail: conv.status === 'active' ? 'Conversación activa' : conv.status === 'closed' ? 'Conversación cerrada' : 'Transferida a humano',
+                        module: 'desk',
+                      })
+                    }
+                  }
+
+                  // Sort by date descending
+                  entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+                  const timelineConfig: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
+                    created: { icon: UserPlus, color: '#534AB7', bg: '#EEEDFE' },
+                    appointment: { icon: Calendar, color: '#1D9E75', bg: '#E1F5EE' },
+                    soap: { icon: FileText, color: '#534AB7', bg: '#EEEDFE' },
+                    invoice: { icon: Receipt, color: '#D97706', bg: '#FEF3C7' },
+                    followup: { icon: Clock, color: '#3B82F6', bg: '#DBEAFE' },
+                    conversation: { icon: MessageSquare, color: '#1D9E75', bg: '#E1F5EE' },
+                  }
+
+                  if (entries.length === 0) {
+                    return (
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <Activity className="h-10 w-10 text-[#888780]/30 mb-3" />
+                        <p className="text-sm text-[#888780]">Sin actividad registrada</p>
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <ScrollArea className="max-h-[500px]">
+                      <div className="space-y-0">
+                        {entries.map((entry, i) => {
+                          const config = timelineConfig[entry.type]
+                          const Icon = config.icon
+                          const isLast = i === entries.length - 1
+                          return (
+                            <div key={entry.id} className="flex gap-3 group cursor-pointer" onClick={() => { if (entry.module) setActiveModule(entry.module as 'agenda' | 'flow' | 'bill' | 'desk') }}>
+                              {/* Timeline line + dot */}
+                              <div className="flex flex-col items-center">
+                                <div className={`h-7 w-7 rounded-full flex items-center justify-center shrink-0 transition-transform group-hover:scale-110`} style={{ backgroundColor: config.bg }}>
+                                  <Icon className="h-3.5 w-3.5" style={{ color: config.color }} />
+                                </div>
+                                {!isLast && <div className="w-px flex-1 bg-[#E1F5EE] min-h-[8px]" />}
+                              </div>
+                              {/* Content */}
+                              <div className={`pb-4 flex-1`}>
+                                <p className="text-xs font-medium text-[#2C2C2A]">{entry.label}</p>
+                                <p className="text-[10px] text-[#888780] mt-0.5">{entry.detail}</p>
+                                <p className="text-[9px] text-[#888780]/60 mt-0.5">{formatDate(entry.date)} · {formatTime(entry.date)}</p>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </ScrollArea>
+                  )
+                })()}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           {/* TAB: Informacion */}
           <TabsContent value="info">
@@ -1446,6 +1965,83 @@ export function PatientDirectory() {
                           <div className="h-8 px-3 flex items-center rounded-md bg-[#F1EFE8] border border-[#E1F5EE] text-sm text-[#2C2C2A]">
                             {formatCurrency(p.ltv)}
                           </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <Separator className="bg-[#E1F5EE]" />
+
+                    <h4 className="text-xs font-semibold text-[#991B1B] uppercase tracking-wide flex items-center gap-1">
+                      <Siren className="h-3 w-3" />
+                      Contacto de emergencia
+                    </h4>
+                    <div className="space-y-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-[#888780]">Nombre</Label>
+                        <Input
+                          className="h-8 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7] focus:ring-[#534AB7]/20"
+                          value={String(editForm.emergencyContactName || '')}
+                          onChange={(e) => setEditForm((f) => ({ ...f, emergencyContactName: e.target.value }))}
+                          placeholder="Nombre del contacto de emergencia"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-[#888780]">Teléfono</Label>
+                          <Input
+                            className="h-8 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7] focus:ring-[#534AB7]/20"
+                            value={String(editForm.emergencyContactPhone || '')}
+                            onChange={(e) => setEditForm((f) => ({ ...f, emergencyContactPhone: e.target.value }))}
+                            placeholder="+52 55 1234 5678"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-[#888780]">Relación</Label>
+                          <Select
+                            value={String(editForm.emergencyContactRelation || '')}
+                            onValueChange={(v) => setEditForm((f) => ({ ...f, emergencyContactRelation: v }))}
+                          >
+                            <SelectTrigger className="h-8 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7]">
+                              <SelectValue placeholder="Seleccionar" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="esposo/a">Esposo/a</SelectItem>
+                              <SelectItem value="padre">Padre</SelectItem>
+                              <SelectItem value="madre">Madre</SelectItem>
+                              <SelectItem value="hijo/a">Hijo/a</SelectItem>
+                              <SelectItem value="amigo">Amigo</SelectItem>
+                              <SelectItem value="otro">Otro</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </div>
+
+                    <Separator className="bg-[#E1F5EE]" />
+
+                    <h4 className="text-xs font-semibold text-[#1D9E75] uppercase tracking-wide flex items-center gap-1">
+                      <Shield className="h-3 w-3" />
+                      Seguro médico
+                    </h4>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-[#888780]">Aseguradora</Label>
+                          <Input
+                            className="h-8 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7] focus:ring-[#534AB7]/20"
+                            value={String(editForm.insuranceProvider || '')}
+                            onChange={(e) => setEditForm((f) => ({ ...f, insuranceProvider: e.target.value }))}
+                            placeholder="Ej. GNP, AXA, MetLife"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-[#888780]">Número de póliza</Label>
+                          <Input
+                            className="h-8 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7] focus:ring-[#534AB7]/20"
+                            value={String(editForm.insurancePolicyNumber || '')}
+                            onChange={(e) => setEditForm((f) => ({ ...f, insurancePolicyNumber: e.target.value }))}
+                            placeholder="Ej. POL-123456"
+                          />
                         </div>
                       </div>
                     </div>
@@ -1738,113 +2334,112 @@ export function PatientDirectory() {
             </Card>
           </TabsContent>
 
-          {/* TAB: Timeline */}
-          <TabsContent value="timeline">
+          {/* TAB: Conversaciones */}
+          <TabsContent value="conversations">
             <Card className="border-[#E1F5EE] bg-white">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium tracking-[-0.03em]">
-                  Timeline de actividad
+                  Conversaciones
                 </CardTitle>
               </CardHeader>
               <Separator className="bg-[#E1F5EE]" />
               <CardContent className="p-4">
-                {(() => {
-                  // Build timeline items from various data sources
-                  type TimelineEntry = { id: string; date: string; type: 'appointment' | 'soap' | 'invoice' | 'followup'; label: string; detail: string }
-                  const entries: TimelineEntry[] = []
-
-                  // Appointments
-                  for (const apt of p.appointments) {
-                    entries.push({
-                      id: apt.id,
-                      date: apt.date,
-                      type: 'appointment',
-                      label: apt.status === 'completed' ? 'Cita completada' : apt.status === 'cancelled' ? 'Cita cancelada' : 'Cita agendada',
-                      detail: `${apt.startTime} - ${apt.service?.name || 'Consulta'} ${apt.doctor ? `(${apt.doctor.name})` : ''}`,
-                    })
-                  }
-
-                  // SOAP notes
-                  for (const note of p.soapNotes) {
-                    entries.push({
-                      id: note.id,
-                      date: note.createdAt,
-                      type: 'soap',
-                      label: 'Nota clínica',
-                      detail: note.diagnosis || note.assessment?.slice(0, 60) || 'Nota SOAP',
-                    })
-                  }
-
-                  // Invoices
-                  for (const inv of p.invoices) {
-                    entries.push({
-                      id: inv.id,
-                      date: inv.createdAt,
-                      type: 'invoice',
-                      label: inv.paymentStatus === 'paid' ? 'Pago recibido' : inv.status === 'timbrada' ? 'CFDI timbrada' : 'Factura generada',
-                      detail: `${formatCurrency(inv.total)} — ${inv.concepto || 'Consulta'}`,
-                    })
-                  }
-
-                  // Follow-ups
-                  for (const fu of followUps) {
-                    entries.push({
-                      id: fu.id,
-                      date: fu.completedAt || fu.createdAt,
-                      type: 'followup',
-                      label: fu.status === 'completed' ? 'Seguimiento completado' : 'Seguimiento creado',
-                      detail: `${fu.type === 'call' ? 'Llamada' : fu.type === 'message' ? 'Mensaje' : fu.type === 'reminder' ? 'Recordatorio' : fu.type === 'appointment' ? 'Agendar cita' : 'Nota'}${fu.notes ? `: ${fu.notes.slice(0, 40)}` : ''}`,
-                    })
-                  }
-
-                  // Sort by date descending
-                  entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-
-                  const timelineConfig: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
-                    appointment: { icon: Calendar, color: '#1D9E75', bg: '#E1F5EE' },
-                    soap: { icon: FileText, color: '#534AB7', bg: '#EEEDFE' },
-                    invoice: { icon: Receipt, color: '#D97706', bg: '#FEF3C7' },
-                    followup: { icon: Clock, color: '#3B82F6', bg: '#DBEAFE' },
-                  }
-
-                  if (entries.length === 0) {
-                    return (
-                      <div className="flex flex-col items-center justify-center py-12 text-center">
-                        <Activity className="h-10 w-10 text-[#888780]/30 mb-3" />
-                        <p className="text-sm text-[#888780]">Sin actividad registrada</p>
-                      </div>
-                    )
-                  }
-
-                  return (
-                    <ScrollArea className="max-h-96">
-                      <div className="space-y-0">
-                        {entries.map((entry, i) => {
-                          const config = timelineConfig[entry.type]
-                          const Icon = config.icon
-                          const isLast = i === entries.length - 1
-                          return (
-                            <div key={entry.id} className="flex gap-3">
-                              {/* Timeline line + icon */}
-                              <div className="flex flex-col items-center">
-                                <div className={`h-7 w-7 rounded-full flex items-center justify-center shrink-0`} style={{ backgroundColor: config.bg }}>
-                                  <Icon className="h-3.5 w-3.5" style={{ color: config.color }} />
+                {(!p.conversations || p.conversations.length === 0) ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <MessageSquare className="h-10 w-10 text-[#888780]/30 mb-3" />
+                    <p className="text-sm text-[#888780]">Sin conversaciones registradas</p>
+                    <p className="text-xs text-[#888780]/60 mt-1">
+                      Las conversaciones por WhatsApp, Instagram y Messenger aparecerán aquí
+                    </p>
+                  </div>
+                ) : (
+                  <ScrollArea className="max-h-[500px]">
+                    <div className="space-y-3">
+                      {p.conversations.map((conv, i) => {
+                        const isExpanded = expandedConversation === conv.id
+                        const channelConfig: Record<string, { label: string; color: string; bg: string }> = {
+                          whatsapp: { label: 'WhatsApp', color: '#1D9E75', bg: '#E1F5EE' },
+                          instagram: { label: 'Instagram', color: '#D97706', bg: '#FEF3C7' },
+                          messenger: { label: 'Messenger', color: '#3B82F6', bg: '#DBEAFE' },
+                        }
+                        const ch = channelConfig[conv.channel] || channelConfig.whatsapp
+                        const statusConfig: Record<string, { label: string; bg: string; text: string }> = {
+                          active: { label: 'Activa', bg: 'bg-[#E1F5EE]', text: 'text-[#1D9E75]' },
+                          closed: { label: 'Cerrada', bg: 'bg-[#F1EFE8]', text: 'text-[#888780]' },
+                          handed_off: { label: 'Transferida', bg: 'bg-[#FEF3C7]', text: 'text-[#92400E]' },
+                        }
+                        const st = statusConfig[conv.status] || statusConfig.active
+                        return (
+                          <motion.div
+                            key={conv.id}
+                            className="rounded-lg border border-[#E1F5EE] overflow-hidden"
+                            initial={{ opacity: 0, y: 5 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.03 }}
+                          >
+                            <button
+                              type="button"
+                              className="w-full p-3 flex items-center justify-between hover:bg-[#F1EFE8]/50 transition-colors"
+                              onClick={() => setExpandedConversation(isExpanded ? null : conv.id)}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="h-7 w-7 rounded-full flex items-center justify-center" style={{ backgroundColor: ch.bg }}>
+                                  <MessageSquare className="h-3.5 w-3.5" style={{ color: ch.color }} />
                                 </div>
-                                {!isLast && <div className="w-px flex-1 bg-[#E1F5EE]" />}
+                                <div className="text-left">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-medium text-[#2C2C2A]">{ch.label}</span>
+                                    <Badge className={`${st.bg} ${st.text} border-0 text-[9px] px-1.5 py-0`}>
+                                      {st.label}
+                                    </Badge>
+                                  </div>
+                                  <span className="text-[10px] text-[#888780]">
+                                    {formatDate(conv.lastMessageAt)}
+                                  </span>
+                                </div>
                               </div>
-                              {/* Content */}
-                              <div className={`pb-4 ${isLast ? '' : ''}`}>
-                                <p className="text-xs font-medium text-[#2C2C2A]">{entry.label}</p>
-                                <p className="text-[10px] text-[#888780] mt-0.5">{entry.detail}</p>
-                                <p className="text-[9px] text-[#888780]/60 mt-0.5">{formatShortDate(entry.date)}</p>
+                              {isExpanded ? (
+                                <ChevronUp className="h-4 w-4 text-[#888780]" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4 text-[#888780]" />
+                              )}
+                            </button>
+                            {isExpanded && conv.messages && conv.messages.length > 0 && (
+                              <div className="px-3 pb-3 space-y-2 border-t border-[#E1F5EE] pt-2">
+                                {conv.messages.map((msg) => (
+                                  <div
+                                    key={msg.id}
+                                    className={`flex ${msg.direction === 'inbound' ? 'justify-start' : 'justify-end'}`}
+                                  >
+                                    <div
+                                      className={`max-w-[80%] rounded-lg px-3 py-2 text-xs ${
+                                        msg.direction === 'inbound'
+                                          ? 'bg-[#F1EFE8] text-[#2C2C2A]'
+                                          : 'bg-[#534AB7] text-white'
+                                      }`}
+                                    >
+                                      <p>{msg.content}</p>
+                                      <p className={`text-[9px] mt-1 ${msg.direction === 'inbound' ? 'text-[#888780]' : 'text-white/60'}`}>
+                                        {formatTime(msg.createdAt)}
+                                        {msg.senderType === 'agent' && ' · Agente IA'}
+                                        {msg.senderType === 'patient' && ' · Paciente'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </ScrollArea>
-                  )
-                })()}
+                            )}
+                            {isExpanded && (!conv.messages || conv.messages.length === 0) && (
+                              <div className="px-3 pb-3 border-t border-[#E1F5EE] pt-2">
+                                <p className="text-[10px] text-[#888780] text-center py-2">Sin mensajes en esta conversación</p>
+                              </div>
+                            )}
+                          </motion.div>
+                        )
+                      })}
+                    </div>
+                  </ScrollArea>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

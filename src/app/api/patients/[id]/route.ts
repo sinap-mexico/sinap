@@ -166,6 +166,9 @@ export async function PATCH(
       allergies, medicalHistory, notes,
       segment, totalVisits, totalSpent, ltv,
       preferredChannel, preferredTime, doNotContact, sentiment,
+      emergencyContactName, emergencyContactPhone, emergencyContactRelation,
+      insuranceProvider, insurancePolicyNumber,
+      isActive,
     } = body
 
     // Build update data — only include fields that were provided
@@ -191,6 +194,12 @@ export async function PATCH(
     if (preferredTime !== undefined) data.preferredTime = preferredTime || null
     if (doNotContact !== undefined) data.doNotContact = doNotContact
     if (sentiment !== undefined) data.sentiment = sentiment
+    if (emergencyContactName !== undefined) data.emergencyContactName = emergencyContactName || null
+    if (emergencyContactPhone !== undefined) data.emergencyContactPhone = emergencyContactPhone || null
+    if (emergencyContactRelation !== undefined) data.emergencyContactRelation = emergencyContactRelation || null
+    if (insuranceProvider !== undefined) data.insuranceProvider = insuranceProvider || null
+    if (insurancePolicyNumber !== undefined) data.insurancePolicyNumber = insurancePolicyNumber || null
+    if (isActive !== undefined) data.isActive = isActive
 
     try {
       const patient = await db.patient.update({
@@ -211,7 +220,7 @@ export async function PATCH(
   }
 }
 
-// DELETE /api/patients/[id] — Soft delete (not actually deleting, just deactivating)
+// DELETE /api/patients/[id] — Soft delete (set isActive=false)
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -220,8 +229,11 @@ export async function DELETE(
     const { id } = await params
     if (!db) return NextResponse.json({ error: "Base de datos no disponible" }, { status: 503 })
 
-    // For now, we actually delete. In production, you'd add an `isActive` field.
-    await db.patient.delete({ where: { id } })
+    // Soft delete: set isActive to false instead of actually deleting
+    await db.patient.update({
+      where: { id },
+      data: { isActive: false },
+    })
 
     return NextResponse.json({ success: true })
   } catch (error: unknown) {

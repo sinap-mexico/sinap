@@ -34,6 +34,17 @@ export async function GET(req: NextRequest) {
       where,
       include: {
         patient: { select: { fullName: true, rfc: true } },
+        appointment: {
+          select: {
+            id: true,
+            date: true,
+            startTime: true,
+            endTime: true,
+            doctor: { select: { name: true } },
+            service: { select: { name: true, price: true } },
+          },
+        },
+        payments: { orderBy: { createdAt: 'desc' } },
       },
       orderBy: { createdAt: 'desc' },
     })
@@ -91,6 +102,16 @@ export async function POST(req: NextRequest) {
       },
       include: {
         patient: { select: { fullName: true, rfc: true } },
+        appointment: {
+          select: {
+            id: true,
+            date: true,
+            startTime: true,
+            doctor: { select: { name: true } },
+            service: { select: { name: true, price: true } },
+          },
+        },
+        payments: true,
       },
     })
 
@@ -108,24 +129,125 @@ export async function PATCH(req: NextRequest) {
     if (!db) return NextResponse.json({ error: 'Base de datos no disponible' }, { status: 503 })
 
     const body = await req.json()
-    const { invoiceId, paymentStatus, status, formaPago } = body
+    const { invoiceId, paymentStatus, status, formaPago, amount, reference, notes, createdBy } = body
 
     if (!invoiceId) {
       return NextResponse.json({ error: 'invoiceId es requerido' }, { status: 400 })
     }
 
-    const updateData: Record<string, unknown> = {}
-    if (paymentStatus !== undefined) {
-      updateData.paymentStatus = paymentStatus
-      // If marking as paid, record the timestamp
-      if (paymentStatus === 'paid') {
-        updateData.paidAt = new Date()
+    // When PATCHing paymentStatus to "paid", create a Payment record instead of just flipping status
+    if (paymentStatus === 'paid') {
+      const invoice = await db.invoice.findUnique({
+        where: { id: invoiceId },
+        include: { payments: true },
+      })
+
+      if (!invoice) {
+        return NextResponse.json({ error: 'Factura no encontrada' }, { status: 404 })
       }
-      // If reverting to unpaid, clear the paidAt timestamp
-      if (paymentStatus === 'unpaid') {
-        updateData.paidAt = null
+
+      const totalPaid = invoice.payments.reduce((sum, p) => sum + p.amount, 0)
+      const remaining = invoice.total - totalPaid
+      const paymentAmount = amount || remaining // default to full remaining balance
+
+      if (paymentAmount > 0) {
+        await db.payment.create({
+          data: {
+            invoiceId,
+            amount: paymentAmount,
+            formaPago: formaPago || '01',
+            reference: reference || null,
+            notes: notes || null,
+            createdBy: createdBy || null,
+          },
+        })
       }
+
+      // Recalculate invoice status from payments
+      const allPayments = await db.payment.findMany({ where: { invoiceId } })
+      const newTotalPaid = allPayments.reduce((sum, p) => sum + p.amount, 0)
+
+      let newPaymentStatus: string
+      let paidAt: Date | null = null
+      let newFormaPago: string | null = null
+
+      if (newTotalPaid >= invoice.total && invoice.total > 0) {
+        newPaymentStatus = 'paid'
+        paidAt = new Date()
+        newFormaPago = allPayments[0]?.formaPago || formaPago || invoice.formaPago
+      } else if (newTotalPaid > 0) {
+        newPaymentStatus = 'partial'
+        newFormaPago = allPayments[0]?.formaPago || formaPago || invoice.formaPago
+      } else {
+        newPaymentStatus = 'unpaid'
+      }
+
+      const updated = await db.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          paymentStatus: newPaymentStatus,
+          paidAt,
+          formaPago: newFormaPago || invoice.formaPago,
+        },
+        include: {
+          patient: { select: { fullName: true, rfc: true } },
+          appointment: {
+            select: {
+              id: true,
+              date: true,
+              startTime: true,
+              doctor: { select: { name: true } },
+              service: { select: { name: true, price: true } },
+            },
+          },
+          payments: { orderBy: { createdAt: 'desc' } },
+        },
+      })
+
+      // Auto-update patient metrics when invoice is paid
+      if (newPaymentStatus === 'paid' && invoice.patientId) {
+        try {
+          const { updatePatientMetrics } = await import('@/app/api/patients/route')
+          await updatePatientMetrics(invoice.patientId)
+        } catch (err) {
+          console.error('Failed to update patient metrics after payment:', err)
+        }
+      }
+
+      return NextResponse.json({ invoice: updated })
     }
+
+    // When PATCHing paymentStatus to "unpaid" (revert), delete all Payment records
+    if (paymentStatus === 'unpaid') {
+      await db.payment.deleteMany({ where: { invoiceId } })
+
+      const updated = await db.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          paymentStatus: 'unpaid',
+          paidAt: null,
+          formaPago: null,
+        },
+        include: {
+          patient: { select: { fullName: true, rfc: true } },
+          appointment: {
+            select: {
+              id: true,
+              date: true,
+              startTime: true,
+              doctor: { select: { name: true } },
+              service: { select: { name: true, price: true } },
+            },
+          },
+          payments: true,
+        },
+      })
+
+      return NextResponse.json({ invoice: updated })
+    }
+
+    // Generic PATCH for other fields (status, etc.)
+    const updateData: Record<string, unknown> = {}
     if (status !== undefined) updateData.status = status
     if (formaPago !== undefined) updateData.formaPago = formaPago
 
@@ -134,18 +256,18 @@ export async function PATCH(req: NextRequest) {
       data: updateData,
       include: {
         patient: { select: { fullName: true, rfc: true } },
+        appointment: {
+          select: {
+            id: true,
+            date: true,
+            startTime: true,
+            doctor: { select: { name: true } },
+            service: { select: { name: true, price: true } },
+          },
+        },
+        payments: { orderBy: { createdAt: 'desc' } },
       },
     })
-
-    // Auto-update patient metrics when invoice is paid
-    if (paymentStatus === 'paid' && invoice.patientId) {
-      try {
-        const { updatePatientMetrics } = await import('@/app/api/patients/route')
-        await updatePatientMetrics(invoice.patientId)
-      } catch (err) {
-        console.error('Failed to update patient metrics after payment:', err)
-      }
-    }
 
     return NextResponse.json({ invoice })
   } catch (error: unknown) {
@@ -172,6 +294,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Factura no encontrada' }, { status: 404 })
     }
 
+    // Payments will be cascade-deleted
     await db.invoice.delete({ where: { id: invoiceId } })
 
     return NextResponse.json({ success: true, deleted: invoiceId })

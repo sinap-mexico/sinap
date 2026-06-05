@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { createZAI } from '@/lib/zai'
+import { MetaClient, getClinicMetaConfig } from '@/lib/meta-client'
 
 type AgentName = 'desk' | 'flow' | 'bill' | 'grow'
 
@@ -113,6 +114,42 @@ export async function POST(req: NextRequest) {
 
     const aiResponse = completion.choices[0]?.message?.content
 
+    // ── WhatsApp bridging: send AI response via WhatsApp if configured ──
+    let whatsappWamid: string | null = null
+
+    if (aiResponse && db && clinicId) {
+      try {
+        // Check if the clinic has WhatsApp configured
+        const metaConfig = await getClinicMetaConfig(clinicId)
+        if (metaConfig) {
+          // Get the conversation to check channel and find patient phone
+          const conv = conversationId
+            ? await db.conversation.findUnique({
+                where: { id: conversationId },
+                select: { channel: true, patientId: true },
+              })
+            : null
+
+          if (conv && conv.channel === 'whatsapp' && conv.patientId) {
+            // Get patient phone number
+            const patient = await db.patient.findUnique({
+              where: { id: conv.patientId },
+              select: { phone: true },
+            })
+
+            if (patient?.phone) {
+              const metaClient = new MetaClient(metaConfig)
+              const sendResult = await metaClient.sendTextMessage(patient.phone, aiResponse)
+              whatsappWamid = sendResult.messageId
+            }
+          }
+        }
+      } catch (whatsappError) {
+        // WhatsApp send failure should NOT fail the orchestrator response
+        console.error('Orchestrator WhatsApp bridge error:', whatsappError)
+      }
+    }
+
     // Persist messages to DB
     if (db) {
       try {
@@ -120,6 +157,7 @@ export async function POST(req: NextRequest) {
           // conversationId provided — the Desk component handles message creation
           // via fire-and-forget POST /api/messages. We only update conversation metadata
           // here to avoid duplicate message records.
+          // However, if we sent via WhatsApp, update the outbound message's wamid
           await db.conversation.update({
             where: { id: conversationId },
             data: {
@@ -127,6 +165,25 @@ export async function POST(req: NextRequest) {
               currentAgent: agentToCurrentAgent[agent] || 'reception',
             },
           })
+
+          // If WhatsApp was used, find the latest outbound AI message and set wamid
+          if (whatsappWamid) {
+            const latestAiMsg = await db.message.findFirst({
+              where: {
+                conversationId,
+                direction: 'outbound',
+                aiGenerated: true,
+                wamid: null,
+              },
+              orderBy: { createdAt: 'desc' },
+            })
+            if (latestAiMsg) {
+              await db.message.update({
+                where: { id: latestAiMsg.id },
+                data: { wamid: whatsappWamid },
+              })
+            }
+          }
         } else if (patientId && clinicId) {
           // No conversationId but patientId + clinicId — this is a direct API call
           // (not from the Desk component). We handle full persistence here.
@@ -188,6 +245,7 @@ export async function POST(req: NextRequest) {
                 agentName: agentLabels[agent],
                 aiGenerated: true,
                 isMock: true,
+                wamid: whatsappWamid,
               },
             })
           }

@@ -34,7 +34,7 @@ export const appointments = [
   { id: 'a7', patientId: 'p1', patientName: 'María García López', time: '16:00', duration: 30, status: 'scheduled', type: 'Aplicación tratamiento' },
   { id: 'a8', patientId: 'p4', patientName: 'Roberto Jiménez Salazar', time: '17:00', duration: 30, status: 'scheduled', type: 'Consulta estética' },
   { id: 'a9', patientId: 'p5', patientName: 'Laura Patricia Morales', time: '09:30', duration: 30, status: 'cancelled', type: 'Primera consulta' },
-  { id: 'a10', patientId: 'p2', patientName: 'Carlos Mendoza Rivera', time: '11:30', duration: 30, status: 'no-show', type: 'Seguimiento' },
+  { id: 'a10', patientId: 'p2', patientName: 'Carlos Mendoza Rivera', time: '11:30', duration: 30, status: 'no_show', type: 'Seguimiento' },
 ]
 
 export const invoices = [

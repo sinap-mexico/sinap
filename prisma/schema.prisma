@@ -6,9 +6,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider  = "sqlite"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
 
 // ─── AUTH ────────────────────────────────────────────────
@@ -247,6 +246,18 @@ model Patient {
   medicalHistory String? // JSON string con antecedentes
   notes          String?
 
+  // Emergency contact
+  emergencyContactName     String?   // Nombre del contacto de emergencia
+  emergencyContactPhone    String?   // Teléfono del contacto de emergencia
+  emergencyContactRelation String?   // Relación (esposo/a, padre, madre, hijo/a, amigo, otro)
+
+  // Insurance
+  insuranceProvider     String?   // Aseguradora
+  insurancePolicyNumber String?   // Número de póliza
+
+  // Soft delete
+  isActive       Boolean  @default(true)  // Soft delete support
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -260,6 +271,7 @@ model Patient {
   @@index([clinicId])
   @@index([clinicId, phone])
   @@index([clinicId, segment])
+  @@index([clinicId, isActive])
 }
 
 // ─── APPOINTMENTS ────────────────────────────────────────
@@ -385,10 +397,28 @@ model Invoice {
   clinic          Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   patient         Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
   appointment     Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  payments        Payment[]
 
   @@index([clinicId, status])
   @@index([clinicId, createdAt])
   @@index([patientId])
+}
+
+// ─── PAYMENTS ────────────────────────────────────────────
+
+model Payment {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount      Float    // amount of this specific payment
+  formaPago   String   // "01 Efectivo", "02 Transferencia", "03 Tarjeta", etc.
+  reference   String?  // optional reference number (transfer #, last 4 digits, etc.)
+  notes       String?  // optional notes
+  createdBy   String?  // user who recorded the payment
+  createdAt   DateTime @default(now())
+
+  @@index([invoiceId])
+  @@map("payments")
 }
 
 // ─── CONVERSATIONS & MESSAGES ────────────────────────────
@@ -444,6 +474,9 @@ model Message {
   confidence     Float?   // 0-1 confidence del agente
 
   isMock         Boolean  @default(false)
+
+  // WhatsApp tracking
+  wamid          String?   // WhatsApp message ID for status tracking
 
   createdAt      DateTime @default(now())
 
