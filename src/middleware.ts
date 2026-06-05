@@ -5,7 +5,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Allow public routes
-  if (pathname === '/' || pathname === '/login' || pathname.startsWith('/api/')) {
+  if (pathname === '/' || pathname === '/login' || pathname === '/reset-password' || pathname.startsWith('/api/')) {
     return NextResponse.next()
   }
 

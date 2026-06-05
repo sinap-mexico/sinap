@@ -1583,6 +1583,12 @@ export function getMockKPIs(_clinicId: string) {
       pacientesNuevos,
       ocupacion,
     },
+    trends: {
+      citasHoyDiff: 0,
+      conversacionesUnread: 0,
+      revenueGrowth: 0,
+      revenuePrevMonth: monthNames[(currentMonth - 1 + 12) % 12],
+    },
     weeklyAppointments,
     monthlyRevenue,
     noShowRate,

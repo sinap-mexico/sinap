@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { META_BASE_URL, validateMetaToken } from '@/lib/meta-client'
+import { encryptToken } from '@/lib/meta/token-vault'
 
 const REQUEST_TIMEOUT_MS = 15_000
 
@@ -56,7 +57,7 @@ export async function GET(req: NextRequest) {
       'pages_manage_metadata',
     ].join(',')
 
-    const oauthUrl = `https://www.facebook.com/${process.env.META_API_VERSION || 'v21.0'}/dialog/oauth?` +
+    const oauthUrl = `https://www.facebook.com/${process.env.META_GRAPH_VERSION || 'v25.0'}/dialog/oauth?` +
       `client_id=${appId}&` +
       `redirect_uri=${encodeURIComponent(redirectUri)}&` +
       `scope=${encodeURIComponent(scope)}&` +
@@ -156,11 +157,13 @@ export async function POST(req: NextRequest) {
       clearTimeout(timeout)
     }
 
-    const accessToken = tokenData.access_token
+    const rawAccessToken = tokenData.access_token
+    // Use raw token for API calls, encrypt only for storage
+    const encryptedToken = encryptToken(rawAccessToken)
 
-    // Step 2: Get granted permissions
+    // Step 2: Get granted permissions (use raw token for API calls)
     const permissionsRes = await fetch(
-      `${META_BASE_URL}/me/permissions?access_token=${encodeURIComponent(accessToken)}`
+      `${META_BASE_URL}/me/permissions?access_token=${encodeURIComponent(rawAccessToken)}`
     )
     const permissionsData = await permissionsRes.json()
     const grantedScopes = (permissionsData.data || [])
@@ -170,7 +173,7 @@ export async function POST(req: NextRequest) {
 
     // Step 3: Get WABA ID from user's businesses
     const accountsRes = await fetch(
-      `${META_BASE_URL}/me/accounts?access_token=${encodeURIComponent(accessToken)}`
+      `${META_BASE_URL}/me/accounts?access_token=${encodeURIComponent(rawAccessToken)}`
     )
     const accountsData = await accountsRes.json()
 
@@ -181,7 +184,7 @@ export async function POST(req: NextRequest) {
     if (whatsappBusinessId) {
       try {
         const phonesRes = await fetch(
-          `${META_BASE_URL}/${whatsappBusinessId}/phone_numbers?access_token=${encodeURIComponent(accessToken)}`
+          `${META_BASE_URL}/${whatsappBusinessId}/phone_numbers?access_token=${encodeURIComponent(rawAccessToken)}`
         )
         const phonesData = await phonesRes.json()
         phoneNumberId = phonesData.data?.[0]?.id || null
@@ -193,7 +196,7 @@ export async function POST(req: NextRequest) {
     // Step 5: Create MetaConnection records for each channel
     const connections: Array<{ channel: string; status: string; businessId: string | null }> = []
 
-    // WhatsApp connection
+    // WhatsApp connection (store encrypted token)
     if (whatsappBusinessId) {
       const waConn = await db.metaConnection.upsert({
         where: { clinicId_channel: { clinicId, channel: 'whatsapp' } },
@@ -202,7 +205,7 @@ export async function POST(req: NextRequest) {
           channel: 'whatsapp',
           businessId: whatsappBusinessId,
           phoneNumberId,
-          accessToken,
+          accessToken: encryptedToken,
           status: 'active',
           oauthCode: code,
           scopes: grantedScopes,
@@ -210,7 +213,7 @@ export async function POST(req: NextRequest) {
         update: {
           businessId: whatsappBusinessId,
           phoneNumberId,
-          accessToken,
+          accessToken: encryptedToken,
           status: 'active',
           oauthCode: code,
           scopes: grantedScopes,
@@ -226,7 +229,7 @@ export async function POST(req: NextRequest) {
         const pageId = accountsData.data?.[0]?.id
         if (pageId) {
           const igRes = await fetch(
-            `${META_BASE_URL}/${pageId}?fields=instagram_business_account&access_token=${encodeURIComponent(accessToken)}`
+            `${META_BASE_URL}/${pageId}?fields=instagram_business_account&access_token=${encodeURIComponent(rawAccessToken)}`
           )
           const igData = await igRes.json()
 
@@ -238,7 +241,7 @@ export async function POST(req: NextRequest) {
                 channel: 'instagram',
                 businessId: igData.instagram_business_account.id,
                 pageId,
-                accessToken,
+                accessToken: encryptedToken,
                 status: 'active',
                 oauthCode: code,
                 scopes: grantedScopes,
@@ -246,7 +249,7 @@ export async function POST(req: NextRequest) {
               update: {
                 businessId: igData.instagram_business_account.id,
                 pageId,
-                accessToken,
+                accessToken: encryptedToken,
                 status: 'active',
                 oauthCode: code,
                 scopes: grantedScopes,
@@ -271,7 +274,7 @@ export async function POST(req: NextRequest) {
             channel: 'messenger',
             businessId: pageId,
             pageId,
-            accessToken,
+            accessToken: encryptedToken,
             status: 'active',
             oauthCode: code,
             scopes: grantedScopes,
@@ -279,7 +282,7 @@ export async function POST(req: NextRequest) {
           update: {
             businessId: pageId,
             pageId,
-            accessToken,
+            accessToken: encryptedToken,
             status: 'active',
             oauthCode: code,
             scopes: grantedScopes,
@@ -296,7 +299,7 @@ export async function POST(req: NextRequest) {
         data: {
           wabaId: whatsappBusinessId,
           phoneNumberId,
-          metaAccessToken: accessToken,
+          metaAccessToken: encryptedToken,
         },
       }).catch(() => {})
     }

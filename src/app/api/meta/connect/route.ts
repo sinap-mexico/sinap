@@ -1,7 +1,13 @@
+// ─── Meta Channel Connection Management ───────────────────────
+// POST: Save/update channel connection
+// GET: Check connection status for all channels
+// DELETE: Disconnect a specific channel or all channels
+
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { validateMetaToken, META_BASE_URL } from '@/lib/meta-client'
 import type { MetaChannel } from '@/lib/meta-client'
+import { encryptToken, smartDecryptToken } from '@/lib/meta/token-vault'
 
 // ─── POST: Save Meta API configuration for a specific channel ──
 export async function POST(req: NextRequest) {
@@ -78,6 +84,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Validate the token by making a test call to Meta API
+    // Use the raw (unencrypted) token for validation
+    const rawToken = smartDecryptToken(resolvedAccessToken)
+
     let resourceToValidate: string | undefined
     switch (resolvedChannel) {
       case 'whatsapp':
@@ -91,13 +100,16 @@ export async function POST(req: NextRequest) {
         break
     }
 
-    const validation = await validateMetaToken(resolvedAccessToken, resourceToValidate)
+    const validation = await validateMetaToken(rawToken, resourceToValidate)
     if (!validation.valid) {
       return NextResponse.json(
         { error: 'Token de acceso invalido. Verifica que sea correcto y no haya expirado.' },
         { status: 400 }
       )
     }
+
+    // Encrypt token before storing
+    const encryptedToken = encryptToken(rawToken)
 
     // Create or update MetaConnection record
     const connection = await db.metaConnection.upsert({
@@ -110,7 +122,7 @@ export async function POST(req: NextRequest) {
         businessId: resolvedBusinessId || null,
         phoneNumberId: resolvedPhoneNumberId || null,
         pageId: resolvedPageId || null,
-        accessToken: resolvedAccessToken,
+        accessToken: encryptedToken,
         status: 'active',
         businessName: validation.businessName || null,
       },
@@ -118,7 +130,7 @@ export async function POST(req: NextRequest) {
         businessId: resolvedBusinessId || null,
         phoneNumberId: resolvedPhoneNumberId || null,
         pageId: resolvedPageId || null,
-        accessToken: resolvedAccessToken,
+        accessToken: encryptedToken,
         status: 'active',
         businessName: validation.businessName || null,
       },
@@ -129,7 +141,7 @@ export async function POST(req: NextRequest) {
     if (resolvedChannel === 'whatsapp') {
       clinicUpdateData.wabaId = resolvedBusinessId
       clinicUpdateData.phoneNumberId = resolvedPhoneNumberId
-      clinicUpdateData.metaAccessToken = resolvedAccessToken
+      clinicUpdateData.metaAccessToken = encryptedToken
     }
     if (resolvedChannel === 'instagram' || (igBusinessId)) {
       clinicUpdateData.igBusinessId = igBusinessId || resolvedBusinessId
@@ -193,12 +205,14 @@ export async function GET(req: NextRequest) {
 
           if (conn.status === 'active') {
             try {
+              // Decrypt token for validation
+              const rawToken = smartDecryptToken(conn.accessToken)
               const resource = conn.channel === 'whatsapp'
                 ? conn.phoneNumberId
                 : conn.channel === 'instagram'
                 ? conn.businessId
                 : conn.pageId || conn.businessId
-              const validation = await validateMetaToken(conn.accessToken, resource || undefined)
+              const validation = await validateMetaToken(rawToken, resource || undefined)
               tokenValid = validation.valid
               if (validation.businessName) {
                 businessName = validation.businessName
@@ -268,7 +282,8 @@ export async function GET(req: NextRequest) {
       let tokenValid = false
 
       try {
-        const validation = await validateMetaToken(clinic.metaAccessToken, clinic.phoneNumberId)
+        const rawToken = smartDecryptToken(clinic.metaAccessToken)
+        const validation = await validateMetaToken(rawToken, clinic.phoneNumberId)
         tokenValid = validation.valid
         businessName = validation.businessName
       } catch {

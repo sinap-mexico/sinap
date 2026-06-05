@@ -1,7 +1,17 @@
+// ─── Meta Universal Webhook — WhatsApp + Instagram + Messenger ──────
+// Receives inbound messages, validates signature, normalizes,
+// persists, and triggers AI orchestrator.
+// Follows the Sinap Meta Integration Guide (v1.0).
+
+import crypto from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { MetaClient, getClinicMetaConfig, getClinicMetaConnection, type MetaChannel } from '@/lib/meta-client'
 import { createZAI } from '@/lib/zai'
+
+// ─── Config ────────────────────────────────────────────────
+const VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN
+const APP_SECRET = process.env.META_APP_SECRET
 
 // ─── GET: Webhook verification ─────────────────────────────
 // Meta sends GET with hub.mode=subscribe, hub.verify_token, hub.challenge
@@ -11,46 +21,127 @@ export async function GET(req: NextRequest) {
   const token = searchParams.get('hub.verify_token')
   const challenge = searchParams.get('hub.challenge')
 
-  const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN
-
-  if (!verifyToken) {
+  if (!VERIFY_TOKEN) {
     console.error('[Webhook] META_WEBHOOK_VERIFY_TOKEN not configured')
     return NextResponse.json({ error: 'Webhook no configurado' }, { status: 500 })
   }
 
-  if (mode === 'subscribe' && token === verifyToken) {
+  if (mode === 'subscribe' && token === VERIFY_TOKEN && challenge) {
     console.log('[Webhook] Verification successful')
-    // Return the challenge as plain text (Meta expects this)
     return new NextResponse(challenge, { status: 200, headers: { 'Content-Type': 'text/plain' } })
   }
 
-  console.warn('[Webhook] Verification failed', { mode, token })
+  console.warn('[Webhook] Verification failed', { mode, token: token ? '***' : 'missing' })
   return NextResponse.json({ error: 'Verificacion fallida' }, { status: 403 })
+}
+
+// ─── Signature verification ────────────────────────────────
+// Per the guide: validate X-Hub-Signature-256 before trusting the body.
+function verifySignature(rawBody: string, signature: string | null): boolean {
+  if (!APP_SECRET) {
+    // In development without APP_SECRET, log a warning but allow
+    console.warn('[Webhook] META_APP_SECRET not set — signature verification disabled. Set it for production!')
+    return true
+  }
+
+  if (!signature?.startsWith('sha256=')) {
+    console.warn('[Webhook] Missing or invalid signature format')
+    return false
+  }
+
+  const expected =
+    'sha256=' +
+    crypto
+      .createHmac('sha256', APP_SECRET)
+      .update(rawBody)
+      .digest('hex')
+
+  // Timing-safe comparison to prevent timing attacks
+  const a = Buffer.from(expected)
+  const b = Buffer.from(signature)
+  return a.length === b.length && crypto.timingSafeEqual(a, b)
 }
 
 // ─── POST: Inbound messages & status updates ───────────────
 export async function POST(req: NextRequest) {
-  // ALWAYS return 200 quickly to Meta — they retry otherwise
-  // Process everything asynchronously
+  // 1. Read raw body as text (required for signature verification)
+  const rawBody = await req.text()
 
-  const bodyText = await req.text()
-
-  // Parse body for processing
-  let body: Record<string, unknown>
-  try {
-    body = JSON.parse(bodyText)
-  } catch {
-    console.error('[Webhook] Invalid JSON body')
-    return NextResponse.json({ status: 'ok' }, { status: 200 })
+  // 2. Validate signature BEFORE parsing
+  const signature = req.headers.get('x-hub-signature-256')
+  if (!verifySignature(rawBody, signature)) {
+    console.error('[Webhook] Invalid signature — rejecting payload')
+    return new NextResponse('Invalid signature', { status: 401 })
   }
 
-  // Process asynchronously
+  // 3. Parse body
+  let body: Record<string, unknown>
+  try {
+    body = JSON.parse(rawBody)
+  } catch {
+    console.error('[Webhook] Invalid JSON body')
+    return new NextResponse('EVENT_RECEIVED', { status: 200 })
+  }
+
+  // 4. Persist raw webhook event for audit (fire-and-forget)
+  persistWebhookEvent(body, signature).catch((err) => {
+    console.error('[Webhook] Event persistence error:', err)
+  })
+
+  // 5. Process asynchronously — always return 200 immediately
   processWebhookPayload(body).catch((error) => {
     console.error('[Webhook] Async processing error:', error)
   })
 
-  // Always return 200 immediately
-  return NextResponse.json({ status: 'ok' }, { status: 200 })
+  // Meta requires a fast 200 response
+  return new NextResponse('EVENT_RECEIVED', { status: 200 })
+}
+
+// ─── Persist raw webhook event for audit and idempotency ───
+async function persistWebhookEvent(body: Record<string, unknown>, signature: string | null) {
+  if (!db) return
+
+  try {
+    const channel = MetaClient.detectChannel(body)
+    const entries = body.entry as Array<Record<string, unknown>> | undefined
+    const entryId = entries?.[0]?.id as string | undefined
+
+    // Generate a stable event ID from the payload
+    const payloadHash = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(body))
+      .digest('hex')
+      .slice(0, 32)
+
+    const providerEventId = `wh_${entryId || 'unknown'}_${payloadHash}`
+
+    // Check for duplicate (idempotency)
+    const existing = await db.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM meta_webhook_events WHERE provider_event_id = ${providerEventId} LIMIT 1
+    `.catch(() => [])
+
+    if (existing && existing.length > 0) {
+      console.log('[Webhook] Duplicate event detected, skipping persistence:', providerEventId)
+      return
+    }
+
+    await db.$executeRaw`
+      INSERT INTO meta_webhook_events (id, provider_event_id, channel, payload, signature_valid, processing_status, received_at)
+      VALUES (
+        gen_random_uuid(),
+        ${providerEventId},
+        ${channel},
+        ${JSON.stringify(body)}::jsonb,
+        ${signature !== null},
+        'pending',
+        now()
+      )
+      ON CONFLICT (provider_event_id) DO NOTHING
+    `
+  } catch (error) {
+    // Audit persistence failure should not block processing
+    console.error('[Webhook] Event persistence error (non-blocking):', error)
+  }
 }
 
 // ─── Async webhook processing ──────────────────────────────
@@ -74,14 +165,35 @@ async function processWebhookPayload(body: Record<string, unknown>) {
       console.error('[Webhook] Error processing message:', error)
     }
   }
+
+  // Mark webhook event as processed
+  try {
+    const entries = body.entry as Array<Record<string, unknown>> | undefined
+    const entryId = entries?.[0]?.id as string | undefined
+    const payloadHash = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(body))
+      .digest('hex')
+      .slice(0, 32)
+    const providerEventId = `wh_${entryId || 'unknown'}_${payloadHash}`
+
+    if (db) {
+      await db.$executeRaw`
+        UPDATE meta_webhook_events
+        SET processing_status = 'processed', processed_at = now()
+        WHERE provider_event_id = ${providerEventId}
+      `.catch(() => {})
+    }
+  } catch {
+    // Non-critical
+  }
 }
 
-// ─── Handle message status updates (delivered, read) ───────
+// ─── Handle message status updates (delivered, read, failed) ──
 async function handleStatusUpdate(msg: { messageId: string; status?: string; errors?: Array<{ code: number; message: string }> }) {
   if (!db) return
 
   try {
-    // Find message by wamid
     const message = await db.message.findFirst({
       where: { wamid: msg.messageId },
       select: { id: true },
@@ -90,6 +202,9 @@ async function handleStatusUpdate(msg: { messageId: string; status?: string; err
     if (message && msg.status === 'failed') {
       console.warn(`[Webhook] Message ${msg.messageId} failed:`, msg.errors)
     }
+
+    // Update message status in the future could go here
+    // e.g., db.message.update({ where: { id: message.id }, data: { deliveryStatus: msg.status } })
   } catch (error) {
     console.error('[Webhook] handleStatusUpdate error:', error)
   }
@@ -169,9 +284,6 @@ async function handleIncomingMessage(
   const channel = msg.channel || detectedChannel
 
   // 1. Find the clinic
-  // For Messenger, the entry ID is the page ID
-  // For WhatsApp, the entry ID is the WABA ID
-  // For Instagram, the entry ID is the IG Business Account ID
   const businessId = msg.clinicWabaId
   const clinic = await findClinicByChannel(channel, businessId)
 
@@ -181,8 +293,6 @@ async function handleIncomingMessage(
   }
 
   // 2. Find or create a Patient
-  // For WhatsApp: use phone number
-  // For Instagram/Messenger: use platform user ID (no phone number available)
   let patient: { id: string; [key: string]: unknown } | null = null
   const channelSource: Record<string, string> = {
     whatsapp: 'whatsapp',
@@ -191,7 +301,7 @@ async function handleIncomingMessage(
   }
 
   if (channel === 'whatsapp') {
-    const phoneRaw = msg.from // e.g. "5215512345678"
+    const phoneRaw = msg.from
     const phoneForLookup = phoneRaw.replace(/^521?/, '')
 
     patient = await db.patient.findFirst({
@@ -218,9 +328,6 @@ async function handleIncomingMessage(
   } else {
     // Instagram or Messenger — use platform user ID as identifier
     const platformUserId = msg.from
-    // Search by email field (store platform ID there as a fallback) or by phone field
-    // Since Instagram/Messenger users may not have phone numbers,
-    // we store the platform user ID in the phone field with a prefix
     const idForLookup = `${channel}:${platformUserId}`
 
     patient = await db.patient.findFirst({
@@ -292,7 +399,7 @@ async function handleIncomingMessage(
   }
 
   // 5. Create inbound Message record
-  const inboundMessage = await db.message.create({
+  await db.message.create({
     data: {
       clinicId: clinic.id,
       conversationId: conversation.id,
@@ -324,15 +431,17 @@ async function handleIncomingMessage(
     console.error('[Webhook] Orchestrator error:', orchestratorError)
   }
 
-  // Mark incoming message as read (WhatsApp only)
-  if (channel === 'whatsapp') {
-    const metaConfig = await getClinicMetaConfig(clinic.id)
-    if (metaConfig) {
-      const metaClient = new MetaClient(metaConfig)
+  // 9. Mark as read (all channels that support it)
+  try {
+    const channelConfig = await getClinicMetaConnection(clinic.id, channel)
+    if (channelConfig) {
+      const metaClient = MetaClient.createForChannel(channel, channelConfig)
       metaClient.markAsRead(msg.messageId).catch(() => {
         // Silently ignore read receipt failures
       })
     }
+  } catch {
+    // Non-critical
   }
 }
 
@@ -371,7 +480,6 @@ async function sendAIResponse(
         },
       })
 
-      // Update conversation lastMessageAt
       await db.conversation.update({
         where: { id: conversationId },
         data: { lastMessageAt: new Date() },
@@ -442,20 +550,17 @@ async function sendAIResponse(
         aiGenerated: true,
         isMock: false,
       },
-    }).catch(() => {
-      // Ignore DB errors here
-    })
+    }).catch(() => {})
   }
 }
 
-// ─── Generate AI response (same logic as orchestrator) ──────
+// ─── Generate AI response ──────────────────────────────────
 async function generateAIResponse(
   message: string,
   clinicId: string,
   conversationId: string
 ): Promise<string | null> {
   try {
-    // Route to agent based on keywords
     type AgentName = 'desk' | 'flow' | 'bill' | 'grow'
 
     const agentSystemPrompts: Record<AgentName, string> = {
@@ -468,7 +573,8 @@ Reglas:
 - Si el paciente tiene una queja o emergencia, sugiere contactar directamente al doctor.
 - Si no estas seguro de algo, ofrece conectar con el personal.
 - Responde en espanol mexicano, cercano pero profesional.
-- NUNCA diagnostiques ni recetes. Solo informacion y gestion de citas.`,
+- NUNCA diagnostiques ni recetes. Solo informacion y gestion de citas.
+- Si detectas urgencia, reclamacion o solicitud clinica, escala a personal.`,
 
       flow: `Eres el asistente clinico de Sinap Flow para una clinica de salud en Mexico.
 Tu trabajo es ayudar con pre-consulta y notas SOAP.
@@ -546,9 +652,7 @@ Reglas:
       await db.conversation.update({
         where: { id: conversationId },
         data: { currentAgent: agentToCurrentAgent[agent] || 'reception' },
-      }).catch(() => {
-        // Ignore DB errors in this update
-      })
+      }).catch(() => {})
     }
 
     return aiResponse || null

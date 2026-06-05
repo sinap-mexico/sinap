@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 // Note: We do NOT use signIn() from next-auth/react for the actual login.
 // signIn() with redirect:false uses fetch() internally, which doesn't reliably
 // set HttpOnly cookies from 302 redirect responses. Instead, we use native
@@ -11,9 +11,16 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
+import {
   Mail, Lock, User, ArrowRight, ArrowLeft, Loader2,
   Eye, EyeOff, Building2, KeyRound, Brain, Shield, BarChart3,
-  Monitor, ShieldCheck
+  Monitor, ShieldCheck, CheckCircle2
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { SinapLogo } from '@/components/sinap/sinap-logo'
@@ -189,7 +196,7 @@ const staggerItem = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
 }
 
-export function LoginScreen({ authError }: { authError?: string | null }) {
+export function LoginScreen({ authError, resetSuccess: resetSuccessProp }: { authError?: string | null; resetSuccess?: boolean }) {
   const { setOnboardingComplete, setIsDemoMode, setClinicId, clearForRealLogin } = useSinapStore()
   const [isRegister, setIsRegister] = useState(false)
   const [email, setEmail] = useState('')
@@ -200,6 +207,9 @@ export function LoginScreen({ authError }: { authError?: string | null }) {
   const [error, setError] = useState(() => {
     // Show NextAuth error from URL parameter on initial load
     if (authError === 'CredentialsSignin') return 'Correo o contraseña incorrectos'
+    if (authError === 'OAuthCallback') return 'No se pudo conectar con Google. Intenta de nuevo.'
+    if (authError === 'OAuthAccountNotLinked') return 'Esta cuenta de Google ya está vinculada a otro usuario.'
+    if (authError === 'AccessDenied') return 'Acceso denegado. Contacta al administrador.'
     if (authError) return 'Error de autenticación. Intenta de nuevo.'
     return ''
   })
@@ -207,6 +217,63 @@ export function LoginScreen({ authError }: { authError?: string | null }) {
   const [showPassword, setShowPassword] = useState(false)
   const [shakeError, setShakeError] = useState(() => !!authError)
   const [rememberMe, setRememberMe] = useState(true)
+
+  // Forgot password dialog state
+  const [showForgotDialog, setShowForgotDialog] = useState(false)
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotLoading, setForgotLoading] = useState(false)
+  const [forgotSuccess, setForgotSuccess] = useState(false)
+  const [forgotError, setForgotError] = useState('')
+
+  // Reset password success toast
+  const [showResetToast, setShowResetToast] = useState(false)
+
+  // Show reset success toast on mount if resetSuccessProp is true
+  useEffect(() => {
+    if (resetSuccessProp) {
+      setShowResetToast(true)
+      const timer = setTimeout(() => setShowResetToast(false), 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [resetSuccessProp])
+
+  const handleForgotPassword = useCallback(async () => {
+    if (!forgotEmail) {
+      setForgotError('Ingresa tu correo electrónico')
+      return
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(forgotEmail)) {
+      setForgotError('Ingresa un correo electrónico válido')
+      return
+    }
+    setForgotError('')
+    setForgotLoading(true)
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setForgotError(data.error || 'Error al enviar el correo')
+        return
+      }
+      setForgotSuccess(true)
+    } catch {
+      setForgotError('Error de conexión. Intenta de nuevo.')
+    } finally {
+      setForgotLoading(false)
+    }
+  }, [forgotEmail])
+
+  const openForgotDialog = useCallback(() => {
+    setForgotEmail(email) // Pre-fill with current email if present
+    setForgotSuccess(false)
+    setForgotError('')
+    setShowForgotDialog(true)
+  }, [email])
 
   const emailValid = email ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) : true
   const passwordValid = password ? password.length >= 8 : true
@@ -258,6 +325,21 @@ export function LoginScreen({ authError }: { authError?: string | null }) {
       setIsLoading(false)
     }
   }, [triggerShake])
+
+  const handleGoogleSignIn = useCallback(() => {
+    setIsLoading(true)
+    // Clear demo data before Google sign-in
+    document.cookie = 'sinap-demo=; path=/; max-age=0'
+    clearForRealLogin()
+    // Use NextAuth's built-in Google OAuth flow
+    // signIn() redirects to Google, then back to callbackUrl
+    import('next-auth/react').then(({ signIn }) => {
+      signIn('google', { callbackUrl: '/dashboard' })
+    }).catch(() => {
+      setError('Error al conectar con Google. Intenta de nuevo.')
+      setIsLoading(false)
+    })
+  }, [clearForRealLogin])
 
   const navigateToDemo = useCallback(() => {
     setOnboardingComplete(true)
@@ -599,6 +681,7 @@ export function LoginScreen({ authError }: { authError?: string | null }) {
                 </div>
                 <button
                   type="button"
+                  onClick={openForgotDialog}
                   className="text-[13px] text-[#534AB7] hover:text-[#534AB7]/80 transition-colors inline-flex items-center gap-1 font-medium"
                 >
                   <KeyRound className="h-3 w-3" />
@@ -607,8 +690,41 @@ export function LoginScreen({ authError }: { authError?: string | null }) {
               </motion.div>
             )}
 
-            {/* Primary button */}
+            {/* Google OAuth button — primary action */}
             <motion.div variants={staggerItem} className="pt-1">
+              <Button
+                className="w-full h-12 bg-white border border-[#E8E6DF] hover:bg-[#F8F7F4] text-[#2C2C2A] text-[15px] font-medium rounded-lg transition-all duration-200 active:scale-[0.98] shadow-sm hover:shadow-md"
+                onClick={handleGoogleSignIn}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <span className="flex items-center gap-3">
+                    <svg className="h-5 w-5" viewBox="0 0 24 24">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                    </svg>
+                    Continuar con Google
+                  </span>
+                )}
+              </Button>
+            </motion.div>
+
+            {/* Divider */}
+            <motion.div variants={staggerItem} className="relative my-3">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-[#E8E6DF]" />
+              </div>
+              <div className="relative flex justify-center">
+                <span className="px-3 bg-white text-[12px] text-[#888780]/60">o con tu correo</span>
+              </div>
+            </motion.div>
+
+            {/* Email login button */}
+            <motion.div variants={staggerItem}>
               <Button
                 className="w-full h-12 bg-[#534AB7] hover:bg-[#4A42A5] text-white text-[15px] font-medium rounded-lg transition-all duration-200 active:scale-[0.98] shadow-lg shadow-[#534AB7]/20 hover:shadow-[#534AB7]/30"
                 onClick={isRegister ? handleRegister : handleLogin}
@@ -625,18 +741,8 @@ export function LoginScreen({ authError }: { authError?: string | null }) {
               </Button>
             </motion.div>
 
-            {/* Divider */}
-            <motion.div variants={staggerItem} className="relative my-2">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-[#E8E6DF]" />
-              </div>
-              <div className="relative flex justify-center">
-                <span className="px-3 bg-white text-[12px] text-[#888780]/60">o</span>
-              </div>
-            </motion.div>
-
-            {/* Secondary buttons */}
-            <motion.div variants={staggerItem} className="space-y-2.5">
+            {/* Toggle register/login + Demo */}
+            <motion.div variants={staggerItem} className="space-y-2.5 pt-1">
               <Button
                 variant="outline"
                 className="w-full h-11 border-[#1D9E75]/40 text-[#1D9E75] hover:bg-[#1D9E75]/8 hover:border-[#1D9E75]/60 text-sm font-medium rounded-lg transition-all duration-200 active:scale-[0.98]"
@@ -670,6 +776,110 @@ export function LoginScreen({ authError }: { authError?: string | null }) {
             </motion.div>
           </motion.div>
         </motion.div>
+
+        {/* Reset password success toast */}
+        <AnimatePresence>
+          {showResetToast && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="absolute top-6 left-0 right-0 flex justify-center z-50"
+            >
+              <div className="flex items-center gap-2 px-5 py-3 rounded-lg bg-[#1D9E75]/10 border border-[#1D9E75]/20 text-[#1D9E75] text-sm font-medium shadow-lg">
+                <CheckCircle2 className="h-4 w-4" />
+                Contraseña actualizada exitosamente. Ya puedes iniciar sesión.
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Forgot Password Dialog */}
+        <Dialog open={showForgotDialog} onOpenChange={setShowForgotDialog}>
+          <DialogContent className="sm:max-w-[420px] rounded-xl p-0 overflow-hidden">
+            <div className="p-6">
+              {!forgotSuccess ? (
+                <>
+                  <DialogHeader className="mb-4">
+                    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#534AB7]/10">
+                      <KeyRound className="h-5 w-5 text-[#534AB7]" />
+                    </div>
+                    <DialogTitle className="text-center text-lg font-medium tracking-[-0.02em] text-[#2C2C2A]">
+                      Restablecer contraseña
+                    </DialogTitle>
+                    <DialogDescription className="text-center text-sm text-[#888780]">
+                      Ingresa tu correo y te enviaremos un enlace para crear una nueva contraseña.
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  {forgotError && (
+                    <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200/80 text-red-700 text-xs flex items-start gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-red-400 mt-0.5 shrink-0" />
+                      {forgotError}
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-[13px] font-normal text-[#2C2C2A]/70">Correo electrónico</Label>
+                      <div className="relative group">
+                        <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-[#1D9E75]/60 group-focus-within:text-[#1D9E75] transition-colors" />
+                        <Input
+                          type="email"
+                          placeholder="tu@correo.com"
+                          value={forgotEmail}
+                          onChange={(e) => setForgotEmail(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleForgotPassword()
+                          }}
+                          className="pl-11 h-11 text-sm bg-white border-[1.5px] border-[#E8E6DF] rounded-lg focus:border-[#534AB7] focus:ring-[#534AB7]/10 hover:border-[#888780]/40 focus:ring-2 focus:ring-offset-0"
+                          autoFocus
+                        />
+                      </div>
+                    </div>
+
+                    <Button
+                      className="w-full h-11 bg-[#534AB7] hover:bg-[#4A42A5] text-white text-[14px] font-medium rounded-lg transition-all duration-200 active:scale-[0.98] shadow-lg shadow-[#534AB7]/20"
+                      onClick={handleForgotPassword}
+                      disabled={forgotLoading}
+                    >
+                      {forgotLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <span className="flex items-center gap-2">
+                          Enviar enlace de restablecimiento
+                          <ArrowRight className="h-4 w-4" />
+                        </span>
+                      )}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <DialogHeader className="mb-4">
+                    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#1D9E75]/10">
+                      <CheckCircle2 className="h-5 w-5 text-[#1D9E75]" />
+                    </div>
+                    <DialogTitle className="text-center text-lg font-medium tracking-[-0.02em] text-[#2C2C2A]">
+                      Correo enviado
+                    </DialogTitle>
+                    <DialogDescription className="text-center text-sm text-[#888780]">
+                      Si existe una cuenta con ese correo, recibirás un email con instrucciones para restablecer tu contraseña.
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <Button
+                    variant="outline"
+                    className="w-full h-11 border-[#E8E6DF] text-[#888780] hover:bg-[#F1EFE8] hover:text-[#2C2C2A] text-sm font-normal rounded-lg"
+                    onClick={() => setShowForgotDialog(false)}
+                  >
+                    Entendido
+                  </Button>
+                </>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Footer security */}
         <motion.div

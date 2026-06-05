@@ -1,7 +1,12 @@
+// ─── AI Orchestrator — Multi-channel bridge ──────────────────────
+// Routes messages to specialized agents and bridges AI responses
+// back to the correct channel (WhatsApp, Instagram, Messenger).
+
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { createZAI } from '@/lib/zai'
-import { MetaClient, getClinicMetaConfig } from '@/lib/meta-client'
+import { MetaClient, getClinicMetaConfig, getClinicMetaConnection } from '@/lib/meta-client'
+import type { MetaChannel } from '@/lib/meta-client'
 
 type AgentName = 'desk' | 'flow' | 'bill' | 'grow'
 
@@ -15,7 +20,8 @@ Reglas:
 - Si el paciente tiene una queja o emergencia, sugiere contactar directamente al doctor.
 - Si no estas seguro de algo, ofrece conectar con el personal.
 - Responde en espanol mexicano, cercano pero profesional.
-- NUNCA diagnostiques ni recetes. Solo informacion y gestion de citas.`,
+- NUNCA diagnostiques ni recetes. Solo informacion y gestion de citas.
+- Si detectas urgencia, reclamacion o solicitud clinica, escala a personal.`,
 
   flow: `Eres el asistente clinico de Sinap Flow para una clinica de salud en Mexico.
 Tu trabajo es ayudar con pre-consulta y notas SOAP.
@@ -114,39 +120,49 @@ export async function POST(req: NextRequest) {
 
     const aiResponse = completion.choices[0]?.message?.content
 
-    // ── WhatsApp bridging: send AI response via WhatsApp if configured ──
-    let whatsappWamid: string | null = null
+    // ── Multi-channel bridging: send AI response via the correct channel ──
+    let channelMessageId: string | null = null
 
     if (aiResponse && db && clinicId) {
       try {
-        // Check if the clinic has WhatsApp configured
-        const metaConfig = await getClinicMetaConfig(clinicId)
-        if (metaConfig) {
-          // Get the conversation to check channel and find patient phone
-          const conv = conversationId
-            ? await db.conversation.findUnique({
-                where: { id: conversationId },
-                select: { channel: true, patientId: true },
-              })
-            : null
-
-          if (conv && conv.channel === 'whatsapp' && conv.patientId) {
-            // Get patient phone number
-            const patient = await db.patient.findUnique({
-              where: { id: conv.patientId },
-              select: { phone: true },
+        // Get the conversation to check channel and find patient phone
+        const conv = conversationId
+          ? await db.conversation.findUnique({
+              where: { id: conversationId },
+              select: { channel: true, patientId: true },
             })
+          : null
 
-            if (patient?.phone) {
-              const metaClient = new MetaClient(metaConfig)
+        const channel = (conv?.channel || 'whatsapp') as MetaChannel
+
+        if (conv?.patientId) {
+          const patient = await db.patient.findUnique({
+            where: { id: conv.patientId },
+            select: { phone: true },
+          })
+
+          if (patient?.phone) {
+            // Try MetaConnection first (new source of truth for all channels)
+            const channelConfig = await getClinicMetaConnection(clinicId, channel)
+
+            if (channelConfig) {
+              const metaClient = MetaClient.createForChannel(channel, channelConfig)
               const sendResult = await metaClient.sendTextMessage(patient.phone, aiResponse)
-              whatsappWamid = sendResult.messageId
+              channelMessageId = sendResult.messageId
+            } else if (channel === 'whatsapp') {
+              // Fallback: legacy Clinic table for WhatsApp only
+              const metaConfig = await getClinicMetaConfig(clinicId)
+              if (metaConfig) {
+                const metaClient = new MetaClient(metaConfig)
+                const sendResult = await metaClient.sendTextMessage(patient.phone, aiResponse)
+                channelMessageId = sendResult.messageId
+              }
             }
           }
         }
-      } catch (whatsappError) {
-        // WhatsApp send failure should NOT fail the orchestrator response
-        console.error('Orchestrator WhatsApp bridge error:', whatsappError)
+      } catch (bridgeError) {
+        // Channel send failure should NOT fail the orchestrator response
+        console.error('Orchestrator channel bridge error:', bridgeError)
       }
     }
 
@@ -154,10 +170,6 @@ export async function POST(req: NextRequest) {
     if (db) {
       try {
         if (conversationId) {
-          // conversationId provided — the Desk component handles message creation
-          // via fire-and-forget POST /api/messages. We only update conversation metadata
-          // here to avoid duplicate message records.
-          // However, if we sent via WhatsApp, update the outbound message's wamid
           await db.conversation.update({
             where: { id: conversationId },
             data: {
@@ -166,8 +178,8 @@ export async function POST(req: NextRequest) {
             },
           })
 
-          // If WhatsApp was used, find the latest outbound AI message and set wamid
-          if (whatsappWamid) {
+          // If channel was used, find the latest outbound AI message and set wamid
+          if (channelMessageId) {
             const latestAiMsg = await db.message.findFirst({
               where: {
                 conversationId,
@@ -180,13 +192,12 @@ export async function POST(req: NextRequest) {
             if (latestAiMsg) {
               await db.message.update({
                 where: { id: latestAiMsg.id },
-                data: { wamid: whatsappWamid },
+                data: { wamid: channelMessageId },
               })
             }
           }
         } else if (patientId && clinicId) {
-          // No conversationId but patientId + clinicId — this is a direct API call
-          // (not from the Desk component). We handle full persistence here.
+          // No conversationId but patientId + clinicId — direct API call
           let convChannel = 'whatsapp'
           let resolvedClinicId = clinicId as string
           let convId: string
@@ -200,7 +211,6 @@ export async function POST(req: NextRequest) {
             convId = existingConv.id
             convChannel = existingConv.channel
           } else {
-            // Create a new conversation for this patient
             const newConv = await db.conversation.create({
               data: {
                 clinicId,
@@ -245,12 +255,11 @@ export async function POST(req: NextRequest) {
                 agentName: agentLabels[agent],
                 aiGenerated: true,
                 isMock: true,
-                wamid: whatsappWamid,
+                wamid: channelMessageId,
               },
             })
           }
 
-          // Update conversation's lastMessageAt and currentAgent
           await db.conversation.update({
             where: { id: convId },
             data: {
@@ -260,7 +269,6 @@ export async function POST(req: NextRequest) {
           })
         }
       } catch (dbError) {
-        // DB persistence failure should NOT fail the overall request
         console.error('Orchestrator DB save error:', dbError)
       }
     }

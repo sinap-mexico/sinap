@@ -10,8 +10,9 @@ function LoginContent() {
   // NextAuth redirects to /login?error=CredentialsSignin when login fails.
   // We pass this to LoginScreen so it can display the error message.
   const authError = searchParams.get('error')
+  const resetSuccess = searchParams.get('reset') === 'success'
 
-  return <LoginScreen authError={authError} />
+  return <LoginScreen authError={authError} resetSuccess={resetSuccess} />
 }
 
 export default function LoginPage() {

@@ -44,8 +44,8 @@ const navItems: {
   { module: 'desk', label: 'Sinap Desk', icon: MessageSquare },
   { module: 'flow', label: 'Sinap Flow', icon: Activity },
   { module: 'bill', label: 'Sinap Bill', icon: Receipt },
-  { module: 'grow', label: 'Sinap Grow', icon: TrendingUp, requiresPlan: 'pro' },
-  { module: 'sight', label: 'Sinap Sight', icon: BarChart3, requiresPlan: 'pro' },
+  { module: 'grow', label: 'Sinap Grow', icon: TrendingUp },
+  { module: 'sight', label: 'Sinap Sight', icon: BarChart3 },
   { module: 'hub', label: 'Sinap Hub', icon: Building2, requiresClinic: true },
 ]
 
@@ -66,7 +66,8 @@ export function SinapSidebar() {
   }
 
   const isVisible = (item: typeof navItems[number]) => {
-    if (item.requiresPlan === 'pro' && plan === 'starter') return false
+    // All features unlocked for free trial — no plan restrictions
+    // if (item.requiresPlan === 'pro' && plan === 'starter') return false
     if (item.requiresClinic && clinicMode !== 'clinic') return false
     return true
   }

@@ -48,6 +48,7 @@ import {
   Facebook,
   Shield,
   Info,
+  Mail,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -590,6 +591,135 @@ function MetaIntegrationDashboard({ clinicId }: { clinicId: string }) {
   )
 }
 
+// ─── Google Connection Card ─────────────────
+function GoogleConnectionCard() {
+  const [googleStatus, setGoogleStatus] = useState<{
+    connected: boolean
+    email?: string | null
+  } | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isDisconnecting, setIsDisconnecting] = useState(false)
+
+  useEffect(() => {
+    async function checkStatus() {
+      try {
+        const res = await fetch('/api/auth/google-status')
+        if (res.ok) {
+          const data = await res.json()
+          setGoogleStatus(data)
+        } else {
+          setGoogleStatus({ connected: false })
+        }
+      } catch {
+        setGoogleStatus({ connected: false })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    checkStatus()
+  }, [])
+
+  const handleConnect = () => {
+    // Trigger NextAuth Google sign-in
+    window.location.href = '/api/auth/signin/google'
+  }
+
+  const handleDisconnect = async () => {
+    if (!confirm('¿Desconectar tu cuenta de Google? No se eliminarán datos existentes.')) return
+    setIsDisconnecting(true)
+    try {
+      // We just remove the Google account record but keep the user
+      // The user stays logged in via their credentials
+      const sessionRes = await fetch('/api/auth/me')
+      if (sessionRes.ok) {
+        const sessionData = await sessionRes.json()
+        if (sessionData.user?.id) {
+          // Delete the Google account record
+          const res = await fetch(`/api/auth/google-status`, {
+            method: 'DELETE',
+          })
+          if (res.ok) {
+            setGoogleStatus({ connected: false, email: null })
+          }
+        }
+      }
+    } catch {
+      // Continue
+    } finally {
+      setIsDisconnecting(false)
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="p-4 rounded-lg bg-[#F1EFE8]">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin text-[#534AB7]" />
+          <span className="text-xs text-[#888780]">Verificando conexion con Google...</span>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-4 rounded-lg bg-[#F1EFE8]">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <div className="h-7 w-7 rounded-md bg-red-50 flex items-center justify-center">
+            <Mail className="h-3.5 w-3.5 text-red-500" />
+          </div>
+          <span className="text-sm font-medium text-[#2C2C2A]">Google</span>
+        </div>
+        {googleStatus?.connected ? (
+          <Badge className="bg-[#E1F5EE] text-[#1D9E75] border-0 text-[10px]">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            Conectado
+          </Badge>
+        ) : (
+          <Badge className="bg-amber-100 text-amber-700 border-0 text-[10px]">
+            <AlertTriangle className="h-3 w-3 mr-1" />
+            Desconectado
+          </Badge>
+        )}
+      </div>
+
+      {googleStatus?.connected ? (
+        <>
+          <p className="text-xs text-[#888780]">
+            {googleStatus.email || 'Cuenta de Google conectada'}
+          </p>
+          <div className="flex gap-2 mt-3">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs border-red-400 text-red-500 hover:bg-red-50"
+              onClick={handleDisconnect}
+              disabled={isDisconnecting}
+            >
+              {isDisconnecting ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Unplug className="h-3 w-3 mr-1" />}
+              Desconectar
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-xs text-[#888780] mb-2">
+            Conecta tu cuenta de Google para sincronizar citas y acceder a tu calendario.
+          </p>
+          <Button
+            variant="outline"
+            className="h-7 text-xs border-[#534AB7] text-[#534AB7]"
+            onClick={handleConnect}
+          >
+            <Mail className="h-3 w-3 mr-1" />
+            Conectar con Google
+          </Button>
+        </>
+      )}
+    </div>
+  )
+}
+
 export function SettingsPages() {
   const store = useSinapStore()
   const [activeTab, setActiveTab] = useState('perfil')
@@ -811,7 +941,7 @@ export function SettingsPages() {
   const [doctorSpecialty, setDoctorSpecialty] = useState(store.doctorProfile.specialty)
   const [doctorLicense, setDoctorLicense] = useState(store.doctorProfile.license)
 
-  // Hydrate profile and schedule from first active doctor when doctors load
+  // Hydrate profile from first active doctor when doctors load
   useEffect(() => {
     const activeDoctor = store.doctors.find(d => d.isActive)
     if (activeDoctor) {
@@ -820,9 +950,20 @@ export function SettingsPages() {
       setDoctorPhone(activeDoctor.phone || '')
       setDoctorSpecialty(activeDoctor.specialty || '')
       setDoctorLicense(activeDoctor.license || '')
-      setWorkStart(activeDoctor.workStart)
-      setWorkEnd(activeDoctor.workEnd)
-      setSlotMinutes(activeDoctor.slotMinutes)
+      // Only set schedule from doctor in solo mode (1 doctor)
+      // In clinic mode, each doctor has their own schedule — the global schedule
+      // should remain as the default/fallback
+      const activeCount = store.doctors.filter(d => d.isActive).length
+      if (activeCount === 1) {
+        setWorkStart(activeDoctor.workStart)
+        setWorkEnd(activeDoctor.workEnd)
+        setSlotMinutes(activeDoctor.slotMinutes)
+        store.setSchedule({
+          workStart: activeDoctor.workStart,
+          workEnd: activeDoctor.workEnd,
+          slotMinutes: activeDoctor.slotMinutes,
+        })
+      }
       // Also update store profile
       store.setDoctorProfile({
         name: activeDoctor.name,
@@ -830,11 +971,6 @@ export function SettingsPages() {
         phone: activeDoctor.phone || '',
         specialty: activeDoctor.specialty || '',
         license: activeDoctor.license || '',
-      })
-      store.setSchedule({
-        workStart: activeDoctor.workStart,
-        workEnd: activeDoctor.workEnd,
-        slotMinutes: activeDoctor.slotMinutes,
       })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -963,20 +1099,20 @@ export function SettingsPages() {
   const handleSaveSchedule = async () => {
     setIsSavingSchedule(true)
     try {
-      // Save schedule to the first active doctor (solo mode) or all doctors
+      // In solo mode (1 doctor), save to that doctor.
+      // In clinic mode (multiple doctors), the schedule tab sets the DEFAULT schedule.
+      // Each doctor has their own schedule configured individually in the Doctores tab.
       const activeDoctors = store.doctors.filter(d => d.isActive)
-      if (activeDoctors.length > 0) {
-        await Promise.all(
-          activeDoctors.map(doc =>
-            fetch(`/api/doctors/${doc.id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ workStart, workEnd, slotMinutes }),
-            })
-          )
-        )
+      if (activeDoctors.length === 1) {
+        // Solo mode — save to the single doctor
+        await fetch(`/api/doctors/${activeDoctors[0].id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workStart, workEnd, slotMinutes }),
+        })
         fetchDoctors()
       }
+      // Always save as the clinic-wide default schedule
       store.setSchedule({ workStart, workEnd, slotMinutes })
     } catch {
       store.setSchedule({ workStart, workEnd, slotMinutes })
@@ -1576,6 +1712,12 @@ export function SettingsPages() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
+                {store.doctors.filter(d => d.isActive).length > 1 && (
+                  <div className="rounded-lg bg-[#EEEDFE] border border-[#534AB7]/20 p-3">
+                    <p className="text-xs text-[#534AB7] font-medium">Cada doctor tiene su propio horario</p>
+                    <p className="text-[10px] text-[#534AB7]/70 mt-1">Configura el horario individual de cada doctor en la pestaña &quot;Doctores&quot;. Este es el horario general por defecto.</p>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-xs text-[#888780]">Hora de inicio</Label>
@@ -1606,6 +1748,22 @@ export function SettingsPages() {
                   </div>
                 </div>
                 <Separator className="bg-[#E1F5EE]" />
+                {/* Show each doctor's schedule summary when multiple doctors */}
+                {store.doctors.filter(d => d.isActive).length > 1 && (
+                  <div className="space-y-2">
+                    <Label className="text-xs text-[#888780] mb-1 block">Horarios por doctor</Label>
+                    <div className="space-y-1.5">
+                      {store.doctors.filter(d => d.isActive).map(doc => (
+                        <div key={doc.id} className="flex items-center gap-2 text-xs">
+                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: doc.color }} />
+                          <span className="font-medium text-[#2C2C2A]">{doc.name}</span>
+                          <span className="text-[#888780]">{doc.workStart} - {doc.workEnd}</span>
+                          <span className="text-[#888780]/60">({doc.slotMinutes} min)</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div>
                   <Label className="text-xs text-[#888780] mb-3 block">Excepciones (vacaciones)</Label>
                   <p className="text-xs text-[#888780]">Las excepciones de horario se configuraran desde la agenda.</p>
@@ -1758,6 +1916,9 @@ export function SettingsPages() {
                     <span className="text-xs text-[#888780]">Activar sincronizacion</span>
                   </div>
                 </div>
+
+                {/* Google Connection Status */}
+                <GoogleConnectionCard />
 
                 <div className="p-4 rounded-lg bg-[#E1F5EE]">
                   <div className="flex items-center justify-between mb-2">

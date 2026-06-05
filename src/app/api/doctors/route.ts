@@ -43,21 +43,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'clinicId y nombre son requeridos' }, { status: 400 })
     }
 
-    // Check plan limit
-    const clinic = await db.clinic.findUnique({
-      where: { id: clinicId },
-      select: { maxDoctors: true },
-    })
-
-    if (clinic) {
-      const currentCount = await db.doctor.count({ where: { clinicId, isActive: true } })
-      if (currentCount >= clinic.maxDoctors) {
-        return NextResponse.json(
-          { error: `Limite alcanzado: tu plan permite ${clinic.maxDoctors} doctor(es). Actualiza tu plan para agregar mas.` },
-          { status: 403 }
-        )
-      }
-    }
+    // Plan limit check — disabled for free trial with premium features
+    // All accounts have unlimited doctors during the trial period
+    // const clinic = await db.clinic.findUnique({
+    //   where: { id: clinicId },
+    //   select: { maxDoctors: true },
+    // })
+    // if (clinic) {
+    //   const currentCount = await db.doctor.count({ where: { clinicId, isActive: true } })
+    //   if (currentCount >= clinic.maxDoctors) {
+    //     return NextResponse.json(
+    //       { error: `Limite alcanzado: tu plan permite ${clinic.maxDoctors} doctor(es). Actualiza tu plan para agregar mas.` },
+    //       { status: 403 }
+    //     )
+    //   }
+    // }
 
     const doctor = await db.doctor.create({
       data: {

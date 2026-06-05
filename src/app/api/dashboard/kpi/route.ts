@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
 
       // Conversaciones sin leer (inbound messages not yet responded)
       db.conversation.count({
-        where: { clinicId, status: 'active', unreadCount: { gt: 0 } },
+        where: { clinicId, status: 'active' },
       }),
 
       // Facturas este mes

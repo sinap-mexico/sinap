@@ -88,6 +88,7 @@ interface SinapStore {
   clinicSlug: string
   setClinicSlug: (slug: string) => void
   plan: 'starter' | 'pro' | 'enterprise'
+  setPlan: (plan: 'starter' | 'pro' | 'enterprise') => void
   featureFlags: FeatureFlag[]
   setFeatureFlag: (id: string, state: FeatureFlagState) => void
   // Auth
@@ -168,7 +169,8 @@ export const useSinapStore = create<SinapStore>()(
       setClinicId: (id) => set({ clinicId: id }),
       clinicSlug: '',
       setClinicSlug: (slug) => set({ clinicSlug: slug }),
-      plan: 'pro',
+      plan: 'enterprise',
+      setPlan: (plan) => set({ plan }),
       featureFlags: defaultFeatureFlags,
       setFeatureFlag: (id, state) =>
         set((s) => ({
@@ -242,7 +244,7 @@ export const useSinapStore = create<SinapStore>()(
         clinicName: '',
         clinicSlug: '',
         clinicMode: 'clinic',
-        plan: 'pro',
+        plan: 'enterprise',
         trialDaysRemaining: 7,
         isTrialExpired: false,
         doctorProfile: {
@@ -282,8 +284,8 @@ export const useSinapStore = create<SinapStore>()(
         clinicId: '',
         clinicName: '',
         clinicSlug: '',
-        clinicMode: 'solo',
-        plan: 'starter',
+        clinicMode: 'clinic',
+        plan: 'enterprise',
         trialDaysRemaining: 7,
         isTrialExpired: false,
         doctorProfile: {

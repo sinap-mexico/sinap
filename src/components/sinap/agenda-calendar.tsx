@@ -69,6 +69,10 @@ interface DoctorItem {
   specialty?: string | null
   color: string
   isActive: boolean
+  workDays?: string
+  workStart?: string
+  workEnd?: string
+  slotMinutes?: number
 }
 
 interface PatientItem {
@@ -119,6 +123,14 @@ function formatTimeSlot(minutes: number): string {
 
 function formatDateStr(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function generateTimeSlots(start: number, end: number, interval: number): number[] {
+  const slots: number[] = []
+  for (let m = start; m < end; m += interval) {
+    slots.push(m)
+  }
+  return slots
 }
 
 export function AgendaCalendar() {
@@ -203,6 +215,38 @@ export function AgendaCalendar() {
   const workStart = parseTime(schedule.workStart)
   const workEnd = parseTime(schedule.workEnd)
 
+  // Get the selected doctor's schedule (for single-doctor view)
+  const selectedDoctorData = useMemo(() => {
+    if (selectedDoctor === 'all') return null
+    return doctors.find(d => d.id === selectedDoctor) || null
+  }, [selectedDoctor, doctors])
+
+  // Effective schedule for single-doctor view
+  const effectiveWorkStart = useMemo(() => {
+    if (selectedDoctorData?.workStart) return parseTime(selectedDoctorData.workStart)
+    return workStart
+  }, [selectedDoctorData, workStart])
+
+  const effectiveWorkEnd = useMemo(() => {
+    if (selectedDoctorData?.workEnd) return parseTime(selectedDoctorData.workEnd)
+    return workEnd
+  }, [selectedDoctorData, workEnd])
+
+  const effectiveSlotMinutes = useMemo(() => {
+    if (selectedDoctorData?.slotMinutes) return selectedDoctorData.slotMinutes
+    return schedule.slotMinutes
+  }, [selectedDoctorData, schedule.slotMinutes])
+
+  // For multi-doctor view, compute a unified time range that covers all doctors
+  const unifiedRange = useMemo(() => {
+    const activeDocs = doctors.filter(d => d.isActive)
+    if (activeDocs.length === 0) return { start: workStart, end: workEnd, slotMinutes: schedule.slotMinutes }
+    const starts = activeDocs.map(d => parseTime(d.workStart || schedule.workStart))
+    const ends = activeDocs.map(d => parseTime(d.workEnd || schedule.workEnd))
+    const minSlot = Math.min(...activeDocs.map(d => d.slotMinutes || schedule.slotMinutes))
+    return { start: Math.min(...starts), end: Math.max(...ends), slotMinutes: minSlot }
+  }, [doctors, workStart, workEnd, schedule.workStart, schedule.workEnd, schedule.slotMinutes])
+
   // Resolve clinicId on mount
   useEffect(() => {
     async function resolveClinicId() {
@@ -243,6 +287,10 @@ export function AgendaCalendar() {
               specialty: d.specialty as string | null,
               color: d.color as string,
               isActive: d.isActive as boolean,
+              workDays: d.workDays as string,
+              workStart: d.workStart as string,
+              workEnd: d.workEnd as string,
+              slotMinutes: d.slotMinutes as number,
             }))
           )
         }
@@ -671,13 +719,17 @@ export function AgendaCalendar() {
     fetchWeek()
   }, [view, clinicId, selectedDoctor, currentDate])
 
+  // Time slots for single-doctor view — uses the selected doctor's schedule
   const timeSlots = useMemo(() => {
+    const start = selectedDoctor === 'all' ? unifiedRange.start : effectiveWorkStart
+    const end = selectedDoctor === 'all' ? unifiedRange.end : effectiveWorkEnd
+    const interval = selectedDoctor === 'all' ? unifiedRange.slotMinutes : effectiveSlotMinutes
     const slots: number[] = []
-    for (let m = workStart; m < workEnd; m += schedule.slotMinutes) {
+    for (let m = start; m < end; m += interval) {
       slots.push(m)
     }
     return slots
-  }, [workStart, workEnd, schedule.slotMinutes])
+  }, [selectedDoctor, unifiedRange, effectiveWorkStart, effectiveWorkEnd, effectiveSlotMinutes])
 
   const weekDays = useMemo(() => {
     const days: Date[] = []
@@ -750,6 +802,16 @@ export function AgendaCalendar() {
     setSelectedSlot(timeStr)
     setNewTime(timeStr)
     setNewDate(formatDateStr(currentDate))
+    setShowNewDialog(true)
+    fetchPatients()
+    fetchServices()
+  }
+
+  const handleSlotClickForDoctor = (timeStr: string, doctorId: string) => {
+    setSelectedSlot(timeStr)
+    setNewTime(timeStr)
+    setNewDate(formatDateStr(currentDate))
+    setNewDoctor(doctorId)
     setShowNewDialog(true)
     fetchPatients()
     fetchServices()
@@ -894,6 +956,8 @@ export function AgendaCalendar() {
     }
   }
 
+  const activeDoctors = useMemo(() => doctors.filter(d => d.isActive), [doctors])
+
   const now = new Date()
   const currentMinutes = now.getHours() * 60 + now.getMinutes()
 
@@ -979,7 +1043,7 @@ export function AgendaCalendar() {
           </Button>
         </div>
         <div className="flex items-center gap-2">
-          {clinicMode === 'clinic' && (
+          {doctors.filter(d => d.isActive).length >= 1 && (
             <Select value={selectedDoctor} onValueChange={setSelectedDoctor}>
               <SelectTrigger className="h-8 text-xs w-[160px] bg-white border-[#E1F5EE]">
                 <SelectValue placeholder="Todos los doctores" />
@@ -1008,9 +1072,9 @@ export function AgendaCalendar() {
 
       {/* Day View */}
       <AnimatePresence mode="wait">
-        {view === 'day' && (
+        {view === 'day' && selectedDoctor !== 'all' && (
           <motion.div
-            key="day-view"
+            key="day-view-single"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
@@ -1036,10 +1100,10 @@ export function AgendaCalendar() {
                 {/* Slots column */}
                 <div className="flex-1 relative">
                   {/* Current time indicator */}
-                  {currentMinutes >= workStart && currentMinutes <= workEnd && (
+                  {currentMinutes >= effectiveWorkStart && currentMinutes <= effectiveWorkEnd && (
                     <motion.div
                       className="absolute left-0 right-0 z-20 pointer-events-none"
-                      style={{ top: `${((currentMinutes - workStart) / (workEnd - workStart)) * (timeSlots.length * 56)}px` }}
+                      style={{ top: `${((currentMinutes - effectiveWorkStart) / (effectiveWorkEnd - effectiveWorkStart)) * (timeSlots.length * 56)}px` }}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                     >
@@ -1083,7 +1147,7 @@ export function AgendaCalendar() {
                               handleAppointmentClick(apt)
                             }}
                             className="absolute inset-x-2 top-1 rounded-lg p-2 text-left transition-all hover:shadow-md bg-[#F1EFE8]/60 border border-[#888780]/20"
-                            style={{ height: `${(apt.duration / schedule.slotMinutes) * 56 - 8}px` }}
+                            style={{ height: `${(apt.duration / effectiveSlotMinutes) * 56 - 8}px` }}
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
                             transition={{ duration: 0.2 }}
@@ -1125,7 +1189,7 @@ export function AgendaCalendar() {
                               'bg-[#FEF3C7]/60 border border-[#D97706]/20'
                             }`}
                             style={{
-                              height: `${(apt.duration / schedule.slotMinutes) * 56 - 8}px`,
+                              height: `${(apt.duration / effectiveSlotMinutes) * 56 - 8}px`,
                               borderLeftWidth: '3px',
                               borderLeftColor: apt.doctorColor || '#1D9E75',
                             }}
@@ -1146,11 +1210,362 @@ export function AgendaCalendar() {
                             <p className="text-[10px] text-[#888780] mt-0.5 truncate">
                               {apt.time} — {apt.type}
                             </p>
-                            {clinicMode === 'clinic' && (
+                            {activeDoctors.length > 1 && (
                               <p className="text-[9px] text-[#888780]/70 mt-0.5 truncate">
                                 {apt.doctorName}
                               </p>
                             )}
+                          </motion.button>
+                        )}
+
+                        {/* Empty slot with only cancelled in history - show + for re-booking */}
+                        {!hasActiveApt && cancelledApt && (!apt || (apt.status === 'cancelled' || apt.status === 'no_show')) && (
+                          <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                            <Plus className="h-4 w-4 text-[#1D9E75]" />
+                          </div>
+                        )}
+
+                        {/* Completely empty slot */}
+                        {!apt && !cancelledApt && (
+                          <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                            <Plus className="h-4 w-4 text-[#888780]" />
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })
+                  )}
+                </div>
+              </div>
+              </ScrollArea>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Multi-doctor day view */}
+        {view === 'day' && selectedDoctor === 'all' && activeDoctors.length > 1 && (
+          <motion.div
+            key="day-view-multi"
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 10 }}
+            transition={{ duration: 0.2 }}
+          >
+            <Card className="border-[#E1F5EE] bg-white overflow-hidden">
+              <ScrollArea className="max-h-[calc(100vh-12rem)]">
+                <div className="flex min-w-[600px]">
+                  {/* Time column - shared */}
+                  <div className="w-16 shrink-0 border-r border-[#E1F5EE]">
+                    {/* Doctor name headers spacer */}
+                    <div className="h-10 border-b border-[#E1F5EE]" />
+                    {/* Time slots */}
+                    {timeSlots.map((minutes) => (
+                      <div
+                        key={minutes}
+                        className="h-14 border-b border-[#E1F5EE]/50 flex items-start justify-end pr-2 pt-1"
+                      >
+                        <span className="text-[10px] text-[#888780] font-mono">
+                          {formatTimeSlot(minutes)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Doctor columns */}
+                  {activeDoctors.map((doctor) => {
+                    const docWorkStart = parseTime(doctor.workStart || schedule.workStart)
+                    const docWorkEnd = parseTime(doctor.workEnd || schedule.workEnd)
+                    const docSlotMinutes = doctor.slotMinutes || schedule.slotMinutes
+                    const docSlots = generateTimeSlots(docWorkStart, docWorkEnd, docSlotMinutes)
+                    const docAppointments = allDayAppointments.filter(a => a.doctorId === doctor.id)
+
+                    return (
+                      <div key={doctor.id} className="flex-1 min-w-[140px] border-r border-[#E1F5EE]/50 last:border-r-0">
+                        {/* Doctor header */}
+                        <div className="h-10 border-b border-[#E1F5EE] flex items-center justify-center gap-1.5 px-2 bg-[#F1EFE8]/30">
+                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: doctor.color }} />
+                          <span className="text-xs font-medium text-[#2C2C2A] truncate">{doctor.name}</span>
+                        </div>
+                        {/* Doctor's time slots */}
+                        {isLoadingAppointments ? (
+                          <div className="flex items-center justify-center h-64">
+                            <Loader2 className="h-5 w-5 animate-spin text-[#1D9E75]" />
+                          </div>
+                        ) : (
+                        docSlots.map((minutes) => {
+                          const apt = getAppointmentAtSlot(minutes, docAppointments, true)
+                          const isStart = apt && parseTime(apt.time) === minutes
+                          const cancelledApt = apt?.status === 'cancelled' || apt?.status === 'no_show' ? apt : getCancelledAtSlot(minutes, docAppointments)
+                          const hasActiveApt = apt && apt.status !== 'cancelled' && apt.status !== 'no_show'
+
+                          if (apt && !isStart) return null
+
+                          return (
+                            <div
+                              key={minutes}
+                              className="h-14 border-b border-[#E1F5EE]/50 relative cursor-pointer hover:bg-[#F1EFE8]/50 transition-colors"
+                              onClick={() => !hasActiveApt && handleSlotClickForDoctor(formatTimeSlot(minutes), doctor.id)}
+                            >
+                              {/* Current time indicator for this doctor column */}
+                              {currentMinutes >= docWorkStart && currentMinutes <= docWorkEnd && minutes === docSlots.find(m => m <= currentMinutes && m + docSlotMinutes > currentMinutes) && (
+                                <div className="absolute left-0 right-0 z-20 pointer-events-none" style={{ top: `${((currentMinutes - minutes) / docSlotMinutes) * 56}px` }}>
+                                  <div className="flex items-center">
+                                    <div className="h-2 w-2 rounded-full bg-red-500 -ml-0.5" />
+                                    <div className="h-[2px] flex-1 bg-red-500" />
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Cancelled appointment */}
+                              {isStart && apt && (apt.status === 'cancelled' || apt.status === 'no_show') && (
+                                <motion.button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleAppointmentClick(apt)
+                                  }}
+                                  className="absolute inset-x-1 top-1 rounded-lg p-1.5 text-left transition-all hover:shadow-md bg-[#F1EFE8]/60 border border-[#888780]/20"
+                                  style={{ height: `${(apt.duration / docSlotMinutes) * 56 - 8}px` }}
+                                  initial={{ opacity: 0, scale: 0.95 }}
+                                  animate={{ opacity: 1, scale: 1 }}
+                                  transition={{ duration: 0.2 }}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-medium text-[#888780] line-through truncate">
+                                      {apt.patientName.split(' ').slice(0, 2).join(' ')}
+                                    </span>
+                                  </div>
+                                  <p className="text-[9px] text-[#888780]/70 truncate line-through">
+                                    {apt.time} — {apt.type}
+                                  </p>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleRebookSlot(apt)
+                                    }}
+                                    className="absolute top-0.5 right-0.5 h-4 w-4 rounded-full bg-[#1D9E75] flex items-center justify-center hover:bg-[#1D9E75]/80 transition-colors"
+                                  >
+                                    <Plus className="h-2.5 w-2.5 text-white" />
+                                  </button>
+                                </motion.button>
+                              )}
+
+                              {/* Active appointment */}
+                              {isStart && apt && apt.status !== 'cancelled' && apt.status !== 'no_show' && (
+                                <motion.button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleAppointmentClick(apt)
+                                  }}
+                                  className={`absolute inset-x-1 top-1 rounded-lg p-1.5 text-left transition-all hover:shadow-md ${
+                                    apt.isAI ? 'bg-[#534AB7]/10 border border-[#534AB7]/20' :
+                                    apt.status === 'confirmed' ? 'bg-[#E1F5EE] border border-[#1D9E75]/20' :
+                                    'bg-[#FEF3C7]/60 border border-[#D97706]/20'
+                                  }`}
+                                  style={{
+                                    height: `${(apt.duration / docSlotMinutes) * 56 - 8}px`,
+                                    borderLeftWidth: '3px',
+                                    borderLeftColor: apt.doctorColor || doctor.color,
+                                  }}
+                                  initial={{ opacity: 0, scale: 0.95 }}
+                                  animate={{ opacity: 1, scale: 1 }}
+                                  transition={{ duration: 0.2 }}
+                                  whileHover={{ y: -1 }}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1 min-w-0">
+                                      {apt.isAI && <Bot className="h-2.5 w-2.5 text-[#534AB7] shrink-0" />}
+                                      <span className="text-[10px] font-medium text-[#2C2C2A] truncate">
+                                        {apt.patientName.split(' ').slice(0, 2).join(' ')}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <p className="text-[9px] text-[#888780] truncate">
+                                    {apt.time} — {apt.type}
+                                  </p>
+                                </motion.button>
+                              )}
+
+                              {/* Empty slot indicators */}
+                              {!hasActiveApt && cancelledApt && (!apt || (apt.status === 'cancelled' || apt.status === 'no_show')) && (
+                                <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                                  <Plus className="h-3.5 w-3.5 text-[#1D9E75]" />
+                                </div>
+                              )}
+                              {!apt && !cancelledApt && (
+                                <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                                  <Plus className="h-3.5 w-3.5 text-[#888780]" />
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Global current time indicator spanning all doctor columns */}
+                {currentMinutes >= unifiedRange.start && currentMinutes <= unifiedRange.end && !isLoadingAppointments && (
+                  <motion.div
+                    className="absolute left-16 right-0 z-20 pointer-events-none"
+                    style={{ top: `${10 + ((currentMinutes - unifiedRange.start) / (unifiedRange.end - unifiedRange.start)) * (timeSlots.length * 56)}px` }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                  >
+                    <div className="flex items-center">
+                      <div className="h-[2px] flex-1 bg-red-500" />
+                      <motion.div
+                        className="h-2.5 w-2.5 rounded-full bg-red-500 -mr-1"
+                        animate={{ scale: [1, 1.3, 1] }}
+                        transition={{ duration: 2, repeat: Infinity }}
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </ScrollArea>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Solo / 1-doctor day view when "all" selected but only 1 doctor */}
+        {view === 'day' && selectedDoctor === 'all' && activeDoctors.length <= 1 && (
+          <motion.div
+            key="day-view-solo"
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 10 }}
+            transition={{ duration: 0.2 }}
+          >
+            <Card className="border-[#E1F5EE] bg-white overflow-hidden">
+              <ScrollArea className="max-h-[calc(100vh-12rem)]">
+              <div className="flex">
+                {/* Time column */}
+                <div className="w-16 shrink-0 border-r border-[#E1F5EE]">
+                  {timeSlots.map((minutes) => (
+                    <div
+                      key={minutes}
+                      className="h-14 border-b border-[#E1F5EE]/50 flex items-start justify-end pr-2 pt-1"
+                    >
+                      <span className="text-[10px] text-[#888780] font-mono">
+                        {formatTimeSlot(minutes)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Slots column */}
+                <div className="flex-1 relative">
+                  {/* Current time indicator */}
+                  {currentMinutes >= effectiveWorkStart && currentMinutes <= effectiveWorkEnd && (
+                    <motion.div
+                      className="absolute left-0 right-0 z-20 pointer-events-none"
+                      style={{ top: `${((currentMinutes - effectiveWorkStart) / (effectiveWorkEnd - effectiveWorkStart)) * (timeSlots.length * 56)}px` }}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                    >
+                      <div className="flex items-center">
+                        <motion.div
+                          className="h-2.5 w-2.5 rounded-full bg-red-500 -ml-1"
+                          animate={{ scale: [1, 1.3, 1] }}
+                          transition={{ duration: 2, repeat: Infinity }}
+                        />
+                        <div className="h-[2px] flex-1 bg-red-500" />
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {isLoadingAppointments ? (
+                    <div className="flex items-center justify-center h-64">
+                      <Loader2 className="h-6 w-6 animate-spin text-[#1D9E75]" />
+                      <span className="ml-2 text-sm text-[#888780]">Cargando citas...</span>
+                    </div>
+                  ) : (
+                  timeSlots.map((minutes) => {
+                    const dateApts = getAppointmentsForDate(currentDate)
+                    const apt = getAppointmentAtSlot(minutes, dateApts, true)
+                    const isStart = apt && parseTime(apt.time) === minutes
+                    const cancelledApt = apt?.status === 'cancelled' || apt?.status === 'no_show' ? apt : getCancelledAtSlot(minutes, dateApts)
+                    const hasActiveApt = apt && apt.status !== 'cancelled' && apt.status !== 'no_show'
+
+                    if (apt && !isStart) return null
+
+                    return (
+                      <div
+                        key={minutes}
+                        className="h-14 border-b border-[#E1F5EE]/50 relative cursor-pointer hover:bg-[#F1EFE8]/50 transition-colors"
+                        onClick={() => !hasActiveApt && handleSlotClick(formatTimeSlot(minutes))}
+                      >
+                        {/* Cancelled appointment shown as faded/struck-through */}
+                        {isStart && apt && (apt.status === 'cancelled' || apt.status === 'no_show') && (
+                          <motion.button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleAppointmentClick(apt)
+                            }}
+                            className="absolute inset-x-2 top-1 rounded-lg p-2 text-left transition-all hover:shadow-md bg-[#F1EFE8]/60 border border-[#888780]/20"
+                            style={{ height: `${(apt.duration / effectiveSlotMinutes) * 56 - 8}px` }}
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ duration: 0.2 }}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="text-xs font-medium text-[#888780] line-through truncate">
+                                  {apt.patientName.split(' ').slice(0, 2).join(' ')}
+                                </span>
+                              </div>
+                              <StatusBadge status={apt.status} />
+                            </div>
+                            <p className="text-[10px] text-[#888780]/70 mt-0.5 truncate line-through">
+                              {apt.time} — {apt.type}
+                            </p>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleRebookSlot(apt)
+                              }}
+                              className="absolute top-1 right-1 h-5 w-5 rounded-full bg-[#1D9E75] flex items-center justify-center hover:bg-[#1D9E75]/80 transition-colors"
+                            >
+                              <Plus className="h-3 w-3 text-white" />
+                            </button>
+                          </motion.button>
+                        )}
+
+                        {/* Active appointment */}
+                        {isStart && apt && apt.status !== 'cancelled' && apt.status !== 'no_show' && (
+                          <motion.button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleAppointmentClick(apt)
+                            }}
+                            className={`absolute inset-x-2 top-1 rounded-lg p-2 text-left transition-all hover:shadow-md ${
+                              apt.isAI ? 'bg-[#534AB7]/10 border border-[#534AB7]/20' :
+                              apt.status === 'confirmed' ? 'bg-[#E1F5EE] border border-[#1D9E75]/20' :
+                              'bg-[#FEF3C7]/60 border border-[#D97706]/20'
+                            }`}
+                            style={{
+                              height: `${(apt.duration / effectiveSlotMinutes) * 56 - 8}px`,
+                              borderLeftWidth: '3px',
+                              borderLeftColor: apt.doctorColor || '#1D9E75',
+                            }}
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ duration: 0.2 }}
+                            whileHover={{ y: -1 }}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                {apt.isAI && <Bot className="h-3 w-3 text-[#534AB7] shrink-0" />}
+                                <span className="text-xs font-medium text-[#2C2C2A] truncate">
+                                  {apt.patientName.split(' ').slice(0, 2).join(' ')}
+                                </span>
+                              </div>
+                              <StatusBadge status={apt.status} />
+                            </div>
+                            <p className="text-[10px] text-[#888780] mt-0.5 truncate">
+                              {apt.time} — {apt.type}
+                            </p>
                           </motion.button>
                         )}
 
@@ -1291,7 +1706,7 @@ export function AgendaCalendar() {
                 </Select>
               )}
             </div>
-            {clinicMode === 'clinic' && (
+            {activeDoctors.length >= 1 && (
               <div className="space-y-2">
                 <Label className="text-xs text-[#888780]">Doctor</Label>
                 <Select value={newDoctor} onValueChange={setNewDoctor}>
@@ -1299,7 +1714,7 @@ export function AgendaCalendar() {
                     <SelectValue placeholder="Seleccionar doctor" />
                   </SelectTrigger>
                   <SelectContent>
-                    {doctors.filter(d => d.isActive).map(d => (
+                    {activeDoctors.map(d => (
                       <SelectItem key={d.id} value={d.id}>
                         <span className="flex items-center gap-2">
                           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: d.color }} />

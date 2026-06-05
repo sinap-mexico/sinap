@@ -157,11 +157,39 @@ export function OnboardingFlow() {
       setSaveError('')
       setIsSaving(true)
       try {
-        // Get userId from session or store
-        const userId = (session?.user as any)?.id || ''
-        const existingClinicId = store.clinicId || (session?.user as any)?.clinicId || ''
+        // Get userId from session or fetch from /api/auth/me
+        let userId = (session?.user as any)?.id || ''
+        let existingClinicId = store.clinicId || (session?.user as any)?.clinicId || ''
 
-        // If demo mode or no userId, just complete onboarding locally
+        // If userId is missing from session, try fetching it from the API
+        if (!userId && !store.isDemoMode) {
+          try {
+            const meRes = await fetch('/api/auth/me')
+            if (meRes.ok) {
+              const meData = await meRes.json()
+              userId = meData.user?.id || ''
+              if (!existingClinicId) existingClinicId = meData.user?.clinicId || ''
+            }
+          } catch {
+            // Ignore — will fall through to the check below
+          }
+        }
+
+        // If still no userId, try looking up by email
+        if (!userId && personalData.email && !store.isDemoMode) {
+          try {
+            const meRes = await fetch(`/api/auth/me?email=${encodeURIComponent(personalData.email)}`)
+            if (meRes.ok) {
+              const meData = await meRes.json()
+              userId = meData.user?.id || ''
+              if (!existingClinicId) existingClinicId = meData.user?.clinicId || ''
+            }
+          } catch {
+            // Ignore
+          }
+        }
+
+        // If demo mode or still no userId, just complete onboarding locally
         if (store.isDemoMode || !userId) {
           store.setOnboardingComplete(true)
           setIsSaving(false)

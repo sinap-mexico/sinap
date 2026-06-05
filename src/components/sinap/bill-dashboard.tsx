@@ -20,6 +20,12 @@ import { useSinapStore } from '@/lib/sinap-store'
 import { eventBus } from '@/lib/event-bus'
 import { FORMA_PAGO, METODO_PAGO, USO_CFDI } from '@/lib/facturama'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   Receipt,
   DollarSign,
   Clock,
@@ -78,6 +84,9 @@ interface CFDIInvoice {
   appointmentId?: string | null
   appointmentDate?: string | null
   appointmentDoctor?: string | null
+  pdfUrl?: string | null
+  xmlUrl?: string | null
+  facturamaId?: string | null
 }
 
 interface PatientOption {
@@ -228,6 +237,9 @@ export function BillDashboard() {
             appointmentId: (inv.appointmentId as string) || null,
             appointmentDate: apt?.date ? new Date(apt.date as string).toLocaleDateString('es-MX') : null,
             appointmentDoctor: (apt?.doctor as Record<string, unknown>)?.name as string || null,
+            pdfUrl: (inv.pdfUrl as string) || null,
+            xmlUrl: (inv.xmlUrl as string) || null,
+            facturamaId: (inv.facturamaId as string) || null,
           }
         })
         setInvoiceList(mapped)
@@ -548,6 +560,55 @@ export function BillDashboard() {
     setFormIvaRate(0)
   }
 
+  // Download loading state: tracks which invoice+format is downloading
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [downloadingFormat, setDownloadingFormat] = useState<'pdf' | 'xml' | null>(null)
+
+  // Download CFDI PDF or XML — uses our local generation endpoints
+  const handleDownloadCFDI = async (invoice: CFDIInvoice, format: 'pdf' | 'xml') => {
+    // For XML, require a valid cfdiUuid
+    if (format === 'xml' && (!invoice.uuid || invoice.uuid === 'PENDING' || invoice.uuid === 'ERROR')) {
+      alert('No se puede generar el XML: la factura no tiene UUID de timbrado.')
+      return
+    }
+
+    setDownloadingId(invoice.id)
+    setDownloadingFormat(format)
+
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}/${format}`)
+      if (res.ok) {
+        const blob = await res.blob()
+        const blobUrl = URL.createObjectURL(blob)
+
+        // Extract filename from Content-Disposition header
+        const contentDisposition = res.headers.get('Content-Disposition')
+        let filename = `CFDI_${invoice.uuid}.${format}`
+        if (contentDisposition) {
+          const match = contentDisposition.match(/filename="?([^"]+)"?/)
+          if (match) filename = match[1]
+        }
+
+        const a = document.createElement('a')
+        a.href = blobUrl
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        alert(data.error || 'No se pudo descargar el archivo. Intente de nuevo.')
+      }
+    } catch (err) {
+      console.error('Failed to download CFDI:', err)
+      alert('Error al descargar el archivo. Verifique su conexión e intente de nuevo.')
+    } finally {
+      setDownloadingId(null)
+      setDownloadingFormat(null)
+    }
+  }
+
   return (
     <motion.div
       className="flex flex-col gap-6 h-full"
@@ -861,9 +922,37 @@ export function BillDashboard() {
                               )}
                               {inv.status === 'timbrada' && (
                                 <>
-                                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-[#534AB7]">
-                                    <FileDown className="h-3.5 w-3.5" />
-                                  </Button>
+                                  {downloadingId === inv.id ? (
+                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-[#534AB7]" disabled>
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    </Button>
+                                  ) : (
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-[#534AB7] hover:bg-[#EEEDFE]">
+                                          <FileDown className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem
+                                          onClick={() => handleDownloadCFDI(inv, 'pdf')}
+                                          disabled={downloadingId === inv.id && downloadingFormat === 'pdf'}
+                                        >
+                                          <Download className="h-3.5 w-3.5 mr-2" />
+                                          Descargar PDF
+                                        </DropdownMenuItem>
+                                        {inv.uuid && inv.uuid !== 'PENDING' && inv.uuid !== 'ERROR' && (
+                                          <DropdownMenuItem
+                                            onClick={() => handleDownloadCFDI(inv, 'xml')}
+                                            disabled={downloadingId === inv.id && downloadingFormat === 'xml'}
+                                          >
+                                            <FileText className="h-3.5 w-3.5 mr-2" />
+                                            Descargar XML
+                                          </DropdownMenuItem>
+                                        )}
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  )}
                                   <Button
                                     variant="ghost"
                                     size="sm"

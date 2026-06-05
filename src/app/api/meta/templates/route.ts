@@ -1,6 +1,12 @@
+// ─── WhatsApp Template Management ──────────────────────────────
+// GET: List templates from Meta API
+// POST: Create a new template
+// Uses MetaConnection as source of truth (with legacy Clinic fallback)
+
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { META_BASE_URL } from '@/lib/meta-client'
+import { smartDecryptToken } from '@/lib/meta/token-vault'
 
 const REQUEST_TIMEOUT_MS = 15_000
 
@@ -16,17 +22,38 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'clinicId es requerido' }, { status: 400 })
     }
 
-    const clinic = await db.clinic.findUnique({
-      where: { id: clinicId },
-      select: { wabaId: true, metaAccessToken: true },
+    // Try MetaConnection first (new source of truth)
+    const waConnection = await db.metaConnection.findUnique({
+      where: { clinicId_channel: { clinicId, channel: 'whatsapp' } },
     })
 
-    if (!clinic?.wabaId || !clinic?.metaAccessToken) {
+    let wabaId: string | null = null
+    let rawAccessToken: string | null = null
+
+    if (waConnection && waConnection.status === 'active') {
+      wabaId = waConnection.businessId
+      rawAccessToken = smartDecryptToken(waConnection.accessToken)
+    }
+
+    // Fallback: legacy Clinic table fields
+    if (!wabaId || !rawAccessToken) {
+      const clinic = await db.clinic.findUnique({
+        where: { id: clinicId },
+        select: { wabaId: true, metaAccessToken: true },
+      })
+
+      if (clinic?.wabaId && clinic?.metaAccessToken) {
+        wabaId = clinic.wabaId
+        rawAccessToken = smartDecryptToken(clinic.metaAccessToken)
+      }
+    }
+
+    if (!wabaId || !rawAccessToken) {
       return NextResponse.json({ error: 'Meta API no conectada' }, { status: 400 })
     }
 
     // Fetch templates from Meta API
-    const url = `${META_BASE_URL}/${clinic.wabaId}/message_templates?access_token=${encodeURIComponent(clinic.metaAccessToken)}`
+    const url = `${META_BASE_URL}/${wabaId}/message_templates?access_token=${encodeURIComponent(rawAccessToken)}`
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
@@ -79,17 +106,38 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const clinic = await db.clinic.findUnique({
-      where: { id: clinicId },
-      select: { wabaId: true, metaAccessToken: true },
+    // Try MetaConnection first (new source of truth)
+    const waConnection = await db.metaConnection.findUnique({
+      where: { clinicId_channel: { clinicId, channel: 'whatsapp' } },
     })
 
-    if (!clinic?.wabaId || !clinic?.metaAccessToken) {
+    let wabaId: string | null = null
+    let rawAccessToken: string | null = null
+
+    if (waConnection && waConnection.status === 'active') {
+      wabaId = waConnection.businessId
+      rawAccessToken = smartDecryptToken(waConnection.accessToken)
+    }
+
+    // Fallback: legacy Clinic table fields
+    if (!wabaId || !rawAccessToken) {
+      const clinic = await db.clinic.findUnique({
+        where: { id: clinicId },
+        select: { wabaId: true, metaAccessToken: true },
+      })
+
+      if (clinic?.wabaId && clinic?.metaAccessToken) {
+        wabaId = clinic.wabaId
+        rawAccessToken = smartDecryptToken(clinic.metaAccessToken)
+      }
+    }
+
+    if (!wabaId || !rawAccessToken) {
       return NextResponse.json({ error: 'Meta API no conectada' }, { status: 400 })
     }
 
     // Create template via Meta API
-    const url = `${META_BASE_URL}/${clinic.wabaId}/message_templates`
+    const url = `${META_BASE_URL}/${wabaId}/message_templates`
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
@@ -97,7 +145,7 @@ export async function POST(req: NextRequest) {
       const res = await fetch(url, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${clinic.metaAccessToken}`,
+          'Authorization': `Bearer ${rawAccessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({

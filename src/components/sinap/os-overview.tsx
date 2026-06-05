@@ -202,6 +202,13 @@ interface KpiData {
   ocupacion: number
 }
 
+interface TrendsData {
+  citasHoyDiff: number
+  conversacionesUnread: number
+  revenueGrowth: number
+  revenuePrevMonth: string
+}
+
 interface WeeklyAppointment {
   day: string
   count: number
@@ -212,6 +219,7 @@ export function OsOverview() {
 
   // Real data states
   const [kpiData, setKpiData] = useState<KpiData>(defaultKpiData)
+  const [trendsData, setTrendsData] = useState<TrendsData>({ citasHoyDiff: 0, conversacionesUnread: 0, revenueGrowth: 0, revenuePrevMonth: '' })
   const [weeklyAppointments, setWeeklyAppointments] = useState<WeeklyAppointment[]>(defaultWeeklyAppointments)
   const [isLoadingKpi, setIsLoadingKpi] = useState(true)
   const [dbEvents, setDbEvents] = useState<Array<{ id: string; eventType: string; sourceAgent: string; targetAgent?: string; payload: string; createdAt: string }>>([])
@@ -246,6 +254,9 @@ export function OsOverview() {
           const data = await res.json()
           if (data.kpi) {
             setKpiData(data.kpi)
+          }
+          if (data.trends) {
+            setTrendsData(data.trends)
           }
           if (data.weeklyAppointments) {
             setWeeklyAppointments(data.weeklyAppointments)
@@ -295,6 +306,25 @@ export function OsOverview() {
   // Derive agent statuses from real KPI data
   const agentStatuses = deriveAgentStatuses(kpiData)
 
+  // Build dynamic trend labels from real data
+  const citasTrend = trendsData.citasHoyDiff > 0
+    ? `+${trendsData.citasHoyDiff} vs ayer`
+    : trendsData.citasHoyDiff < 0
+    ? `${trendsData.citasHoyDiff} vs ayer`
+    : 'Igual que ayer'
+  const citasTrendColor = trendsData.citasHoyDiff > 0 ? '#1D9E75' : trendsData.citasHoyDiff < 0 ? '#E53E3E' : '#888780'
+  const citasTrendIcon = trendsData.citasHoyDiff > 0 ? TrendingUp : trendsData.citasHoyDiff < 0 ? TrendingDown : null
+
+  const convTrend = trendsData.conversacionesUnread > 0 ? `${trendsData.conversacionesUnread} sin leer` : 'Sin mensajes nuevos'
+
+  const revTrend = trendsData.revenueGrowth > 0
+    ? `+${trendsData.revenueGrowth}% vs ${trendsData.revenuePrevMonth || 'mes anterior'}`
+    : trendsData.revenueGrowth < 0
+    ? `${trendsData.revenueGrowth}% vs ${trendsData.revenuePrevMonth || 'mes anterior'}`
+    : trendsData.revenuePrevMonth ? `Sin cambio vs ${trendsData.revenuePrevMonth}` : 'Sin datos previos'
+  const revTrendColor = trendsData.revenueGrowth > 0 ? '#1D9E75' : trendsData.revenueGrowth < 0 ? '#E53E3E' : '#888780'
+  const revTrendIcon = trendsData.revenueGrowth > 0 ? TrendingUp : trendsData.revenueGrowth < 0 ? TrendingDown : null
+
   const kpiCards = [
     {
       label: 'Citas hoy',
@@ -303,9 +333,9 @@ export function OsOverview() {
       icon: Calendar,
       iconBg: '#E1F5EE',
       iconColor: '#1D9E75',
-      trend: '+2 vs ayer',
-      trendColor: '#1D9E75',
-      trendIcon: TrendingUp,
+      trend: citasTrend,
+      trendColor: citasTrendColor,
+      trendIcon: citasTrendIcon,
     },
     {
       label: 'Conversaciones activas',
@@ -314,8 +344,8 @@ export function OsOverview() {
       icon: MessageSquare,
       iconBg: '#EEEDFE',
       iconColor: '#534AB7',
-      trend: '3 sin leer',
-      trendColor: '#534AB7',
+      trend: convTrend,
+      trendColor: trendsData.conversacionesUnread > 0 ? '#534AB7' : '#888780',
       trendIcon: null,
     },
     {
@@ -325,9 +355,9 @@ export function OsOverview() {
       icon: Receipt,
       iconBg: '#E1F5EE',
       iconColor: '#1D9E75',
-      trend: '+15% vs abril',
-      trendColor: '#1D9E75',
-      trendIcon: TrendingUp,
+      trend: revTrend,
+      trendColor: revTrendColor,
+      trendIcon: revTrendIcon,
     },
     {
       label: 'Pacientes nuevos',

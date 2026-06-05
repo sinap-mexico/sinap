@@ -471,6 +471,8 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const clinicId = searchParams.get('clinicId')
+    const facturamaId = searchParams.get('facturamaId')
+    const format = searchParams.get('format') // 'pdf' or 'xml'
 
     if (!clinicId) {
       return NextResponse.json({ error: 'clinicId es requerido' }, { status: 400 })
@@ -479,6 +481,79 @@ export async function GET(req: NextRequest) {
     // Resolve credentials to determine mode
     const config = await resolveFacturamaConfig(clinicId)
 
+    // ─── Download CFDI PDF/XML ───────────────────────────
+    if (facturamaId && format) {
+      if (!config || config.isMock) {
+        // Generate a simple placeholder for mock mode
+        if (format === 'xml') {
+          const mockXml = `<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" Version="4.0" Fecha="${new Date().toISOString()}" Total="0" Moneda="MXN">
+  <cfdi:Emisor Rfc="XAXX010101000" Nombre="Sinap Demo" RegimenFiscal="612"/>
+  <cfdi:Receptor Rfc="XAXX010101000" Nombre="Público en General" UsoCFDI="G01"/>
+</cfdi:Comprobante>`
+          return new NextResponse(mockXml, {
+            headers: {
+              'Content-Type': 'application/xml',
+              'Content-Disposition': `attachment; filename="CFDI_demo.xml"`,
+            },
+          })
+        }
+        // For PDF in mock mode, return a simple HTML as PDF placeholder
+        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>CFDI Demo</title><style>body{font-family:sans-serif;padding:40px;color:#2C2C2A}h1{color:#534AB7}table{width:100%;border-collapse:collapse;margin:20px 0}td,th{padding:8px 12px;border:1px solid #E8E6DF;text-align:left}th{background:#F1EFE8}</style></head><body><h1>CFI Demo - Sinap</h1><p>Esta es una representación simulada del CFDI.</p><p>Conecta Facturama para generar CFDIs reales ante el SAT.</p><table><tr><th>UUID</th><td>Demo-${facturamaId}</td></tr><tr><th>Fecha</th><td>${new Date().toLocaleString('es-MX')}</td></tr><tr><th>Emisor</th><td>Sinap Demo</td></tr><tr><th>Total</th><td>$0.00 MXN</td></tr></table></body></html>`
+        return new NextResponse(html, {
+          headers: {
+            'Content-Type': 'text/html',
+          },
+        })
+      }
+
+      // Real Facturama download
+      const baseUrl = config.isSandbox
+        ? 'https://apisandbox.facturama.mx'
+        : 'https://api.facturama.mx'
+      const auth = Buffer.from(`${config.userId}:${config.token}`).toString('base64')
+
+      if (format === 'pdf') {
+        const pdfResult = await facturamaRequest(
+          `/api-lite/cfdis/${facturamaId}/pdf`,
+          'GET',
+          auth,
+          baseUrl
+        )
+        // Facturama returns base64-encoded PDF
+        if (pdfResult?.Content) {
+          const buffer = Buffer.from(pdfResult.Content, 'base64')
+          return new NextResponse(buffer, {
+            headers: {
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': `attachment; filename="CFDI_${facturamaId}.pdf"`,
+            },
+          })
+        }
+        return NextResponse.json({ error: 'No se pudo obtener el PDF de Facturama' }, { status: 500 })
+      }
+
+      if (format === 'xml') {
+        const xmlResult = await facturamaRequest(
+          `/api-lite/cfdis/${facturamaId}/xml`,
+          'GET',
+          auth,
+          baseUrl
+        )
+        if (xmlResult?.Content) {
+          const xmlContent = Buffer.from(xmlResult.Content, 'base64').toString('utf-8')
+          return new NextResponse(xmlContent, {
+            headers: {
+              'Content-Type': 'application/xml',
+              'Content-Disposition': `attachment; filename="CFDI_${facturamaId}.xml"`,
+            },
+          })
+        }
+        return NextResponse.json({ error: 'No se pudo obtener el XML de Facturama' }, { status: 500 })
+      }
+    }
+
+    // ─── List CFDIs ─────────────────────────────────────
     if (!config || config.isMock) {
       return NextResponse.json({
         cfdiList: [],

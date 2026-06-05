@@ -43,6 +43,7 @@ export async function POST() {
       clinic: 0, doctors: 0, staff: 0, users: 0, services: 0,
       serviceDoctors: 0, patients: 0, appointments: 0, invoices: 0,
       conversations: 0, messages: 0, featureFlags: 0, soapNotes: 0, events: 0,
+      notifications: 0,
     }
 
     // ─── 1. CLINIC ─────────────────────────────────────────
@@ -436,11 +437,15 @@ export async function POST() {
 
     if (existingEvents === 0) {
       const eventsData = [
-        { id: 'demo-event-1', eventType: 'cita_agendada', sourceAgent: 'desk', targetAgent: 'grow', payload: JSON.stringify({ appointmentId: 'demo-apt-1', patientId: 'demo-patient-1', doctorId: 'demo-doctor-1', date: today().toISOString(), service: 'Revision dermatologica' }), status: 'processed', processedAt: daysAgo(2, 9, 22), createdAt: daysAgo(2, 9, 21) },
-        { id: 'demo-event-2', eventType: 'factura_generada', sourceAgent: 'bill', targetAgent: 'desk', payload: JSON.stringify({ invoiceId: 'demo-inv-1', patientId: 'demo-patient-1', total: 3248, status: 'timbrada' }), status: 'processed', processedAt: daysAgo(2, 10, 0), createdAt: daysAgo(2, 9, 55) },
-        { id: 'demo-event-3', eventType: 'soap_borrador_listo', sourceAgent: 'flow', targetAgent: 'desk', payload: JSON.stringify({ soapNoteId: 'demo-soap-2', patientId: 'demo-patient-2', appointmentId: 'demo-apt-4' }), status: 'pending', createdAt: daysAgo(1, 16, 50) },
-        { id: 'demo-event-4', eventType: 'cita_completada', sourceAgent: 'desk', targetAgent: 'bill', payload: JSON.stringify({ appointmentId: 'demo-apt-5', patientId: 'demo-patient-7', doctorId: 'demo-doctor-2', service: 'Consulta general', price: 1200 }), status: 'processed', processedAt: daysAgo(1, 14, 50), createdAt: daysAgo(1, 14, 45) },
+        { id: 'demo-event-1', eventType: 'cita_agendada', sourceAgent: 'desk', targetAgent: 'grow', payload: JSON.stringify({ appointmentId: 'demo-apt-1', patientId: 'demo-patient-1', patientName: 'Maria Garcia Lopez', doctorId: 'demo-doctor-1', date: today().toISOString(), service: 'Revision dermatologica' }), status: 'processed', processedAt: daysAgo(2, 9, 22), createdAt: daysAgo(2, 9, 21) },
+        { id: 'demo-event-2', eventType: 'factura_generada', sourceAgent: 'bill', targetAgent: 'desk', payload: JSON.stringify({ invoiceId: 'demo-inv-1', patientId: 'demo-patient-1', patientName: 'Maria Garcia Lopez', total: 3248, status: 'timbrada' }), status: 'processed', processedAt: daysAgo(2, 10, 0), createdAt: daysAgo(2, 9, 55) },
+        { id: 'demo-event-3', eventType: 'soap_borrador_listo', sourceAgent: 'flow', targetAgent: 'desk', payload: JSON.stringify({ soapNoteId: 'demo-soap-2', patientId: 'demo-patient-2', patientName: 'Carlos Mendoza Rivera', appointmentId: 'demo-apt-4' }), status: 'pending', createdAt: daysAgo(1, 16, 50) },
+        { id: 'demo-event-4', eventType: 'cita_completada', sourceAgent: 'desk', targetAgent: 'bill', payload: JSON.stringify({ appointmentId: 'demo-apt-5', patientId: 'demo-patient-7', patientName: 'Isabel Reyes Castillo', doctorId: 'demo-doctor-2', service: 'Consulta general', price: 1200 }), status: 'processed', processedAt: daysAgo(1, 14, 50), createdAt: daysAgo(1, 14, 45) },
         { id: 'demo-event-5', eventType: 'paciente_nuevo', sourceAgent: 'desk', targetAgent: 'grow', payload: JSON.stringify({ patientId: 'demo-patient-6', name: 'Fernando Diaz Vega', source: 'walk_in', firstVisit: daysAgo(3).toISOString() }), status: 'processed', processedAt: daysAgo(3, 10, 30), createdAt: daysAgo(3, 10, 15) },
+        { id: 'demo-event-6', eventType: 'cita_cancelada', sourceAgent: 'desk', targetAgent: 'grow', payload: JSON.stringify({ appointmentId: 'demo-apt-7', patientId: 'demo-patient-5', patientName: 'Laura Patricia Morales', doctorId: 'demo-doctor-1', service: 'Consulta estetica', reason: 'Conflicto de horario' }), status: 'processed', processedAt: daysAgo(3, 12, 5), createdAt: daysAgo(3, 12, 0) },
+        { id: 'demo-event-7', eventType: 'pago_recibido', sourceAgent: 'bill', targetAgent: null, payload: JSON.stringify({ invoiceId: 'demo-inv-2', patientId: 'demo-patient-2', patientName: 'Carlos Mendoza Rivera', amount: 1740, formaPago: 'Tarjeta' }), status: 'processed', processedAt: daysAgo(1, 17, 5), createdAt: daysAgo(1, 17, 0) },
+        { id: 'demo-event-8', eventType: 'mensaje_recibido', sourceAgent: 'desk', targetAgent: null, payload: JSON.stringify({ conversationId: 'demo-conv-6', patientId: 'demo-patient-8', patientName: 'Miguel Angel Torres', channel: 'Instagram', content: 'Tienen promocion para tratamiento de manchas?' }), status: 'pending', createdAt: daysAgo(0, 16, 30) },
+        { id: 'demo-event-9', eventType: 'campana_lanzada', sourceAgent: 'grow', targetAgent: null, payload: JSON.stringify({ campaignId: 'reactivation-inactive', campaignName: 'Reactivacion pacientes inactivos', segment: 'inactive', recipientCount: 23 }), status: 'pending', createdAt: daysAgo(0, 9, 0) },
       ]
 
       for (const evt of eventsData) {
@@ -453,6 +458,28 @@ export async function POST() {
       summary.events = eventsData.length
     } else {
       summary.events = existingEvents
+    }
+
+    // ─── 14. NOTIFICATIONS ─────────────────────────────────
+    const existingNotifications = await db.notification.count({ where: { clinicId: clinic.id } })
+
+    if (existingNotifications === 0) {
+      const notificationsData = [
+        { id: 'demo-notif-1', type: 'payment', title: 'Pago recibido', message: 'Roberto Jimenez Salazar — $4,060 MXN', icon: 'CheckCircle2', actionUrl: '/?module=bill', isRead: true },
+        { id: 'demo-notif-2', type: 'appointment', title: 'Cita reagendada', message: 'Fernando Diaz Vega — Consulta general', icon: 'Calendar', actionUrl: '/?module=agenda', isRead: false },
+        { id: 'demo-notif-3', type: 'invoice', title: 'Factura pendiente', message: 'Isabel Reyes Castillo — $1,392 MXN', icon: 'Receipt', actionUrl: '/?module=bill', isRead: false },
+      ]
+
+      for (const notif of notificationsData) {
+        await db.notification.upsert({
+          where: { id: notif.id },
+          update: {},
+          create: { ...notif, clinicId: clinic.id, createdAt: daysAgo(notif.isRead ? 3 : 1, Math.floor(Math.random() * 12) + 8) },
+        })
+      }
+      summary.notifications = notificationsData.length
+    } else {
+      summary.notifications = existingNotifications
     }
 
     return NextResponse.json({

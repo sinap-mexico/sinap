@@ -4,6 +4,7 @@
 // message status, webhook verification, and payload parsing.
 
 import { db } from '@/lib/db'
+import { smartDecryptToken } from '@/lib/meta/token-vault'
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -63,7 +64,9 @@ export interface ParsedWebhookMessage {
 
 // ─── Meta Client Class ─────────────────────────────────────
 
-const META_API_VERSION = 'v21.0'
+// Configurable Graph API version — v25.0 is the latest as of June 2026
+// Keep as env var to facilitate future migrations per the integration guide
+const META_API_VERSION = process.env.META_GRAPH_VERSION || 'v25.0'
 const META_BASE_URL = `https://graph.facebook.com/${META_API_VERSION}`
 const REQUEST_TIMEOUT_MS = 15_000
 
@@ -455,7 +458,7 @@ class MetaClient {
   // ─── Static: Verify webhook challenge ────────────────────
   static verifyWebhook(mode: string, token: string, verifyToken: string): string | null {
     if (mode === 'subscribe' && token === verifyToken) {
-      return null // Caller should return hub.challenge
+      return 'verified' // Caller should return hub.challenge separately
     }
     return null // Verification failed
   }
@@ -699,10 +702,13 @@ export async function getClinicMetaConfig(clinicId: string): Promise<MetaConfig 
       return null
     }
 
+    // Decrypt token if encrypted
+    const rawToken = smartDecryptToken(clinic.metaAccessToken)
+
     return {
       wabaId: clinic.wabaId,
       phoneNumberId: clinic.phoneNumberId,
-      accessToken: clinic.metaAccessToken,
+      accessToken: rawToken,
     }
   } catch (error) {
     console.error('[MetaClient] getClinicMetaConfig error:', error)
@@ -715,18 +721,22 @@ export async function getClinicMetaConnection(clinicId: string, channel: string)
   if (!db) return null
 
   try {
-    const connection = await db.metaConnection.findUnique({
+    const connection = await db.metaConnection.findFirst({
       where: {
-        clinicId_channel: { clinicId, channel },
+        clinicId,
+        channel,
         status: 'active',
       },
     })
 
     if (!connection) return null
 
+    // Decrypt token if encrypted
+    const rawToken = smartDecryptToken(connection.accessToken)
+
     return {
       channel: connection.channel as MetaChannel,
-      accessToken: connection.accessToken,
+      accessToken: rawToken,
       businessId: connection.businessId || '',
       phoneNumberId: connection.phoneNumberId || undefined,
       pageId: connection.pageId || undefined,
@@ -749,7 +759,7 @@ export async function getClinicMetaConnections(clinicId: string): Promise<Array<
     return connections.map(c => ({
       id: c.id,
       channel: c.channel as MetaChannel,
-      accessToken: c.accessToken,
+      accessToken: smartDecryptToken(c.accessToken),
       businessId: c.businessId || '',
       phoneNumberId: c.phoneNumberId || undefined,
       pageId: c.pageId || undefined,

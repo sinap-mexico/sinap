@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "sqlite"
+  provider  = "postgresql"
   url       = env("DATABASE_URL")
 }
 
@@ -135,6 +135,11 @@ model Clinic {
   users            User[]
   followUps        FollowUp[]
   metaConnections  MetaConnection[]
+  campaigns        Campaign[]
+  expenses         Expense[]
+  inventoryItems   InventoryItem[]
+  notifications    Notification[]
+  patientDocuments PatientDocument[]
 }
 
 model Doctor {
@@ -268,11 +273,48 @@ model Patient {
   conversations Conversation[]
   soapNotes     SoapNote[]
   followUps     FollowUp[]
+  documents     PatientDocument[]
 
   @@index([clinicId])
   @@index([clinicId, phone])
   @@index([clinicId, segment])
   @@index([clinicId, isActive])
+}
+
+// ─── PATIENT DOCUMENTS ────────────────────────────────────
+
+model PatientDocument {
+  id          String   @id @default(cuid())
+  clinicId    String
+  patientId   String
+
+  // Document info
+  name        String   // Display name (e.g. "Radiografía torácica")
+  type        String   @default("file") // "file" | "link"
+  category    String   @default("study") // "study" | "xray" | "lab" | "prescription" | "insurance" | "other"
+
+  // File storage
+  fileUrl     String?  // URL del archivo subido (Supabase Storage / external)
+  fileName    String?  // Original filename
+  fileType    String?  // MIME type (application/pdf, image/jpeg, etc.)
+  fileSize    Int?     // Size in bytes
+
+  // Link storage
+  linkUrl     String?  // URL para estudios en línea u otros hipervínculos
+
+  // Metadata
+  description String?  // Descripción o notas sobre el documento
+  date        DateTime? // Fecha del documento/estudio (puede ser distinta a createdAt)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clinic      Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId, patientId])
+  @@index([clinicId, category])
+  @@map("patient_documents")
 }
 
 // ─── APPOINTMENTS ────────────────────────────────────────
@@ -584,4 +626,130 @@ model MetaConnection {
   @@index([clinicId])
   @@index([status])
   @@map("meta_connections")
+}
+
+// ─── CAMPAIGNS ──────────────────────────────────────────
+
+model Campaign {
+  id          String   @id @default(cuid())
+  clinicId    String
+  name        String
+  type        String   @default("whatsapp") // "whatsapp" | "email" | "sms" | "both"
+  campaignType String  @default("promocion") // "reactivacion" | "retencion" | "vip" | "promocion" | "recordatorio"
+  channel     String   @default("whatsapp") // "whatsapp" | "email" | "both"
+  status      String   @default("draft") // "draft" | "scheduled" | "sending" | "active" | "completed" | "paused"
+  segment     String   @default("all") // Target segment: "all" | "new" | "active" | "inactive" | "churned" | "vip"
+  subject     String?  // Email subject (for email campaigns)
+  content     String   // Message body
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  recipientCount Int   @default(0)
+  sentCount   Int      @default(0)
+  deliveredCount Int   @default(0)
+  openedCount Int      @default(0)
+  respondedCount Int  @default(0)
+  openRate    Float    @default(0)
+  clickRate   Float    @default(0)
+  responseRate Float   @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clinic      Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId, status])
+  @@index([clinicId, campaignType])
+  @@map("campaigns")
+}
+
+// ─── EXPENSES ────────────────────────────────────────────
+
+model Expense {
+  id          String   @id @default(cuid())
+  clinicId    String
+  category    String   // "rent" | "supplies" | "salaries" | "equipment" | "services" | "marketing" | "utilities" | "other"
+  description String
+  amount      Float
+  date        DateTime
+  isRecurring Boolean  @default(false)
+  recurrence  String?  // "monthly" | "weekly" | "yearly"
+  vendor      String?
+  notes       String?
+  receiptUrl  String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clinic      Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId, date])
+  @@index([clinicId, category])
+  @@map("expenses")
+}
+
+// ─── INVENTORY ────────────────────────────────────────────
+
+model InventoryItem {
+  id            String    @id @default(cuid())
+  clinicId      String
+  name          String
+  category      String    // "medication" | "supply" | "equipment" | "instrument" | "other"
+  quantity      Int       @default(0)
+  minQuantity   Int       @default(5)
+  unit          String    @default("pieza") // "pieza" | "caja" | "frasco" | "ml" | "mg"
+  costPerUnit   Float     @default(0)
+  supplier      String?
+  expiryDate    DateTime?
+  location      String?
+  notes         String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  clinic        Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId, category])
+  @@index([clinicId, isActive])
+  @@map("inventory_items")
+}
+
+// ─── NOTIFICATIONS ───────────────────────────────────────
+
+model Notification {
+  id          String   @id @default(cuid())
+  clinicId    String
+  userId      String?  // Null = all users in clinic, specific user = targeted
+  type        String   // "appointment" | "payment" | "invoice" | "system" | "campaign" | "message"
+  title       String
+  message     String
+  icon        String?  // Icon name from lucide-react
+  actionUrl   String?  // URL to navigate when clicked (e.g. /dashboard?module=bill)
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  clinic      Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId, userId, isRead])
+  @@index([clinicId, createdAt])
+  @@map("notifications")
+}
+
+// ─── META WEBHOOK EVENTS (Audit & Idempotency) ──────────
+
+model MetaWebhookEvent {
+  id                String   @id @default(cuid())
+  providerEventId   String?  @unique // Stable event ID from Meta for dedup
+  clinicId          String?
+  channel           String?  // "whatsapp" | "instagram" | "messenger"
+  payload           String   // Raw JSON payload
+  signatureValid    Boolean  @default(false)
+  processingStatus  String   @default("pending") // "pending" | "processed" | "failed"
+  errorMessage      String?
+  receivedAt        DateTime @default(now())
+  processedAt       DateTime?
+
+  @@index([providerEventId])
+  @@index([clinicId])
+  @@index([processingStatus])
+  @@index([receivedAt])
+  @@map("meta_webhook_events")
 }

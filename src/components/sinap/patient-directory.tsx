@@ -65,6 +65,12 @@ import {
   Send,
   UserCheck,
   UserX,
+  FileUp,
+  ExternalLink,
+  Link2,
+  Image as ImageIcon,
+  Paperclip,
+  Download,
 } from 'lucide-react'
 
 // ─── TYPES ──────────────────────────────────────────────
@@ -165,6 +171,21 @@ interface MessageItem {
   content: string
   createdAt: string
   channel: string
+}
+
+interface PatientDocumentItem {
+  id: string
+  name: string
+  type: string // "file" | "link"
+  category: string // "study" | "xray" | "lab" | "prescription" | "insurance" | "other"
+  fileUrl: string | null
+  fileName: string | null
+  fileType: string | null
+  fileSize: number | null
+  linkUrl: string | null
+  description: string | null
+  date: string | null
+  createdAt: string
 }
 
 interface PatientProfile extends PatientListItem {
@@ -402,6 +423,22 @@ export function PatientDirectory() {
   const [newFollowUp, setNewFollowUp] = useState({ type: 'call', dueDate: '', notes: '' })
   const [isCreatingFollowUp, setIsCreatingFollowUp] = useState(false)
 
+  // Documents state
+  const [documents, setDocuments] = useState<PatientDocumentItem[]>([])
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false)
+  const [showNewDocument, setShowNewDocument] = useState(false)
+  const [newDocType, setNewDocType] = useState<'file' | 'link'>('file')
+  const [newDocForm, setNewDocForm] = useState({
+    name: '',
+    category: 'study',
+    description: '',
+    date: '',
+    linkUrl: '',
+  })
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [isCreatingDocument, setIsCreatingDocument] = useState(false)
+  const [docFilterCategory, setDocFilterCategory] = useState('all')
+
   // Resolve clinicId on mount if needed
   useEffect(() => {
     async function resolveClinicId() {
@@ -517,6 +554,118 @@ export function PatientDirectory() {
     [clinicId]
   )
 
+  // ─── FETCH DOCUMENTS ────────────────────────────────
+
+  const fetchDocuments = useCallback(
+    async (patientId: string) => {
+      setIsLoadingDocuments(true)
+      try {
+        const params = new URLSearchParams()
+        if (docFilterCategory && docFilterCategory !== 'all') params.set('category', docFilterCategory)
+        const res = await fetch(`/api/patients/${patientId}/documents?${params}`)
+        if (res.ok) {
+          const data = await res.json()
+          setDocuments(data.documents || [])
+        }
+      } catch (err) {
+        console.error('Failed to fetch documents:', err)
+      } finally {
+        setIsLoadingDocuments(false)
+      }
+    },
+    [docFilterCategory]
+  )
+
+  // ─── CREATE DOCUMENT (FILE UPLOAD) ─────────────────
+
+  const handleCreateFileDocument = async () => {
+    if (!selectedPatientId || !clinicId || !uploadFile) return
+    setIsCreatingDocument(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', uploadFile)
+      formData.append('name', newDocForm.name || uploadFile.name)
+      formData.append('category', newDocForm.category)
+      formData.append('clinicId', clinicId)
+      if (newDocForm.description) formData.append('description', newDocForm.description)
+      if (newDocForm.date) formData.append('date', newDocForm.date)
+
+      const res = await fetch(`/api/patients/${selectedPatientId}/documents`, {
+        method: 'POST',
+        body: formData,
+      })
+      if (res.ok) {
+        setToast({ message: 'Documento cargado', type: 'success' })
+        setShowNewDocument(false)
+        setNewDocForm({ name: '', category: 'study', description: '', date: '', linkUrl: '' })
+        setUploadFile(null)
+        fetchDocuments(selectedPatientId)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setToast({ message: data.error || 'Error al cargar documento', type: 'error' })
+      }
+    } catch {
+      setToast({ message: 'Error de conexion', type: 'error' })
+    } finally {
+      setIsCreatingDocument(false)
+    }
+  }
+
+  // ─── CREATE DOCUMENT (LINK) ────────────────────────
+
+  const handleCreateLinkDocument = async () => {
+    if (!selectedPatientId || !clinicId || !newDocForm.linkUrl) return
+    setIsCreatingDocument(true)
+    try {
+      const res = await fetch(`/api/patients/${selectedPatientId}/documents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clinicId,
+          name: newDocForm.name || 'Enlace',
+          linkUrl: newDocForm.linkUrl,
+          category: newDocForm.category,
+          description: newDocForm.description || null,
+          date: newDocForm.date || null,
+        }),
+      })
+      if (res.ok) {
+        setToast({ message: 'Enlace agregado', type: 'success' })
+        setShowNewDocument(false)
+        setNewDocForm({ name: '', category: 'study', description: '', date: '', linkUrl: '' })
+        setUploadFile(null)
+        fetchDocuments(selectedPatientId)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setToast({ message: data.error || 'Error al agregar enlace', type: 'error' })
+      }
+    } catch {
+      setToast({ message: 'Error de conexion', type: 'error' })
+    } finally {
+      setIsCreatingDocument(false)
+    }
+  }
+
+  // ─── DELETE DOCUMENT ────────────────────────────────
+
+  const handleDeleteDocument = async (documentId: string) => {
+    if (!selectedPatientId) return
+    if (!confirm('¿Eliminar este documento?')) return
+    try {
+      const res = await fetch(`/api/patients/${selectedPatientId}/documents?documentId=${documentId}`, {
+        method: 'DELETE',
+      })
+      if (res.ok) {
+        setToast({ message: 'Documento eliminado', type: 'success' })
+        fetchDocuments(selectedPatientId)
+      } else {
+        setToast({ message: 'Error al eliminar documento', type: 'error' })
+      }
+    } catch {
+      setToast({ message: 'Error de conexion', type: 'error' })
+    }
+  }
+
   // ─── CREATE FOLLOW-UP ────────────────────────────────
 
   const handleCreateFollowUp = async () => {
@@ -578,6 +727,7 @@ export function PatientDirectory() {
     setView('profile')
     fetchPatientProfile(patientId)
     fetchFollowUps(patientId)
+    fetchDocuments(patientId)
   }
 
   // ─── BACK TO LIST ───────────────────────────────────
@@ -1623,6 +1773,13 @@ export function PatientDirectory() {
               <Clock className="h-3.5 w-3.5 mr-1.5" />
               Seguimientos
             </TabsTrigger>
+            <TabsTrigger
+              value="documents"
+              className="text-xs h-8 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md data-[state=active]:text-[#534AB7]"
+            >
+              <Paperclip className="h-3.5 w-3.5 mr-1.5" />
+              Documentos
+            </TabsTrigger>
           </TabsList>
 
           {/* TAB: Actividad (Activity Timeline) */}
@@ -2642,6 +2799,404 @@ export function PatientDirectory() {
                         variant="ghost"
                         className="h-8 text-xs text-[#888780]"
                         onClick={() => { setShowNewFollowUp(false); setNewFollowUp({ type: 'call', dueDate: '', notes: '' }) }}
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
+                  </motion.div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB: Documentos */}
+          <TabsContent value="documents">
+            <Card className="border-[#E1F5EE] bg-white">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-medium tracking-[-0.03em]">
+                    Documentos y estudios
+                  </CardTitle>
+                  <Button
+                    className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white h-7 text-xs gap-1"
+                    onClick={() => { setShowNewDocument(true); setNewDocType('file') }}
+                  >
+                    <Plus className="h-3 w-3" />
+                    Agregar
+                  </Button>
+                </div>
+              </CardHeader>
+              <Separator className="bg-[#E1F5EE]" />
+              <CardContent className="p-4">
+                {/* Category filters */}
+                <div className="flex items-center gap-1.5 mb-4 overflow-x-auto pb-1">
+                  {[
+                    { value: 'all', label: 'Todos' },
+                    { value: 'study', label: 'Estudios' },
+                    { value: 'xray', label: 'Radiografias' },
+                    { value: 'lab', label: 'Laboratorio' },
+                    { value: 'prescription', label: 'Recetas' },
+                    { value: 'insurance', label: 'Seguro' },
+                    { value: 'other', label: 'Otros' },
+                  ].map((cat) => {
+                    const isActive = docFilterCategory === cat.value
+                    return (
+                      <motion.button
+                        key={cat.value}
+                        onClick={() => {
+                          setDocFilterCategory(cat.value)
+                          if (selectedPatientId) fetchDocuments(selectedPatientId)
+                        }}
+                        className={`shrink-0 text-[10px] px-2.5 py-1 rounded-full transition-all duration-200 font-medium ${
+                          isActive
+                            ? 'bg-[#534AB7] text-white shadow-sm'
+                            : 'bg-white text-[#888780] hover:bg-[#F1EFE8] border border-[#E1F5EE]'
+                        }`}
+                        whileTap={{ scale: 0.97 }}
+                      >
+                        {cat.label}
+                      </motion.button>
+                    )
+                  })}
+                </div>
+
+                {isLoadingDocuments ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-5 w-5 animate-spin text-[#534AB7]" />
+                    <span className="ml-2 text-xs text-[#888780]">Cargando documentos...</span>
+                  </div>
+                ) : documents.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <Paperclip className="h-10 w-10 text-[#888780]/30 mb-3" />
+                    <p className="text-sm text-[#888780]">Sin documentos</p>
+                    <p className="text-xs text-[#888780]/60 mt-1">
+                      Carga estudios, radiografias, recetas o agrega enlaces a estudios en linea
+                    </p>
+                    <div className="flex items-center gap-2 mt-4">
+                      <Button
+                        className="bg-[#534AB7] hover:bg-[#534AB7]/90 text-white h-8 text-xs gap-1.5"
+                        onClick={() => { setShowNewDocument(true); setNewDocType('file') }}
+                      >
+                        <FileUp className="h-3.5 w-3.5" />
+                        Cargar archivo
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="h-8 text-xs gap-1.5 border-[#534AB7] text-[#534AB7] hover:bg-[#EEEDFE]"
+                        onClick={() => { setShowNewDocument(true); setNewDocType('link') }}
+                      >
+                        <Link2 className="h-3.5 w-3.5" />
+                        Agregar enlace
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <ScrollArea className="max-h-96">
+                    <div className="space-y-2">
+                      {documents.map((doc, i) => {
+                        const catConfig: Record<string, { label: string; icon: React.ElementType; color: string; bg: string }> = {
+                          study: { label: 'Estudio', icon: FileText, color: '#534AB7', bg: '#EEEDFE' },
+                          xray: { label: 'Radiografia', icon: ImageIcon, color: '#1D9E75', bg: '#E1F5EE' },
+                          lab: { label: 'Laboratorio', icon: Activity, color: '#3B82F6', bg: '#DBEAFE' },
+                          prescription: { label: 'Receta', icon: FileText, color: '#D97706', bg: '#FEF3C7' },
+                          insurance: { label: 'Seguro', icon: Shield, color: '#1D9E75', bg: '#E1F5EE' },
+                          other: { label: 'Otro', icon: Paperclip, color: '#888780', bg: '#F1EFE8' },
+                        }
+                        const cConfig = catConfig[doc.category] || catConfig.other
+                        const CIcon = cConfig.icon
+                        const isLink = doc.type === 'link'
+                        const isImage = doc.fileType?.startsWith('image/')
+                        const isPdf = doc.fileType === 'application/pdf'
+
+                        function formatFileSize(bytes: number | null): string {
+                          if (!bytes) return ''
+                          if (bytes < 1024) return `${bytes} B`
+                          if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+                          return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+                        }
+
+                        return (
+                          <motion.div
+                            key={doc.id}
+                            className="p-3 rounded-lg border border-[#E1F5EE] hover:border-[#1D9E75]/30 transition-colors group"
+                            initial={{ opacity: 0, y: 5 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.03 }}
+                          >
+                            <div className="flex items-start gap-3">
+                              {/* Preview / Icon */}
+                              <div className="shrink-0">
+                                {isLink ? (
+                                  <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: cConfig.bg }}>
+                                    <ExternalLink className="h-4 w-4" style={{ color: cConfig.color }} />
+                                  </div>
+                                ) : isImage && doc.fileUrl ? (
+                                  <div className="h-10 w-10 rounded-lg overflow-hidden bg-[#F1EFE8]">
+                                    <img
+                                      src={doc.fileUrl}
+                                      alt={doc.name}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: cConfig.bg }}>
+                                    <CIcon className="h-4 w-4" style={{ color: cConfig.color }} />
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Info */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <p className="text-xs font-medium text-[#2C2C2A] truncate">{doc.name}</p>
+                                  {isLink ? (
+                                    <Badge className="bg-[#DBEAFE] text-[#3B82F6] border-0 text-[9px] px-1.5 py-0">
+                                      Enlace
+                                    </Badge>
+                                  ) : (
+                                    <Badge className="bg-[#F1EFE8] text-[#888780] border-0 text-[9px] px-1.5 py-0">
+                                      {isPdf ? 'PDF' : isImage ? 'Imagen' : 'Archivo'}
+                                    </Badge>
+                                  )}
+                                  <Badge className={`${cConfig.bg} border-0 text-[9px] px-1.5 py-0`} style={{ color: cConfig.color }}>
+                                    {cConfig.label}
+                                  </Badge>
+                                </div>
+                                {doc.description && (
+                                  <p className="text-[10px] text-[#888780] mt-0.5 line-clamp-1">{doc.description}</p>
+                                )}
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-[9px] text-[#888780]/60">
+                                    {doc.date ? formatDate(doc.date) : formatDate(doc.createdAt)}
+                                  </span>
+                                  {doc.fileSize && (
+                                    <span className="text-[9px] text-[#888780]/60">
+                                      {formatFileSize(doc.fileSize)}
+                                    </span>
+                                  )}
+                                  {doc.fileName && (
+                                    <span className="text-[9px] text-[#888780]/60 truncate max-w-[120px]">
+                                      {doc.fileName}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Actions */}
+                              <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {isLink && doc.linkUrl && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0 text-[#3B82F6] hover:bg-[#DBEAFE]"
+                                    onClick={() => window.open(doc.linkUrl, '_blank')}
+                                    title="Abrir enlace"
+                                  >
+                                    <ExternalLink className="h-3 w-3" />
+                                  </Button>
+                                )}
+                                {!isLink && doc.fileUrl && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0 text-[#1D9E75] hover:bg-[#E1F5EE]"
+                                    onClick={() => {
+                                      const a = document.createElement('a')
+                                      a.href = doc.fileUrl!
+                                      a.download = doc.fileName || doc.name
+                                      a.target = '_blank'
+                                      a.click()
+                                    }}
+                                    title="Descargar"
+                                  >
+                                    <Download className="h-3 w-3" />
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0 text-[#888780] hover:text-red-500 hover:bg-red-50"
+                                  onClick={() => handleDeleteDocument(doc.id)}
+                                  title="Eliminar"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )
+                      })}
+                    </div>
+                  </ScrollArea>
+                )}
+
+                {/* New document dialog */}
+                {showNewDocument && (
+                  <motion.div
+                    className="mt-4 p-4 rounded-lg bg-[#F1EFE8] border border-[#E1F5EE] space-y-3"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                  >
+                    {/* Type toggle */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className={`flex-1 text-xs font-medium py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors ${
+                          newDocType === 'file'
+                            ? 'bg-[#534AB7] text-white'
+                            : 'bg-white text-[#888780] hover:bg-white/80'
+                        }`}
+                        onClick={() => setNewDocType('file')}
+                      >
+                        <FileUp className="h-3.5 w-3.5" />
+                        Cargar archivo
+                      </button>
+                      <button
+                        type="button"
+                        className={`flex-1 text-xs font-medium py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors ${
+                          newDocType === 'link'
+                            ? 'bg-[#534AB7] text-white'
+                            : 'bg-white text-[#888780] hover:bg-white/80'
+                        }`}
+                        onClick={() => setNewDocType('link')}
+                      >
+                        <Link2 className="h-3.5 w-3.5" />
+                        Enlace en linea
+                      </button>
+                    </div>
+
+                    {/* File upload area */}
+                    {newDocType === 'file' && (
+                      <div className="space-y-2">
+                        <Label className="text-[10px] text-[#888780]">Archivo</Label>
+                        <div className="relative">
+                          <input
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png,.gif,.bmp,.webp,.dicom,.dcm,.doc,.docx,.xls,.xlsx,.txt"
+                            className="hidden"
+                            id="doc-file-input"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0]
+                              if (f) setUploadFile(f)
+                            }}
+                          />
+                          <label
+                            htmlFor="doc-file-input"
+                            className="flex items-center justify-center gap-2 h-16 rounded-lg border-2 border-dashed border-[#E1F5EE] bg-white hover:bg-[#E1F5EE]/30 cursor-pointer transition-colors"
+                          >
+                            {uploadFile ? (
+                              <>
+                                <FileText className="h-4 w-4 text-[#1D9E75]" />
+                                <div className="text-left">
+                                  <p className="text-xs font-medium text-[#2C2C2A] truncate max-w-[200px]">{uploadFile.name}</p>
+                                  <p className="text-[9px] text-[#888780]">{(uploadFile.size / 1024).toFixed(1)} KB — Click para cambiar</p>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <FileUp className="h-4 w-4 text-[#888780]" />
+                                <div className="text-left">
+                                  <p className="text-xs text-[#888780]">Click para seleccionar archivo</p>
+                                  <p className="text-[9px] text-[#888780]/60">PDF, imagenes, Word, Excel — Max 5MB</p>
+                                </div>
+                              </>
+                            )}
+                          </label>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Link input */}
+                    {newDocType === 'link' && (
+                      <div className="space-y-2">
+                        <Label className="text-[10px] text-[#888780]">URL del enlace</Label>
+                        <Input
+                          placeholder="https://portal.pacientes.com/estudio/12345"
+                          className="h-8 text-xs bg-white border-[#E1F5EE] focus:border-[#534AB7]"
+                          value={newDocForm.linkUrl}
+                          onChange={(e) => setNewDocForm((f) => ({ ...f, linkUrl: e.target.value }))}
+                        />
+                        <p className="text-[9px] text-[#888780]/60">
+                          Pega la URL del estudio en linea, portal de paciente, o cualquier enlace relevante
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Common fields */}
+                    <div className="space-y-2">
+                      <Label className="text-[10px] text-[#888780]">Nombre del documento</Label>
+                      <Input
+                        placeholder={newDocType === 'file' ? 'Radiografia toracica PA' : 'Estudio de laboratorio en linea'}
+                        className="h-8 text-xs bg-white border-[#E1F5EE] focus:border-[#534AB7]"
+                        value={newDocForm.name}
+                        onChange={(e) => setNewDocForm((f) => ({ ...f, name: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] text-[#888780]">Categoria</Label>
+                        <Select
+                          value={newDocForm.category}
+                          onValueChange={(v) => setNewDocForm((f) => ({ ...f, category: v }))}
+                        >
+                          <SelectTrigger className="h-8 text-xs bg-white border-[#E1F5EE]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="study">Estudio</SelectItem>
+                            <SelectItem value="xray">Radiografia</SelectItem>
+                            <SelectItem value="lab">Laboratorio</SelectItem>
+                            <SelectItem value="prescription">Receta</SelectItem>
+                            <SelectItem value="insurance">Seguro</SelectItem>
+                            <SelectItem value="other">Otro</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-[10px] text-[#888780]">Fecha del estudio</Label>
+                        <Input
+                          type="date"
+                          className="h-8 text-xs bg-white border-[#E1F5EE]"
+                          value={newDocForm.date}
+                          onChange={(e) => setNewDocForm((f) => ({ ...f, date: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-[10px] text-[#888780]">Descripcion (opcional)</Label>
+                      <Textarea
+                        className="text-xs bg-white border-[#E1F5EE] min-h-[50px]"
+                        placeholder="Notas sobre el documento o estudio..."
+                        value={newDocForm.description}
+                        onChange={(e) => setNewDocForm((f) => ({ ...f, description: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Button
+                        className="flex-1 h-8 text-xs bg-[#534AB7] hover:bg-[#534AB7]/90 text-white"
+                        onClick={newDocType === 'file' ? handleCreateFileDocument : handleCreateLinkDocument}
+                        disabled={isCreatingDocument || (newDocType === 'file' ? !uploadFile : !newDocForm.linkUrl)}
+                      >
+                        {isCreatingDocument ? (
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        ) : newDocType === 'file' ? (
+                          <FileUp className="h-3 w-3 mr-1" />
+                        ) : (
+                          <Link2 className="h-3 w-3 mr-1" />
+                        )}
+                        {newDocType === 'file' ? 'Cargar documento' : 'Guardar enlace'}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="h-8 text-xs text-[#888780]"
+                        onClick={() => {
+                          setShowNewDocument(false)
+                          setNewDocForm({ name: '', category: 'study', description: '', date: '', linkUrl: '' })
+                          setUploadFile(null)
+                        }}
                       >
                         Cancelar
                       </Button>

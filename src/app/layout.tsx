@@ -15,17 +15,23 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sinap — Inteligencia que conecta",
-  description: "Plataforma SaaS multi-agente para clínicas de salud en México. IA orquestada para recepción, clínica, facturación y crecimiento.",
-  keywords: ["Sinap", "clínica", "salud", "México", "IA", "facturación", "CFDI", "dermatología"],
+  title: "Sinap | Inteligencia que conecta tu negocio de salud",
+  description: "Centraliza WhatsApp, Instagram y Facebook, organiza cada paciente y automatiza recepción, agenda y seguimiento con agentes especializados para negocios de salud.",
+  keywords: ["Sinap", "clínica", "salud", "México", "IA", "CRM", "agenda", "WhatsApp Business", "agentes", "automatización", "recepción", "seguimiento"],
   authors: [{ name: "Sinap" }],
   icons: {
     icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'><circle cx='18' cy='18' r='16' stroke='%231D9E75' stroke-width='1.2' fill='none' opacity='0.4'/><circle cx='18' cy='18' r='9' fill='%23534AB7' opacity='0.12'/><circle cx='18' cy='18' r='5' fill='%23534AB7'/><circle cx='4' cy='18' r='2.5' fill='%231D9E75'/><circle cx='32' cy='18' r='2.5' fill='%231D9E75'/></svg>",
   },
   openGraph: {
-    title: "Sinap",
-    description: "Inteligencia que conecta",
+    title: "Sinap | Inteligencia que conecta tu negocio de salud",
+    description: "Centraliza WhatsApp, Instagram y Facebook, organiza cada paciente y automatiza recepción, agenda y seguimiento con agentes especializados para negocios de salud.",
     type: "website",
+    siteName: "Sinap",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Sinap | Inteligencia que conecta tu negocio de salud",
+    description: "Centraliza WhatsApp, Instagram y Facebook, organiza cada paciente y automatiza recepción, agenda y seguimiento con agentes especializados.",
   },
 };
 

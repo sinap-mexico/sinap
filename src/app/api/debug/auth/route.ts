@@ -1,18 +1,30 @@
 import { NextResponse } from 'next/server'
-import { getAuthOptions } from '@/lib/auth'
 
 export async function GET() {
-  const opts = getAuthOptions()
+  const googleClientId = process.env.GOOGLE_CLIENT_ID
+  const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET
+  const nextauthSecret = process.env.NEXTAUTH_SECRET
+  const nextauthUrl = process.env.NEXTAUTH_URL
 
   return NextResponse.json({
-    secretSet: !!opts.secret,
-    secretLength: opts.secret ? opts.secret.length : 0,
-    secretPrefix: opts.secret ? opts.secret.substring(0, 4) + '...' : 'NOT_SET',
-    strategy: opts.session?.strategy,
-    providersCount: opts.providers.length,
+    // NEXTAUTH
+    secretSet: !!nextauthSecret,
+    secretLength: nextauthSecret ? nextauthSecret.length : 0,
+    secretPrefix: nextauthSecret ? nextauthSecret.substring(0, 4) + '...' : 'NOT_SET',
+    nextauthUrl: nextauthUrl || 'NOT_SET',
+
+    // Google OAuth
+    googleClientIdSet: !!googleClientId,
+    googleClientIdPrefix: googleClientId ? googleClientId.substring(0, 15) + '...' : 'NOT_SET',
+    googleClientSecretSet: !!googleClientSecret,
+    googleClientSecretLength: googleClientSecret ? googleClientSecret.length : 0,
+
+    // General
     nodeEnv: process.env.NODE_ENV,
-    nextauthUrl: process.env.NEXTAUTH_URL || 'NOT_SET',
-    nextauthSecretEnvSet: !!process.env.NEXTAUTH_SECRET,
+    databaseUrlSet: !!process.env.DATABASE_URL,
+    databaseUrlPrefix: process.env.DATABASE_URL?.startsWith('file:') ? 'SQLite (local)' :
+                       process.env.DATABASE_URL?.startsWith('postgresql://') ? 'PostgreSQL' :
+                       process.env.DATABASE_URL?.startsWith('postgres://') ? 'PostgreSQL' : 'unknown',
     timestamp: new Date().toISOString(),
   })
 }

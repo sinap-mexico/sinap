@@ -61,7 +61,8 @@ export async function GET() {
       const now = new Date()
       const diffMs = clinic.trialEnd.getTime() - now.getTime()
       trialDaysRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)))
-      isTrialExpired = diffMs <= 0
+      // Enterprise/premium accounts never expire
+      isTrialExpired = diffMs <= 0 && clinic.plan !== 'premium' && clinic.plan !== 'enterprise'
     }
 
     return NextResponse.json({

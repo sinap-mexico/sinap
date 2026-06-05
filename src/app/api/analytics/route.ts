@@ -1,25 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
-// Mock fallback for analytics when DB is unavailable
+// Mock fallback for analytics when DB is unavailable — returns empty data
 function getMockAnalytics() {
   const patientSegments = {
-    new: 1,
-    active: 2,
-    inactive: 1,
-    churned: 2,
-    vip: 2,
+    new: 0,
+    active: 0,
+    inactive: 0,
+    churned: 0,
+    vip: 0,
   }
 
-  const totalPatients = Object.values(patientSegments).reduce((a, b) => a + b, 0)
-  const hadFirstAppointment = patientSegments.new + patientSegments.active + patientSegments.inactive + patientSegments.vip
-  const recurrent = patientSegments.active + patientSegments.vip
-
   const funnelData = [
-    { stage: 'Lead', count: totalPatients, color: '#888780' },
-    { stage: 'Primera cita', count: hadFirstAppointment, color: '#5DCAA5' },
-    { stage: 'Recurrente', count: recurrent, color: '#1D9E75' },
-    { stage: 'VIP', count: patientSegments.vip, color: '#534AB7' },
+    { stage: 'Lead', count: 0, color: '#888780' },
+    { stage: 'Primera cita', count: 0, color: '#5DCAA5' },
+    { stage: 'Recurrente', count: 0, color: '#1D9E75' },
+    { stage: 'VIP', count: 0, color: '#534AB7' },
   ]
 
   return { patientSegments, funnelData, campaigns: [] }
@@ -68,7 +64,7 @@ export async function GET(req: NextRequest) {
     const recurrent = patientSegments.active + patientSegments.vip
 
     const funnelData = [
-      { stage: 'Lead', count: totalPatients > 0 ? totalPatients : 1, color: '#888780' },
+      { stage: 'Lead', count: totalPatients, color: '#888780' },
       { stage: 'Primera cita', count: hadFirstAppointment, color: '#5DCAA5' },
       { stage: 'Recurrente', count: recurrent, color: '#1D9E75' },
       { stage: 'VIP', count: patientSegments.vip, color: '#534AB7' },

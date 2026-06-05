@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12)
 
-    // Calculate trial dates: 7 days from now
+    // Calculate trial dates: 7 days free trial with all premium features
     const now = new Date()
     const trialEnd = new Date(now)
     trialEnd.setDate(trialEnd.getDate() + 7)
@@ -55,6 +55,9 @@ export async function POST(req: Request) {
           slug,
           email,
           mode: mode || "solo",
+          plan: "enterprise",
+          maxDoctors: 999,
+          monthlyConvLimit: 999999,
           trialStart: now,
           trialEnd: trialEnd,
           isActive: true,

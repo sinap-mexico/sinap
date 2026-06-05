@@ -20,6 +20,7 @@ import { TrialBanner } from '@/components/sinap/trial-banner'
 import { Loader2 } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { MobileBottomNav } from '@/components/sinap/mobile-bottom-nav'
 
 // Modules that need full viewport height (no scroll on parent)
 const FULL_HEIGHT_MODULES: SinapModule[] = ['desk', 'bill']
@@ -103,6 +104,24 @@ export default function SinapDashboard() {
             phone: c.phone || '',
             email: c.email || '',
           })
+          // Hydrate plan from DB
+          if (c.plan) {
+            useSinapStore.getState().setPlan(c.plan as 'starter' | 'pro' | 'enterprise')
+          }
+
+          // Auto-upgrade starter clinics to enterprise (free trial with all features)
+          if (c.plan === 'starter') {
+            fetch('/api/clinic/upgrade-trial', { method: 'POST' })
+              .then(res => res.ok ? res.json() : null)
+              .then(data => {
+                if (data?.success) {
+                  useSinapStore.getState().setPlan('enterprise')
+                  useSinapStore.getState().setTrialDaysRemaining(7)
+                  useSinapStore.getState().setIsTrialExpired(false)
+                }
+              })
+              .catch(() => {})
+          }
         }
 
         // Hydrate trial status
@@ -110,7 +129,9 @@ export default function SinapDashboard() {
           useSinapStore.getState().setTrialDaysRemaining(data.trial.daysRemaining)
           useSinapStore.getState().setIsTrialExpired(data.trial.isTrialExpired)
 
-          if (data.trial.isTrialExpired && !isDemoMode) {
+          // Don't redirect to trial-expired for enterprise/premium accounts
+          // Free trial has all premium features unlocked
+          if (data.trial.isTrialExpired && !isDemoMode && data.clinic?.plan !== 'premium' && data.clinic?.plan !== 'enterprise') {
             router.replace('/trial-expired')
           }
         }
@@ -241,19 +262,22 @@ export default function SinapDashboard() {
         {isFullHeight ? (
           /* Full-height modules: no scroll on parent, height passes through */
           <div className="flex-1 overflow-hidden">
-            <main className="h-full p-4 lg:p-6">
+            <main className="h-full p-4 lg:p-6 pb-20 lg:pb-6">
               <ModuleContent module={activeModule} />
             </main>
           </div>
         ) : (
           /* Other modules: scrollable content area */
           <div className="flex-1 overflow-y-auto sinap-scroll">
-            <main className="p-4 lg:p-6">
+            <main className="p-4 lg:p-6 pb-20 lg:pb-6">
               <ModuleContent module={activeModule} />
             </main>
           </div>
         )}
       </div>
+
+      {/* Mobile bottom navigation */}
+      {isMobile && <MobileBottomNav />}
     </div>
   )
 }

@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 export function TrialBanner() {
-  const { isDemoMode, trialDaysRemaining, isTrialExpired, setTrialDaysRemaining, setIsTrialExpired } = useSinapStore()
+  const { isDemoMode, plan, trialDaysRemaining, isTrialExpired, setTrialDaysRemaining, setIsTrialExpired } = useSinapStore()
   const [dismissed, setDismissed] = useState(false)
   const [fetched, setFetched] = useState(false)
 
@@ -27,8 +27,8 @@ export function TrialBanner() {
       })
   }, [isDemoMode, fetched, setTrialDaysRemaining, setIsTrialExpired])
 
-  // Don't show banner for demo mode or if dismissed or trial is not close to expiry
-  if (isDemoMode || dismissed) return null
+  // Don't show banner for demo mode, enterprise plan, or if dismissed
+  if (isDemoMode || plan === 'enterprise' || dismissed) return null
 
   // Trial expired — show blocking banner
   if (isTrialExpired) {
