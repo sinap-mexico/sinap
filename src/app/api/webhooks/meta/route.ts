@@ -361,6 +361,7 @@ async function handleIncomingMessage(
     igUserId?: string
     psid?: string
     pageId?: string
+    phoneNumberId?: string
   },
   detectedChannel: MetaChannel
 ) {
@@ -368,14 +369,9 @@ async function handleIncomingMessage(
 
   const channel = msg.channel || detectedChannel
 
-  // 1. Find the clinic — also try to extract phoneNumberId from the webhook payload metadata
+  // 1. Find the clinic — use businessId and phoneNumberId from webhook
   const businessId = msg.clinicWabaId
-  // Extract phoneNumberId from the raw webhook if available (stored in metadata.phone_number_id)
-  let webhookPhoneNumberId: string | undefined
-  try {
-    webhookPhoneNumberId = (msg as Record<string, unknown>).phoneNumberId as string | undefined
-  } catch {}
-  const clinic = await findClinicByChannel(channel, businessId, webhookPhoneNumberId)
+  const clinic = await findClinicByChannel(channel, businessId, msg.phoneNumberId)
 
   if (!clinic) {
     console.warn(`[Webhook] No clinic found for ${channel} businessId: ${businessId}`)
