@@ -211,7 +211,7 @@ async function handleStatusUpdate(msg: { messageId: string; status?: string; err
 }
 
 // ─── Find clinic by channel and business ID ────────────────
-async function findClinicByChannel(channel: MetaChannel, businessId: string): Promise<{ id: string; personaName: string | null } | null> {
+async function findClinicByChannel(channel: MetaChannel, businessId: string, phoneNumberId?: string): Promise<{ id: string; personaName: string | null } | null> {
   if (!db) return null
 
   try {
@@ -220,22 +220,52 @@ async function findClinicByChannel(channel: MetaChannel, businessId: string): Pr
 
     switch (channel) {
       case 'whatsapp':
+        // Try by businessId first, then by phoneNumberId
         connectionData = await db.metaConnection.findFirst({
           where: { businessId, channel: 'whatsapp', status: 'active' },
           select: { clinicId: true, clinic: { select: { id: true, personaName: true } } },
         }) as { clinicId: string; clinic: { id: string; personaName: string | null } } | null
+
+        if (!connectionData && phoneNumberId) {
+          connectionData = await db.metaConnection.findFirst({
+            where: { phoneNumberId, channel: 'whatsapp', status: 'active' },
+            select: { clinicId: true, clinic: { select: { id: true, personaName: true } } },
+          }) as { clinicId: string; clinic: { id: string; personaName: string | null } } | null
+        }
+
+        // Also try any active WhatsApp connection regardless of specific IDs
+        if (!connectionData) {
+          connectionData = await db.metaConnection.findFirst({
+            where: { channel: 'whatsapp', status: 'active' },
+            select: { clinicId: true, clinic: { select: { id: true, personaName: true } } },
+          }) as { clinicId: string; clinic: { id: string; personaName: string | null } } | null
+        }
         break
       case 'instagram':
         connectionData = await db.metaConnection.findFirst({
           where: { businessId, channel: 'instagram', status: 'active' },
           select: { clinicId: true, clinic: { select: { id: true, personaName: true } } },
         }) as { clinicId: string; clinic: { id: string; personaName: string | null } } | null
+
+        if (!connectionData) {
+          connectionData = await db.metaConnection.findFirst({
+            where: { channel: 'instagram', status: 'active' },
+            select: { clinicId: true, clinic: { select: { id: true, personaName: true } } },
+          }) as { clinicId: string; clinic: { id: string; personaName: string | null } } | null
+        }
         break
       case 'messenger':
         connectionData = await db.metaConnection.findFirst({
           where: { pageId: businessId, channel: 'messenger', status: 'active' },
           select: { clinicId: true, clinic: { select: { id: true, personaName: true } } },
         }) as { clinicId: string; clinic: { id: string; personaName: string | null } } | null
+
+        if (!connectionData) {
+          connectionData = await db.metaConnection.findFirst({
+            where: { channel: 'messenger', status: 'active' },
+            select: { clinicId: true, clinic: { select: { id: true, personaName: true } } },
+          }) as { clinicId: string; clinic: { id: string; personaName: string | null } } | null
+        }
         break
     }
 
@@ -249,7 +279,62 @@ async function findClinicByChannel(channel: MetaChannel, businessId: string): Pr
         where: { wabaId: businessId },
         select: { id: true, personaName: true },
       })
-      return clinic
+      if (clinic) return clinic
+
+      // Last resort: try by phoneNumberId on Clinic table
+      if (phoneNumberId) {
+        const clinicByPhone = await db.clinic.findFirst({
+          where: { phoneNumberId },
+          select: { id: true, personaName: true },
+        })
+        if (clinicByPhone) return clinicByPhone
+      }
+
+      // Ultimate fallback: if env vars are set, use the first clinic with matching env config
+      const envWabaId = process.env.META_WHATSAPP_WABA_ID
+      const envPhoneNumberId = process.env.META_WHATSAPP_PHONE_NUMBER_ID
+      if (envWabaId && (businessId === envWabaId || phoneNumberId === envPhoneNumberId)) {
+        console.log('[Webhook] Using env var fallback to find clinic')
+        const anyClinic = await db.clinic.findFirst({
+          select: { id: true, personaName: true },
+        })
+        if (anyClinic) {
+          // Auto-create MetaConnection for future lookups
+          try {
+            const envToken = process.env.META_WHATSAPP_ACCESS_TOKEN
+            if (envToken) {
+              const { encryptToken } = await import('@/lib/meta/token-vault')
+              await db.metaConnection.upsert({
+                where: { clinicId_channel: { clinicId: anyClinic.id, channel: 'whatsapp' } },
+                create: {
+                  clinicId: anyClinic.id,
+                  channel: 'whatsapp',
+                  businessId: envWabaId,
+                  phoneNumberId: envPhoneNumberId || null,
+                  accessToken: encryptToken(envToken),
+                  status: 'active',
+                  businessName: 'Sinap WhatsApp',
+                },
+                update: {
+                  businessId: envWabaId,
+                  phoneNumberId: envPhoneNumberId || null,
+                  accessToken: encryptToken(envToken),
+                  status: 'active',
+                },
+              })
+              // Also update legacy Clinic fields
+              await db.clinic.update({
+                where: { id: anyClinic.id },
+                data: { wabaId: envWabaId, phoneNumberId: envPhoneNumberId || null, metaAccessToken: encryptToken(envToken) },
+              }).catch(() => {})
+              console.log('[Webhook] Auto-created MetaConnection from env vars for clinic:', anyClinic.id)
+            }
+          } catch (e) {
+            console.error('[Webhook] Auto-create MetaConnection failed:', e)
+          }
+          return anyClinic
+        }
+      }
     }
 
     return null
@@ -283,9 +368,14 @@ async function handleIncomingMessage(
 
   const channel = msg.channel || detectedChannel
 
-  // 1. Find the clinic
+  // 1. Find the clinic — also try to extract phoneNumberId from the webhook payload metadata
   const businessId = msg.clinicWabaId
-  const clinic = await findClinicByChannel(channel, businessId)
+  // Extract phoneNumberId from the raw webhook if available (stored in metadata.phone_number_id)
+  let webhookPhoneNumberId: string | undefined
+  try {
+    webhookPhoneNumberId = (msg as Record<string, unknown>).phoneNumberId as string | undefined
+  } catch {}
+  const clinic = await findClinicByChannel(channel, businessId, webhookPhoneNumberId)
 
   if (!clinic) {
     console.warn(`[Webhook] No clinic found for ${channel} businessId: ${businessId}`)
