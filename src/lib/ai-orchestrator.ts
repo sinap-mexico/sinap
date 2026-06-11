@@ -22,6 +22,13 @@ export interface ClinicContext {
   doctors: Array<{ id: string; name: string; specialty: string | null; workDays: string; workStart: string; workEnd: string }>
 }
 
+export interface PatientInfo {
+  id: string
+  fullName: string
+  phone: string | null
+  isKnown: boolean // true if patient has a real name (not "Paciente 1234")
+}
+
 export interface ConversationMessage {
   role: 'user' | 'assistant'
   content: string
@@ -161,8 +168,35 @@ export async function loadConversationHistory(
   }
 }
 
+// ─── Load patient info ─────────────────────────────────────────
+export async function loadPatientInfo(patientId: string): Promise<PatientInfo | null> {
+  if (!db || !patientId || patientId === 'unknown') return null
+
+  try {
+    const patient = await db.patient.findUnique({
+      where: { id: patientId },
+      select: { id: true, fullName: true, phone: true },
+    })
+
+    if (!patient) return null
+
+    // Check if patient has a real name (not generic "Paciente XXXX")
+    const isKnown = patient.fullName !== 'Paciente' && !patient.fullName.startsWith('Paciente ')
+
+    return {
+      id: patient.id,
+      fullName: patient.fullName,
+      phone: patient.phone,
+      isKnown,
+    }
+  } catch (error) {
+    console.error('[AI Orchestrator] Error loading patient info:', error)
+    return null
+  }
+}
+
 // ─── Build context-rich system prompt ─────────────────────────
-function buildSystemPrompt(agent: AgentName, context: ClinicContext): string {
+function buildSystemPrompt(agent: AgentName, context: ClinicContext, patientInfo?: PatientInfo | null): string {
   const agentName = context.personaName || context.clinicName
 
   const servicesList = context.services.length > 0
@@ -223,7 +257,15 @@ ${servicesList}
 DOCTORES Y HORARIOS (usa el ID para agendar):
 ${doctorsList}
 
-FECHA ACTUAL: ${new Date().toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`
+FECHA ACTUAL: ${new Date().toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+
+PACIENTE ACTUAL:
+${patientInfo?.isKnown
+    ? `- Nombre: ${patientInfo.fullName} (paciente REGISTRADO — ya lo conoces, NO preguntes su nombre de nuevo, solo confírmalo al agendar: "¿La cita queda a tu nombre, ${patientInfo.fullName}?")`
+    : patientInfo
+      ? `- Teléfono: ${patientInfo.phone || 'No disponible'} (paciente NUEVO — no sabemos su nombre, pregunta "¿A nombre de quién agendo?" JUSTO ANTES de crear la cita)`
+      : '- (Sin información del paciente — pregunta el nombre al momento de agendar)'
+}`
 
   const agentRules: Record<AgentName, string> = {
     desk: `
@@ -238,27 +280,32 @@ REGLAS CRÍTICAS — INFRACCIÓN = FALLA TOTAL:
    - Si NO llamaste create_appointment, la cita NO existe. Decir que sí es MENTIRA y daña la confianza del paciente.
    - Si el tool devuelve error, informa al paciente y ofrece alternativas.
 
-🚫 NUNCA agendes una cita sin preguntar el NOMBRE del paciente primero. Es obligatorio.
-   - Si el paciente no ha dado su nombre, pregunta: "¿Cómo te llamas?" antes de agendar.
-   - Pasa el nombre completo en el parámetro patient_name de create_appointment.
+🚫 NUNCA agendes una cita sin saber el NOMBRE del paciente. Es obligatorio para create_appointment.
+   - Si es un PACIENTE NUEVO (no tiene nombre real en el contexto), pregunta "¿A nombre de quién agenda?" JUSTO ANTES de crear la cita, cuando ya tengas fecha, hora y doctor.
+   - NO preguntes el nombre al inicio de la conversación. Espera hasta que sea momento de agendar.
+   - Si es un PACIENTE REGRESA (ya tiene nombre real en el contexto), CONFIRMA: "¿La cita queda a tu nombre, [nombre]?"
 
 🚫 NUNCA listes todos los horarios disponibles como un menú robot. Eso suena a máquina, no a recepcionista.
    - Cuando uses check_availability, NO repitas la lista completa de slots al paciente.
    - En su lugar, resume: "Tenemos disponibilidad por la mañana y tarde" o "Hay espacio a las 11:00 y 3:00 pm".
    - Máximo menciona 2-3 horarios sugeridos. No más.
 
+🚫 NUNCA escribas texto como <function=...> o ```json en tus respuestas. Las herramientas se invocan internamente, NO como texto visible.
+
 ═══════════════════════════════════════════
 FLUJO DE AGENDADO (SIGUE ESTE ORDEN):
 ═══════════════════════════════════════════
 
-1. Paciente quiere cita → Pregunta su NOMBRE completo primero si no lo ha dado.
-2. USA check_availability para verificar disponibilidad.
-3. Pregunta al paciente: "¿Qué horario te queda mejor y con cuál doctor?"
+1. Paciente quiere cita → USA check_availability para verificar disponibilidad.
+2. Pregunta al paciente: "¿Qué horario te queda mejor y con cuál doctor?"
    - NO listes todos los slots. Solo pregunta naturalmente.
-   - Si el paciente ya dijo fecha/hora/doctor, ve al paso 4.
-4. Cuando tengas nombre, fecha, hora, doctor Y servicio → USA create_appointment para agendar de verdad. El parámetro patient_name es OBLIGATORIO.
+   - Si el paciente ya dijo fecha/hora/doctor, ve al paso 3.
+3. Cuando tengas fecha, hora, doctor Y servicio → Pregunta o confirma el NOMBRE del paciente:
+   - Si es paciente nuevo: "¿A nombre de quién agendo la cita?"
+   - Si ya sabes su nombre: "¿La cita queda a tu nombre, [nombre]?"
+4. USA create_appointment con todos los datos incluyendo patient_name.
 5. Si create_appointment devuelve success → Confirma los detalles al paciente.
-6. Si devuelve error → Ofrece alternativas y vuelve al paso 3.
+6. Si devuelve error → Ofrece alternativas y vuelve al paso 2.
 
 ═══════════════════════════════════════════
 REGLAS DE COMUNICACIÓN:
@@ -677,6 +724,54 @@ function minutesToTime(minutes: number): string {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`
 }
 
+// ─── Clean AI response — strip leaked function calls ──────────────
+function cleanAIResponse(text: string): string {
+  // Strip patterns like <function=check_availability>{"date":"..."}</function>
+  let cleaned = text.replace(/<function=[^>]*>[\s\S]*?<\/function>/gi, '')
+  // Also strip unclosed <function=...> patterns with JSON following
+  cleaned = cleaned.replace(/<function=[^>]*>\s*\{[^}]*\}/gi, '')
+  // Strip any remaining <function=...> tags
+  cleaned = cleaned.replace(/<function=[^>]*>/gi, '')
+  // Strip ```json ... ``` blocks that might leak
+  cleaned = cleaned.replace(/```json[\s\S]*?```/gi, '')
+  // Strip ```...``` blocks (short form)
+  cleaned = cleaned.replace(/```[\s\S]*?```/gi, '')
+  // Clean up extra whitespace left behind
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim()
+  return cleaned
+}
+
+// ─── Extract text-based function calls from LLM output ──────────
+// Llama 3.3 sometimes generates <function=name>{"arg":"val"}</function> as text
+// instead of using structured tool_calls. This function parses them.
+function extractTextToolCalls(text: string): Array<{ name: string; arguments: string }> {
+  const results: Array<{ name: string; arguments: string }> = []
+
+  // Match patterns like: <function=check_availability>{"date":"2026-06-12"}</function>
+  // Or: <function=check_availability>{"date":"2026-06-12"}
+  const regex = /<function=(\w+)>([\s\S]*?)(?:<\/function>|$)/gi
+  let match
+
+  while ((match = regex.exec(text)) !== null) {
+    const name = match[1]
+    const argsText = match[2].trim()
+
+    // Validate it's a known tool
+    if (name === 'check_availability' || name === 'create_appointment') {
+      try {
+        // Try to parse the arguments as JSON
+        const parsed = JSON.parse(argsText)
+        results.push({ name, arguments: JSON.stringify(parsed) })
+      } catch {
+        // If JSON parse fails, try wrapping in an object
+        console.warn(`[AI Orchestrator] Could not parse text tool call args: ${argsText.substring(0, 100)}`)
+      }
+    }
+  }
+
+  return results
+}
+
 // ─── Generate AI response with full context + tool calling ────
 export async function generateContextualResponse(
   message: string,
@@ -697,9 +792,10 @@ export async function generateContextualResponse(
       return null
     }
 
-    // 2. Route to agent
+    // 2. Route to agent + load patient info
     const agent = options?.targetAgent || routeToAgent(message)
-    const systemPrompt = buildSystemPrompt(agent, context)
+    const patientInfo = await loadPatientInfo(patientId || '')
+    const systemPrompt = buildSystemPrompt(agent, context, patientInfo)
 
     // 3. Load conversation history
     const history = await loadConversationHistory(conversationId, 15)
@@ -732,12 +828,14 @@ export async function generateContextualResponse(
       return null
     }
 
-    // 7. Handle tool calls if present
+    // 7. Handle tool calls if present (structured format from OpenAI-compatible APIs)
     const actions: Array<{ type: string; data: Record<string, unknown> }> = []
     let finalText = choice.message?.content || ''
+    let hasStructuredToolCalls = false
 
     if (choice.message?.tool_calls && choice.message.tool_calls.length > 0) {
-      console.log(`[AI Orchestrator] Tool calls: ${choice.message.tool_calls.map(tc => tc.function.name).join(', ')}`)
+      hasStructuredToolCalls = true
+      console.log(`[AI Orchestrator] Structured tool calls: ${choice.message.tool_calls.map(tc => tc.function.name).join(', ')}`)
 
       // Add assistant message with tool calls to conversation
       messages.push({
@@ -785,12 +883,69 @@ export async function generateContextualResponse(
       finalText = secondCompletion.choices?.[0]?.message?.content || finalText
     }
 
+    // 8b. Handle text-based function calls (Llama sometimes generates these instead of structured tool_calls)
+    if (!hasStructuredToolCalls && finalText.includes('<function=')) {
+      const textToolCalls = extractTextToolCalls(finalText)
+      if (textToolCalls.length > 0) {
+        console.log(`[AI Orchestrator] Text-based tool calls detected: ${textToolCalls.map(tc => tc.name).join(', ')}`)
+
+        // Add assistant message to conversation
+        messages.push({
+          role: 'assistant',
+          content: finalText,
+        })
+
+        // Execute each text-based tool call
+        for (const tc of textToolCalls) {
+          const toolCall: ToolCall = {
+            id: `txt_tc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            type: 'function',
+            function: { name: tc.name, arguments: tc.arguments },
+          }
+
+          const toolResult = await executeToolCall(toolCall, context, patientId || 'unknown')
+          console.log(`[AI Orchestrator] Text tool ${tc.name} result: ${toolResult.substring(0, 150)}`)
+
+          messages.push({
+            role: 'tool',
+            content: toolResult,
+            tool_call_id: toolCall.id,
+          })
+
+          try {
+            const parsed = JSON.parse(toolResult)
+            if (parsed.success) {
+              actions.push({ type: tc.name, data: parsed })
+            }
+          } catch {}
+        }
+
+        // Generate a clean response based on tool results
+        const cleanCompletion: ChatCompletionResponse = await zai.chat.completions.create({
+          messages,
+          temperature: options?.temperature ?? 0.7,
+          max_tokens: options?.maxTokens ?? 800,
+        })
+
+        finalText = cleanCompletion.choices?.[0]?.message?.content || ''
+      }
+    }
+
     if (!finalText) {
       console.warn('[AI Orchestrator] LLM returned empty final response')
       return null
     }
 
-    // 9. Update conversation's current agent
+    // 9. Clean up the response — strip any leaked function call text
+    // Sometimes Llama 3.3 generates <function=...>{...}</function> as text instead of structured tool_calls
+    finalText = cleanAIResponse(finalText)
+
+    if (!finalText.trim()) {
+      console.warn('[AI Orchestrator] Response was empty after cleaning')
+      return null
+    }
+
+    // 10. Update conversation's current agent
     if (db) {
       await db.conversation.update({
         where: { id: conversationId },
