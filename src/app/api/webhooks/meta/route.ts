@@ -598,7 +598,7 @@ async function handleIncomingMessage(
   if (autoReplyEnabled) {
     try {
       console.log(`[Webhook] Auto-reply ON — generating contextual AI response for: "${content.substring(0, 50)}"`)
-      const aiResult = await generateContextualResponse(content, clinic.id, conversation.id)
+      const aiResult = await generateContextualResponse(content, clinic.id, conversation.id, patient.id)
 
       const normalizedRecipient = channel === 'whatsapp' ? normalizePhoneForWhatsApp(msg.from) : msg.from
 
