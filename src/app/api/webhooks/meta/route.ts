@@ -7,7 +7,7 @@ import crypto from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { MetaClient, getClinicMetaConfig, getClinicMetaConnection, type MetaChannel } from '@/lib/meta-client'
-import { createZAI } from '@/lib/zai'
+import { generateContextualResponse, generateEmergencyResponse, loadClinicContext } from '@/lib/ai-orchestrator'
 
 // ─── Config ────────────────────────────────────────────────
 const VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN
@@ -597,30 +597,31 @@ async function handleIncomingMessage(
   // 8. Trigger AI auto-response only if auto-reply is ON
   if (autoReplyEnabled) {
     try {
-      console.log(`[Webhook] Auto-reply ON — generating AI response for: "${content.substring(0, 50)}"`)
-      const aiResponse = await generateAIResponse(content, clinic.id, conversation.id)
+      console.log(`[Webhook] Auto-reply ON — generating contextual AI response for: "${content.substring(0, 50)}"`)
+      const aiResult = await generateContextualResponse(content, clinic.id, conversation.id)
 
-      // 9. Send AI response back via the appropriate channel
-      if (aiResponse) {
-        console.log(`[Webhook] AI response generated: "${aiResponse.substring(0, 80)}"`)
-        const normalizedRecipient = channel === 'whatsapp' ? normalizePhoneForWhatsApp(msg.from) : msg.from
-        await sendAIResponse(aiResponse, clinic.id, channel, normalizedRecipient, conversation.id)
+      const normalizedRecipient = channel === 'whatsapp' ? normalizePhoneForWhatsApp(msg.from) : msg.from
+
+      if (aiResult?.text) {
+        console.log(`[Webhook] AI response (${aiResult.agent}): "${aiResult.text.substring(0, 80)}"`)
+        await sendAIResponse(aiResult.text, clinic.id, channel, normalizedRecipient, conversation.id, aiResult.agentLabel)
       } else {
-        // AI returned null — send a fallback acknowledgement
-        console.warn('[Webhook] AI response was null — sending fallback acknowledgement')
-        const fallbackResponse = generateFallbackResponse(content)
-        const normalizedRecipient = channel === 'whatsapp' ? normalizePhoneForWhatsApp(msg.from) : msg.from
-        await sendAIResponse(fallbackResponse, clinic.id, channel, normalizedRecipient, conversation.id)
+        // AI returned null — use emergency response with clinic name
+        console.warn('[Webhook] AI response was null — sending emergency response with clinic name')
+        const clinicContext = await loadClinicContext(clinic.id)
+        const emergencyResponse = generateEmergencyResponse(content, clinicContext?.clinicName)
+        await sendAIResponse(emergencyResponse, clinic.id, channel, normalizedRecipient, conversation.id, clinicContext?.personaName || 'Sinap Desk')
       }
     } catch (orchestratorError) {
       console.error('[Webhook] Orchestrator error:', orchestratorError)
-      // AI failed entirely — send a fallback acknowledgement
+      // AI failed entirely — send emergency response with clinic name
       try {
-        const fallbackResponse = generateFallbackResponse(content)
         const normalizedRecipient = channel === 'whatsapp' ? normalizePhoneForWhatsApp(msg.from) : msg.from
-        await sendAIResponse(fallbackResponse, clinic.id, channel, normalizedRecipient, conversation.id)
+        const clinicContext = await loadClinicContext(clinic.id)
+        const emergencyResponse = generateEmergencyResponse(content, clinicContext?.clinicName)
+        await sendAIResponse(emergencyResponse, clinic.id, channel, normalizedRecipient, conversation.id, clinicContext?.personaName || 'Sinap Desk')
       } catch (fallbackError) {
-        console.error('[Webhook] Fallback response also failed:', fallbackError)
+        console.error('[Webhook] Emergency response also failed:', fallbackError)
       }
     }
   } else {
@@ -649,32 +650,14 @@ function normalizePhoneForWhatsApp(phone: string): string {
   return phone
 }
 
-// ─── Generate fallback response when AI is unavailable ──────
-function generateFallbackResponse(userMessage: string): string {
-  const lower = userMessage.toLowerCase()
-
-  if (lower.includes('cita') || lower.includes('agendar') || lower.includes('horario')) {
-    return 'Gracias por su mensaje. Para agendar una cita, un miembro de nuestro equipo le atenderá en breve. Puede tambien indicarnos su fecha y hora preferida.'
-  }
-
-  if (lower.includes('precio') || lower.includes('costo') || lower.includes('cuanto')) {
-    return 'Gracias por su mensaje. Nuestro equipo le proporcionará la información de precios en breve.'
-  }
-
-  if (lower.includes('urgencia') || lower.includes('emergencia') || lower.includes('dolor')) {
-    return 'Entendemos su urgencia. Un miembro de nuestro equipo médico le contactará lo antes posible. Si es una emergencia, por favor acuda directamente a urgencias.'
-  }
-
-  return 'Gracias por su mensaje. Un miembro de nuestro equipo le atenderá en breve. Si necesita agendar una cita, indíquenos fecha y hora preferida.'
-}
-
 // ─── Send AI response via the correct channel ──────────────
 async function sendAIResponse(
   aiResponse: string,
   clinicId: string,
   channel: MetaChannel,
   recipientId: string,
-  conversationId: string
+  conversationId: string,
+  agentName: string = 'Sinap Desk'
 ) {
   if (!db) return
 
@@ -696,7 +679,7 @@ async function sendAIResponse(
           senderType: 'agent',
           content: aiResponse,
           messageType: 'text',
-          agentName: 'Sinap Desk',
+          agentName,
           aiGenerated: true,
           wamid: sendResult.messageId,
           isMock: false,
@@ -726,7 +709,7 @@ async function sendAIResponse(
             senderType: 'agent',
             content: aiResponse,
             messageType: 'text',
-            agentName: 'Sinap Desk',
+            agentName,
             aiGenerated: true,
             wamid: sendResult.messageId,
             isMock: false,
@@ -752,7 +735,7 @@ async function sendAIResponse(
         senderType: 'agent',
         content: aiResponse,
         messageType: 'text',
-        agentName: 'Sinap Desk',
+        agentName,
         aiGenerated: true,
         isMock: false,
       },
@@ -769,7 +752,7 @@ async function sendAIResponse(
         senderType: 'agent',
         content: aiResponse,
         messageType: 'text',
-        agentName: 'Sinap Desk',
+        agentName,
         aiGenerated: true,
         isMock: false,
       },
@@ -777,110 +760,4 @@ async function sendAIResponse(
   }
 }
 
-// ─── Generate AI response ──────────────────────────────────
-async function generateAIResponse(
-  message: string,
-  clinicId: string,
-  conversationId: string
-): Promise<string | null> {
-  try {
-    type AgentName = 'desk' | 'flow' | 'bill' | 'grow'
-
-    const agentSystemPrompts: Record<AgentName, string> = {
-      desk: `Eres el asistente de Sinap Desk para una clinica de salud en Mexico.
-Tu trabajo es atender pacientes por WhatsApp/Instagram/Facebook Messenger.
-Reglas:
-- Se directo y profesional. Sin emojis. Sin jerga innecesaria.
-- Puedes agendar, confirmar, cancelar y reagendar citas.
-- Puedes dar informacion de precios y servicios de la clinica.
-- Si el paciente tiene una queja o emergencia, sugiere contactar directamente al doctor.
-- Si no estas seguro de algo, ofrece conectar con el personal.
-- Responde en espanol mexicano, cercano pero profesional.
-- NUNCA diagnostiques ni recetes. Solo informacion y gestion de citas.
-- Si detectas urgencia, reclamacion o solicitud clinica, escala a personal.`,
-
-      flow: `Eres el asistente clinico de Sinap Flow para una clinica de salud en Mexico.
-Tu trabajo es ayudar con pre-consulta y notas SOAP.
-Reglas:
-- Se directo y profesional. Sin emojis. Terminologia medica en espanol.
-- Puedes generar preguntas de pre-consulta personalizadas.
-- Puedes ayudar a generar borradores de notas SOAP.
-- NUNCA des diagnosticos definitivos. Solo sugerencias marcadas como SUGERIDO.
-- Siempre indica que cualquier diagnostico o plan requiere aprobacion del medico.
-- Responde en espanol mexicano.`,
-
-      bill: `Eres el asistente de Sinap Bill para una clinica de salud en Mexico.
-Tu trabajo es ayudar con facturacion y CFDI.
-Reglas:
-- Se directo y profesional. Sin emojis.
-- Puedes informar sobre estados de facturas, montos y metodos de pago.
-- Puedes ayudar a generar CFDI 4.0.
-- Responde en espanol mexicano.
-- Para consultas fiscales complejas, sugiere contactar al contador.`,
-
-      grow: `Eres el asistente de Sinap Grow para una clinica de salud en Mexico.
-Tu trabajo es ayudar con marketing y reactivacion de pacientes.
-Reglas:
-- Se directo y profesional. Sin emojis.
-- Puedes sugerir campanas de reactivacion para pacientes inactivos.
-- Responde en espanol mexicano, cercano pero profesional.`,
-    }
-
-    function routeToAgent(msg: string): AgentName {
-      const lower = msg.toLowerCase()
-      const deskKeywords = ['cita', 'agendar', 'horario', 'confirmar', 'cancelar', 'reagendar', 'precio', 'costo', 'servicio', 'disponib', 'consultorio', 'hora', 'turno']
-      const flowKeywords = ['sintoma', 'dolor', 'molesta', 'pre-consulta', 'preconsulta', 'soap', 'nota clinica', 'consulta medica', 'diagnostico', 'tratamiento', 'receta', 'exploracion']
-      const billKeywords = ['factura', 'pago', 'cobro', 'cfdi', 'timbre', 'xml', 'pdf', 'facturar', 'recibo', 'comprobante', 'metodo de pago', 'forma de pago', 'iva']
-      const growKeywords = ['campana', 'marketing', 'reactivar', 'inactivo', 'redes sociales', 'promocion', 'descuento', 'paciente nuevo']
-
-      const score: Record<AgentName, number> = { desk: 0, flow: 0, bill: 0, grow: 0 }
-      deskKeywords.forEach((kw) => { if (lower.includes(kw)) score.desk += 1 })
-      flowKeywords.forEach((kw) => { if (lower.includes(kw)) score.flow += 1 })
-      billKeywords.forEach((kw) => { if (lower.includes(kw)) score.bill += 1 })
-      growKeywords.forEach((kw) => { if (lower.includes(kw)) score.grow += 1 })
-
-      const maxScore = Math.max(score.desk, score.flow, score.bill, score.grow)
-      if (maxScore === 0) return 'desk'
-      if (score.desk === maxScore) return 'desk'
-      if (score.flow === maxScore) return 'flow'
-      if (score.bill === maxScore) return 'bill'
-      return 'grow'
-    }
-
-    const agent = routeToAgent(message)
-    const systemPrompt = agentSystemPrompts[agent]
-
-    const zai = await createZAI()
-
-    const completion = await zai.chat.completions.create({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: message },
-      ],
-      temperature: 0.7,
-      max_tokens: 400,
-    })
-
-    const aiResponse = completion.choices[0]?.message?.content
-
-    // Update conversation currentAgent
-    const agentToCurrentAgent: Record<string, string> = {
-      desk: 'reception',
-      flow: 'clinical',
-      bill: 'billing',
-      grow: 'marketing',
-    }
-
-    if (db) {
-      await db.conversation.update({
-        where: { id: conversationId },
-        data: { currentAgent: agentToCurrentAgent[agent] || 'reception' },
-      }).catch(() => {})
-    }
-
-    return aiResponse || null
-  } catch (error) {
-    console.error('[Webhook] generateAIResponse error:', error)
-    return null
-  }
-}
+// (AI generation now handled by src/lib/ai-orchestrator.ts)
