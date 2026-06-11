@@ -56,6 +56,7 @@ export interface ParsedWebhookMessage {
   status?: 'sent' | 'delivered' | 'read' | 'failed'
   errors?: Array<{ code: number; message: string }>
   phoneNumberId?: string  // From webhook metadata — identifies which phone number received the message
+  displayPhoneNumber?: string  // From webhook metadata — the business display phone number (for echo detection)
   // Instagram/Messenger specific
   igUserId?: string     // Instagram user ID
   psid?: string         // Page-scoped ID (Messenger)
@@ -589,10 +590,13 @@ class MetaClient {
                 type: (msg.type as ParsedWebhookMessage['type']) || 'text',
               }
 
-              // Extract phoneNumberId from metadata (identifies which business phone received the message)
+              // Extract phoneNumberId and displayPhoneNumber from metadata
               const metadata = value.metadata as Record<string, unknown> | undefined
               if (metadata?.phone_number_id) {
                 parsed.phoneNumberId = metadata.phone_number_id as string
+              }
+              if (metadata?.display_phone_number) {
+                parsed.displayPhoneNumber = metadata.display_phone_number as string
               }
 
               // Instagram-specific fields

@@ -159,10 +159,16 @@ async function processWebhookPayload(body: Record<string, unknown>) {
 
       // ── Handle incoming messages ──────────────────
       if (msg.type !== 'system') {
+        console.log(`[Webhook] Processing ${channel} message from ${msg.from}, type: ${msg.type}, wamid: ${msg.messageId}, hasText: ${!!msg.text}`)
         await handleIncomingMessage(msg, channel)
       }
     } catch (error) {
-      console.error('[Webhook] Error processing message:', error)
+      console.error('[Webhook] Error processing message:', error, {
+        from: msg.from,
+        messageId: msg.messageId,
+        type: msg.type,
+        channel,
+      })
     }
   }
 
@@ -362,6 +368,7 @@ async function handleIncomingMessage(
     psid?: string
     pageId?: string
     phoneNumberId?: string
+    displayPhoneNumber?: string
   },
   detectedChannel: MetaChannel
 ) {
@@ -373,17 +380,30 @@ async function handleIncomingMessage(
   // When Sinap sends an outbound message via the Meta API, Meta may echo
   // it back via the webhook (if message_echoes is subscribed). We must
   // detect and skip these to prevent infinite AI response loops.
-  if (channel === 'whatsapp' && msg.phoneNumberId) {
-    const envPhoneNumberId = process.env.META_WHATSAPP_PHONE_NUMBER_ID
-    // If the "from" matches our own phone number ID, this is an echo
-    if (envPhoneNumberId && msg.from === envPhoneNumberId) {
-      console.log('[Webhook] Skipping echo message from own phone number:', msg.from)
-      return
+  //
+  // Detection strategy: Compare msg.from (sender phone) with the business
+  // display_phone_number from webhook metadata. For a real user message,
+  // msg.from is the user's phone number. For an echo, msg.from is the
+  // business phone number itself.
+  if (channel === 'whatsapp') {
+    if (msg.displayPhoneNumber) {
+      // Normalize both numbers (strip non-digits) for comparison
+      const fromClean = msg.from.replace(/\D/g, '')
+      const displayClean = msg.displayPhoneNumber.replace(/\D/g, '')
+      if (fromClean && displayClean && fromClean === displayClean) {
+        console.log('[Webhook] Skipping echo message — from matches business display phone:', msg.from)
+        return
+      }
     }
-    // Also check if the phoneNumberId in metadata matches (alternative echo detection)
-    if (envPhoneNumberId && msg.phoneNumberId === envPhoneNumberId && !msg.text) {
-      console.log('[Webhook] Skipping potential echo (metadata match):', msg.messageId)
-      return
+    // Fallback: also check via env var phone number ID if displayPhoneNumber not available
+    const envPhoneNumberId = process.env.META_WHATSAPP_PHONE_NUMBER_ID
+    if (envPhoneNumberId && msg.phoneNumberId === envPhoneNumberId) {
+      // phoneNumberId in metadata is ALWAYS the business number for incoming messages.
+      // But if from also looks like our number, it's definitely an echo.
+      // We can't rely solely on phoneNumberId match (it matches for ALL inbound messages).
+      // Only skip if we have strong evidence this is an echo.
+      // The displayPhoneNumber check above should catch most cases.
+      console.log('[Webhook] Note: phoneNumberId matches env var for message:', msg.messageId, 'from:', msg.from)
     }
   }
 
@@ -502,20 +522,49 @@ async function handleIncomingMessage(
     messageType = 'interactive'
   }
 
-  // 5. Create inbound Message record
-  await db.message.create({
-    data: {
-      clinicId: clinic.id,
-      conversationId: conversation.id,
-      direction: 'inbound',
-      channel: channel,
-      senderType: 'patient',
-      content,
-      messageType,
+  // 5. Create inbound Message record (with duplicate detection by wamid)
+  try {
+    // Check if message already exists (duplicate webhook delivery)
+    if (msg.messageId) {
+      const existing = await db.message.findFirst({
+        where: { wamid: msg.messageId },
+        select: { id: true },
+      })
+      if (existing) {
+        console.log('[Webhook] Skipping duplicate message with wamid:', msg.messageId)
+        return
+      }
+    }
+
+    await db.message.create({
+      data: {
+        clinicId: clinic.id,
+        conversationId: conversation.id,
+        direction: 'inbound',
+        channel: channel,
+        senderType: 'patient',
+        content,
+        messageType,
+        wamid: msg.messageId,
+        isMock: false,
+      },
+    })
+
+    console.log(`[Webhook] Saved inbound message from ${msg.from} (wamid: ${msg.messageId}) in conversation ${conversation.id}`)
+  } catch (msgCreateError) {
+    console.error('[Webhook] Failed to create message:', msgCreateError, {
       wamid: msg.messageId,
-      isMock: false,
-    },
-  })
+      from: msg.from,
+      conversationId: conversation.id,
+    })
+    // If it's a unique constraint violation on wamid, it's a duplicate — skip
+    const errMsg = msgCreateError instanceof Error ? msgCreateError.message : String(msgCreateError)
+    if (errMsg.includes('Unique') || errMsg.includes('unique') || errMsg.includes('duplicate')) {
+      console.log('[Webhook] Duplicate message detected via DB constraint, skipping:', msg.messageId)
+      return
+    }
+    throw msgCreateError // Re-throw other errors
+  }
 
   // 6. Update conversation lastMessageAt
   await db.conversation.update({
