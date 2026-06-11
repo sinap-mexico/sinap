@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
         businessId: true,
         phoneNumberId: true,
         businessName: true,
-        connectedAt: true,
+        createdAt: true,
       },
     })
 
