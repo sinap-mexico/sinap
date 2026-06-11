@@ -339,6 +339,10 @@ model Appointment {
   notes       String?
   cancelReason String?
 
+  // Reminder tracking
+  reminder24hSent   Boolean  @default(false) // True when 24h reminder was sent
+  reminder24hSentAt DateTime? // When the 24h reminder was sent
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
