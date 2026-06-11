@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createZAI } from '@/lib/zai'
 
-// AI Proxy — forwards requests to Z-AI API using the SDK
-// This route runs on Vercel and uses the SDK to handle connection properly.
+// AI Proxy — uses the best available AI provider (OpenAI or ZAI SDK)
+// This route is kept for backward compatibility with client-side calls.
 
 export async function POST(req: NextRequest) {
   try {

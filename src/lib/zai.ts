@@ -1,16 +1,16 @@
 import ZAI from 'z-ai-web-dev-sdk'
 
 /**
- * Create a ZAI SDK instance — tries SDK directly first, then proxy fallback.
+ * Create an AI client — supports multiple providers.
  *
  * Resolution order:
- * 1. Try ZAI SDK directly (ZAI.create()) — works in Z.ai infra and local dev
- * 2. Try SDK with explicit config (baseUrl + token) — works when infra is reachable
- * 3. If ZAI_PROXY_URL is set → use native fetch to proxy (last resort for Vercel)
+ * 1. If OPENAI_API_KEY is set → use OpenAI API (works everywhere including Vercel)
+ * 2. Try ZAI SDK directly (ZAI.create()) — works in Z.ai infra and local dev
+ * 3. Try SDK with explicit config (baseUrl + token)
+ * 4. Fall back to proxy (last resort, likely won't work from Vercel)
  *
- * IMPORTANT: We try the SDK directly FIRST because the self-hosted proxy
- * on Vercel can't reach internal-api.z.ai either — so the proxy is pointless.
- * The SDK itself handles the connection correctly from serverless environments.
+ * For Vercel deployments, set OPENAI_API_KEY (and optionally OPENAI_BASE_URL
+ * for OpenAI-compatible APIs like Groq, Together, etc.)
  */
 
 // Platform credentials — Z-AI platform JWT (no expiration)
@@ -34,22 +34,70 @@ export interface ZAIClient {
 }
 
 /**
- * Create a ZAI client — try SDK directly first, then proxy fallback.
+ * Create an OpenAI-compatible client using the openai SDK.
+ */
+async function createOpenAIClient(): Promise<ZAIClient | null> {
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey) return null
+
+  try {
+    const OpenAI = (await import('openai')).default
+    const baseURL = process.env.OPENAI_BASE_URL || undefined // undefined = use OpenAI default
+    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini' // Cost-effective default
+
+    const openai = new OpenAI({ apiKey, baseURL })
+
+    console.log(`[ZAI] Using OpenAI provider (model: ${model}, baseURL: ${baseURL || 'default'})`)
+
+    return {
+      chat: {
+        completions: {
+          create: async (body) => {
+            const completion = await openai.chat.completions.create({
+              model,
+              messages: body.messages as Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+              temperature: body.temperature ?? 0.7,
+              max_tokens: body.max_tokens ?? 500,
+            })
+
+            // Normalize response to match ZAI interface
+            return {
+              choices: (completion.choices || []).map(choice => ({
+                message: {
+                  content: choice.message?.content || '',
+                },
+              })),
+            }
+          },
+        },
+      },
+    }
+  } catch (error) {
+    console.warn('[ZAI] OpenAI client creation failed:', error instanceof Error ? error.message : error)
+    return null
+  }
+}
+
+/**
+ * Create a ZAI client — try OpenAI first, then ZAI SDK, then proxy.
  */
 export async function createZAI(): Promise<ZAIClient> {
-  // 1. Try ZAI SDK directly — this works in most environments including serverless
+  // 1. Try OpenAI API (works from anywhere including Vercel)
+  const openaiClient = await createOpenAIClient()
+  if (openaiClient) return openaiClient
+
+  // 2. Try ZAI SDK directly — this works in Z.ai infra and local dev
   try {
     const sdk = await ZAI.create()
-    // Verify it actually works by checking it has the expected interface
     if (sdk?.chat?.completions?.create) {
-      console.log('[ZAI] Using SDK directly (ZAI.create())')
+      console.log('[ZAI] Using ZAI SDK directly (ZAI.create())')
       return sdk as ZAIClient
     }
   } catch (sdkError) {
     console.warn('[ZAI] ZAI.create() failed:', sdkError instanceof Error ? sdkError.message : sdkError)
   }
 
-  // 2. Try SDK with explicit config
+  // 3. Try SDK with explicit config
   try {
     const config = {
       baseUrl: process.env.ZAI_BASE_URL || DEFAULT_BASE_URL,
@@ -58,45 +106,37 @@ export async function createZAI(): Promise<ZAIClient> {
       userId: process.env.ZAI_USER_ID || DEFAULT_USER_ID,
     }
     const sdk = new (ZAI as unknown as { new(cfg: unknown): unknown })(config) as ZAIClient
-    console.log('[ZAI] Using SDK with explicit config')
+    console.log('[ZAI] Using ZAI SDK with explicit config')
     return sdk
   } catch (configError) {
     console.warn('[ZAI] SDK with explicit config failed:', configError instanceof Error ? configError.message : configError)
   }
 
-  // 3. Explicit proxy URL configured (last resort)
+  // 4. Explicit proxy URL (last resort)
   const proxyUrl = process.env.ZAI_PROXY_URL
   if (proxyUrl) {
     console.log('[ZAI] Using explicit proxy:', proxyUrl)
     return createProxyClient(proxyUrl)
   }
 
-  // 4. Self-hosted proxy on Vercel (last resort — likely won't work either)
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
-  if (appUrl) {
-    const selfProxyUrl = appUrl.startsWith('http') ? appUrl : `https://${appUrl}`
-    console.log('[ZAI] Trying self-hosted proxy as last resort:', selfProxyUrl)
-    return createProxyClient(selfProxyUrl)
-  }
-
-  throw new Error('ZAI SDK no configurado. No se pudo crear la instancia de IA por ningún método.')
+  throw new Error(
+    'No AI provider available. Set OPENAI_API_KEY for Vercel deployment, ' +
+    'or ensure ZAI SDK is accessible from this environment.'
+  )
 }
 
 /**
  * Create a proxy-based client that uses native fetch.
- * This is a fallback for environments where the SDK can't connect directly.
+ * Fallback for environments where the SDK can't connect directly.
  */
 function createProxyClient(proxyUrl: string): ZAIClient {
   return {
     chat: {
       completions: {
         create: async (body) => {
-          // Use our self-hosted proxy endpoint at /api/ai/proxy
           const response = await fetch(`${proxyUrl}/api/ai/proxy`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
           })
 

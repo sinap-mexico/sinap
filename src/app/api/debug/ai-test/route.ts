@@ -28,11 +28,11 @@ export async function POST(req: NextRequest) {
       doctors: context.doctors.map(d => ({ name: d.name, specialty: d.specialty, schedule: `${d.workDays} ${d.workStart}-${d.workEnd}` })),
     } : null
 
-    // 2. Test ZAI SDK directly
+    // 2. Test AI client
     try {
-      debug.zaiStep = 'creating SDK instance...'
+      debug.aiStep = 'creating AI client...'
       const zai = await createZAI()
-      debug.zaiStep = 'SDK created, calling chat.completions.create...'
+      debug.aiStep = 'AI client created, calling chat.completions.create...'
 
       const completion = await zai.chat.completions.create({
         messages: [
@@ -43,12 +43,11 @@ export async function POST(req: NextRequest) {
         max_tokens: 300,
       })
 
-      debug.zaiStep = 'SDK call completed'
-      debug.zaiRawResponse = JSON.stringify(completion).substring(0, 500)
+      debug.aiStep = 'AI call completed'
       debug.aiResponse = completion.choices?.[0]?.message?.content || null
-    } catch (zaiError) {
-      debug.zaiError = zaiError instanceof Error ? zaiError.message : String(zaiError)
-      debug.zaiErrorStack = zaiError instanceof Error ? zaiError.stack?.substring(0, 500) : null
+    } catch (aiError) {
+      debug.aiError = aiError instanceof Error ? aiError.message : String(aiError)
+      debug.aiErrorStack = aiError instanceof Error ? aiError.stack?.substring(0, 500) : null
     }
 
     // 3. Test environment info
@@ -57,10 +56,12 @@ export async function POST(req: NextRequest) {
       VERCEL: process.env.VERCEL,
       VERCEL_URL: process.env.VERCEL_URL ? 'set' : 'not set',
       NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL ? 'set' : 'not set',
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY ? `set (${process.env.OPENAI_API_KEY.substring(0, 8)}...)` : 'not set',
+      OPENAI_BASE_URL: process.env.OPENAI_BASE_URL || 'not set (using default)',
+      OPENAI_MODEL: process.env.OPENAI_MODEL || 'not set (using gpt-4o-mini)',
       ZAI_PROXY_URL: process.env.ZAI_PROXY_URL ? 'set' : 'not set',
-      ZAI_BASE_URL: process.env.ZAI_BASE_URL || 'not set (using default)',
-      ZAI_TOKEN: process.env.ZAI_TOKEN ? 'set' : 'not set (using default)',
-      ZAI_API_KEY: process.env.ZAI_API_KEY ? 'set' : 'not set (using default)',
+      ZAI_BASE_URL: process.env.ZAI_BASE_URL || 'not set',
+      ZAI_TOKEN: process.env.ZAI_TOKEN ? 'set' : 'not set',
     }
 
     debug.emergencyResponse = !debug.aiResponse ? generateEmergencyResponse(message, context?.clinicName) : null
@@ -82,17 +83,17 @@ export async function GET(req: NextRequest) {
 
   const context = await loadClinicContext(clinicId)
 
-  // Also test basic ZAI connection
-  let zaiTest: string | null = null
+  // Also test basic AI connection
+  let aiTest: string | null = null
   try {
     const zai = await createZAI()
     const completion = await zai.chat.completions.create({
       messages: [{ role: 'user', content: 'Responde solo: OK' }],
       max_tokens: 10,
     })
-    zaiTest = completion.choices?.[0]?.message?.content || 'empty response'
+    aiTest = completion.choices?.[0]?.message?.content || 'empty response'
   } catch (e) {
-    zaiTest = `ERROR: ${e instanceof Error ? e.message : String(e)}`
+    aiTest = `ERROR: ${e instanceof Error ? e.message : String(e)}`
   }
 
   return NextResponse.json({
@@ -108,6 +109,10 @@ export async function GET(req: NextRequest) {
       doctorsCount: context.doctors.length,
       doctors: context.doctors,
     } : null,
-    zaiTest,
+    aiTest,
+    env: {
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY ? 'set' : 'not set',
+      OPENAI_MODEL: process.env.OPENAI_MODEL || 'gpt-4o-mini (default)',
+    },
   })
 }
