@@ -88,6 +88,7 @@ export function OnboardingFlow() {
   const [slotMinutes, setSlotMinutes] = useState(30)
   const [services, setServices] = useState<{ name: string; duration: number; price: number; category: string }[]>([])
   const [aiMode, setAiMode] = useState<'full' | 'assist' | 'manual' | ''>('')
+  const [aiPersonaName, setAiPersonaName] = useState('')
   const [metaStep, setMetaStep] = useState(0)
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -230,6 +231,7 @@ export function OnboardingFlow() {
               category: s.category,
             })),
             aiMode,
+            aiPersonaName: aiPersonaName || undefined,
           }),
         })
 
@@ -592,32 +594,44 @@ export function OnboardingFlow() {
                 <p className="text-sm text-[#888780] mb-6">
                   Elige como quieres que la inteligencia artificial trabaje contigo
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {[
-                    { mode: 'full' as const, icon: Zap, title: 'IA completa', desc: 'La IA responde y agenda automaticamente', color: '#534AB7' },
-                    { mode: 'assist' as const, icon: Shield, title: 'Asistida', desc: 'La IA sugiere, tu apruebas antes de enviar', color: '#1D9E75' },
-                    { mode: 'manual' as const, icon: Hand, title: 'Manual', desc: 'Tu controlas toda la comunicacion', color: '#888780' },
-                  ].map((opt) => {
-                    const Icon = opt.icon
-                    return (
-                      <motion.button
-                        key={opt.mode}
-                        onClick={() => setAiMode(opt.mode)}
-                        className={`p-5 rounded-xl border-2 transition-all text-left ${
-                          aiMode === opt.mode
-                            ? `border-[${opt.color}] bg-[${opt.color}]/5`
-                            : 'border-[#E1F5EE] hover:border-[#534AB7]/40'
-                        }`}
-                        style={aiMode === opt.mode ? { borderColor: opt.color, backgroundColor: opt.color + '08' } : undefined}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                      >
-                        <Icon className={`h-7 w-7 mb-3 ${aiMode === opt.mode ? '' : 'text-[#888780]'}`} style={aiMode === opt.mode ? { color: opt.color } : undefined} />
-                        <p className="text-sm font-medium text-[#2C2C2A]">{opt.title}</p>
-                        <p className="text-[11px] text-[#888780] mt-1">{opt.desc}</p>
-                      </motion.button>
-                    )
-                  })}
+                <div className="space-y-5">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-[#888780]">Nombre del asistente IA</Label>
+                    <Input
+                      placeholder={clinicData.name ? `${clinicData.name} AI` : 'Asistente virtual'}
+                      className="h-10 text-sm bg-[#F1EFE8] border-[#E1F5EE] focus:border-[#534AB7]"
+                      value={aiPersonaName}
+                      onChange={(e) => setAiPersonaName(e.target.value)}
+                    />
+                    <p className="text-[10px] text-[#888780]">Como se llama tu asistente? Los pacientes veran este nombre por WhatsApp.</p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {[
+                      { mode: 'full' as const, icon: Zap, title: 'IA completa', desc: 'La IA responde y agenda automaticamente', color: '#534AB7' },
+                      { mode: 'assist' as const, icon: Shield, title: 'Asistida', desc: 'La IA sugiere, tu apruebas antes de enviar', color: '#1D9E75' },
+                      { mode: 'manual' as const, icon: Hand, title: 'Manual', desc: 'Tu controlas toda la comunicacion', color: '#888780' },
+                    ].map((opt) => {
+                      const Icon = opt.icon
+                      return (
+                        <motion.button
+                          key={opt.mode}
+                          onClick={() => setAiMode(opt.mode)}
+                          className={`p-5 rounded-xl border-2 transition-all text-left ${
+                            aiMode === opt.mode
+                              ? `border-[${opt.color}] bg-[${opt.color}]/5`
+                              : 'border-[#E1F5EE] hover:border-[#534AB7]/40'
+                          }`}
+                          style={aiMode === opt.mode ? { borderColor: opt.color, backgroundColor: opt.color + '08' } : undefined}
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                        >
+                          <Icon className={`h-7 w-7 mb-3 ${aiMode === opt.mode ? '' : 'text-[#888780]'}`} style={aiMode === opt.mode ? { color: opt.color } : undefined} />
+                          <p className="text-sm font-medium text-[#2C2C2A]">{opt.title}</p>
+                          <p className="text-[11px] text-[#888780] mt-1">{opt.desc}</p>
+                        </motion.button>
+                      )
+                    })}
+                  </div>
                 </div>
               </motion.div>
             )}

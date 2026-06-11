@@ -81,6 +81,7 @@ interface OnboardingBody {
     category: string
   }>
   aiMode: 'full' | 'assist' | 'manual'
+  aiPersonaName?: string
 }
 
 // POST /api/onboarding — Complete onboarding in a single transaction
@@ -94,7 +95,7 @@ export async function POST(req: Request) {
     }
 
     const body: OnboardingBody = await req.json()
-    const { userId, clinicId, accountType, personalData, clinicData, schedule, services, aiMode } = body
+    const { userId, clinicId, accountType, personalData, clinicData, schedule, services, aiMode, aiPersonaName } = body
 
     if (!userId) {
       return NextResponse.json({ error: 'userId es requerido' }, { status: 400 })
@@ -135,6 +136,7 @@ export async function POST(req: Request) {
             state: clinicData.state || null,
             phone: personalData.phone || null,
             email: personalData.email || user.email,
+            personaName: aiPersonaName || existingClinic.personaName || `${clinicData.name || existingClinic.name} AI`,
           },
         })
       } else {
@@ -155,6 +157,7 @@ export async function POST(req: Request) {
             state: clinicData.state || null,
             phone: personalData.phone || null,
             email: personalData.email || user.email,
+            personaName: aiPersonaName || `${clinicData.name || personalData.name} AI`,
           },
         })
         finalClinicId = newClinic.id
