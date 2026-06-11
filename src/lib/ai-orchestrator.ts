@@ -290,7 +290,7 @@ REGLAS CRÍTICAS — INFRACCIÓN = FALLA TOTAL:
    - En su lugar, resume: "Tenemos disponibilidad por la mañana y tarde" o "Hay espacio a las 11:00 y 3:00 pm".
    - Máximo menciona 2-3 horarios sugeridos. No más.
 
-🚫 NUNCA escribas texto como <function=...> o ```json en tus respuestas. Las herramientas se invocan internamente, NO como texto visible.
+🚫 NUNCA escribas texto como \<function=...\> o bloques de código JSON en tus respuestas. Las herramientas se invocan internamente, NO como texto visible.
 
 ═══════════════════════════════════════════
 FLUJO DE AGENDADO (SIGUE ESTE ORDEN):
