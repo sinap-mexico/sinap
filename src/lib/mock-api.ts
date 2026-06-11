@@ -1379,6 +1379,7 @@ const MOCK_INVOICES = [
 const MOCK_FEATURE_FLAGS = [
   { id: 'mock-ff-1', clinicId: DEMO_CLINIC_ID, module: 'desk', feature: 'auto-reply', state: 'assist', config: null, createdAt: daysAgoISO(365), updatedAt: iso() },
   { id: 'mock-ff-2', clinicId: DEMO_CLINIC_ID, module: 'desk', feature: 'appointment', state: 'assist', config: null, createdAt: daysAgoISO(365), updatedAt: iso() },
+  { id: 'mock-ff-2b', clinicId: DEMO_CLINIC_ID, module: 'desk', feature: 'reminders', state: 'on', config: null, createdAt: daysAgoISO(365), updatedAt: iso() },
   { id: 'mock-ff-3', clinicId: DEMO_CLINIC_ID, module: 'flow', feature: 'soap', state: 'assist', config: null, createdAt: daysAgoISO(365), updatedAt: iso() },
   { id: 'mock-ff-4', clinicId: DEMO_CLINIC_ID, module: 'flow', feature: 'preconsulta', state: 'on', config: null, createdAt: daysAgoISO(365), updatedAt: iso() },
   { id: 'mock-ff-5', clinicId: DEMO_CLINIC_ID, module: 'bill', feature: 'auto-cfdi', state: 'assist', config: null, createdAt: daysAgoISO(365), updatedAt: iso() },

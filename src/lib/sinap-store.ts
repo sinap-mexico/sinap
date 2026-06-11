@@ -134,6 +134,7 @@ interface SinapStore {
 const defaultFeatureFlags: FeatureFlag[] = [
   { id: 'desk-auto-reply', module: 'desk', name: 'Auto-respuesta', description: 'IA responde automaticamente a pacientes', state: 'assist' },
   { id: 'desk-appointment', module: 'desk', name: 'Agendamiento automatico', description: 'IA agenda citas desde conversaciones', state: 'assist' },
+  { id: 'desk-reminders', module: 'desk', name: 'Recordatorios de cita', description: 'Envio automatico de recordatorio 24h antes de la cita por WhatsApp', state: 'on' },
   { id: 'flow-soap', module: 'flow', name: 'Notas SOAP', description: 'IA genera notas SOAP a partir de consulta', state: 'assist' },
   { id: 'flow-preconsulta', module: 'flow', name: 'Pre-consulta', description: 'IA recaba datos antes de la consulta', state: 'on' },
   { id: 'bill-auto-cfdi', module: 'bill', name: 'CFDI automatico', description: 'IA genera facturas al terminar consulta', state: 'assist' },

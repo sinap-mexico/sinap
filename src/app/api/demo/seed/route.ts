@@ -364,6 +364,7 @@ export async function POST() {
     const featureFlags = [
       { module: 'desk', feature: 'auto-reply', state: 'assist' },
       { module: 'desk', feature: 'appointment', state: 'assist' },
+      { module: 'desk', feature: 'reminders', state: 'on' },
       { module: 'flow', feature: 'soap', state: 'assist' },
       { module: 'flow', feature: 'preconsulta', state: 'on' },
       { module: 'bill', feature: 'auto-cfdi', state: 'assist' },
