@@ -88,10 +88,15 @@ export async function POST(req: NextRequest) {
     console.error('[Webhook] Event persistence error:', err)
   })
 
-  // 5. Process asynchronously — always return 200 immediately
-  processWebhookPayload(body).catch((error) => {
-    console.error('[Webhook] Async processing error:', error)
-  })
+  // 5. Process — we must await to ensure AI responses are generated and sent
+  // before the serverless function suspends. Meta allows up to 20 seconds.
+  // We return 200 immediately ONLY for the HTTP response, but keep the
+  // function alive until processing completes.
+  try {
+    await processWebhookPayload(body)
+  } catch (error) {
+    console.error('[Webhook] Processing error:', error)
+  }
 
   // Meta requires a fast 200 response
   return new NextResponse('EVENT_RECEIVED', { status: 200 })
@@ -592,12 +597,16 @@ async function handleIncomingMessage(
   // 8. Trigger AI auto-response only if auto-reply is ON
   if (autoReplyEnabled) {
     try {
+      console.log(`[Webhook] Auto-reply ON — generating AI response for: "${content.substring(0, 50)}"`)
       const aiResponse = await generateAIResponse(content, clinic.id, conversation.id)
 
       // 9. Send AI response back via the appropriate channel
       if (aiResponse) {
+        console.log(`[Webhook] AI response generated: "${aiResponse.substring(0, 80)}"`)
         const normalizedRecipient = channel === 'whatsapp' ? normalizePhoneForWhatsApp(msg.from) : msg.from
         await sendAIResponse(aiResponse, clinic.id, channel, normalizedRecipient, conversation.id)
+      } else {
+        console.warn('[Webhook] AI response was null — no response sent')
       }
     } catch (orchestratorError) {
       console.error('[Webhook] Orchestrator error:', orchestratorError)
