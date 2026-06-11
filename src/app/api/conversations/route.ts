@@ -19,7 +19,10 @@ export async function GET(req: NextRequest) {
       let conversations = getMockConversations(clinicId)
       if (status) conversations = conversations.filter(c => c.status === status)
       if (channel) conversations = conversations.filter(c => c.channel === channel)
-      return NextResponse.json({ conversations })
+      return NextResponse.json(
+        { conversations },
+        { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' } }
+      )
     }
 
     const where: Record<string, unknown> = { clinicId }
@@ -51,7 +54,10 @@ export async function GET(req: NextRequest) {
       orderBy: { lastMessageAt: 'desc' },
     })
 
-    return NextResponse.json({ conversations })
+    return NextResponse.json(
+      { conversations },
+      { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' } }
+    )
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     console.error('Conversations GET error:', error)

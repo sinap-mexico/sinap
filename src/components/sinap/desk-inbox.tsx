@@ -241,7 +241,10 @@ export function DeskInbox() {
       setIsLoading(true)
     }
     try {
-      const res = await fetch(`/api/conversations?clinicId=${clinicId}`)
+      // Add cache-busting timestamp to prevent browser/CDN caching
+      const res = await fetch(`/api/conversations?clinicId=${clinicId}&_t=${Date.now()}`, {
+        cache: 'no-store',
+      })
       if (res.ok) {
         const data = await res.json()
         const mapped = (data.conversations || []).map(mapApiConversation)
@@ -276,12 +279,12 @@ export function DeskInbox() {
     fetchConversations()
   }, [fetchConversations])
 
-  // Poll for new messages every 10 seconds so incoming WhatsApp messages appear in real-time
+  // Poll for new messages every 5 seconds so incoming WhatsApp messages appear in real-time
   useEffect(() => {
     if (!clinicId) return
     const interval = setInterval(() => {
       fetchConversations()
-    }, 10_000)
+    }, 5_000)
     return () => clearInterval(interval)
   }, [clinicId, fetchConversations])
 
