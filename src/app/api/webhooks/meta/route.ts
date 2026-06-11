@@ -529,7 +529,8 @@ async function handleIncomingMessage(
 
     // 8. Send AI response back via the appropriate channel
     if (aiResponse) {
-      await sendAIResponse(aiResponse, clinic.id, channel, msg.from, conversation.id)
+      const normalizedRecipient = channel === 'whatsapp' ? normalizePhoneForWhatsApp(msg.from) : msg.from
+      await sendAIResponse(aiResponse, clinic.id, channel, normalizedRecipient, conversation.id)
     }
   } catch (orchestratorError) {
     console.error('[Webhook] Orchestrator error:', orchestratorError)
@@ -547,6 +548,14 @@ async function handleIncomingMessage(
   } catch {
     // Non-critical
   }
+}
+
+// ─── Normalize Mexican phone numbers for WhatsApp API ───────
+function normalizePhoneForWhatsApp(phone: string): string {
+  if (/^521\d{10}$/.test(phone)) {
+    return phone.replace(/^521/, '52')
+  }
+  return phone
 }
 
 // ─── Send AI response via the correct channel ──────────────

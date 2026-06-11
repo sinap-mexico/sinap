@@ -10,6 +10,14 @@ import type { MetaChannel } from '@/lib/meta-client'
 
 type AgentName = 'desk' | 'flow' | 'bill' | 'grow'
 
+// ─── Normalize Mexican phone numbers for WhatsApp API ───────
+function normalizePhoneForWhatsApp(phone: string): string {
+  if (/^521\d{10}$/.test(phone)) {
+    return phone.replace(/^521/, '52')
+  }
+  return phone
+}
+
 const agentSystemPrompts: Record<AgentName, string> = {
   desk: `Eres el asistente de Sinap Desk para una clinica de salud en Mexico.
 Tu trabajo es atender pacientes por WhatsApp/Instagram/Facebook Messenger.
@@ -142,19 +150,21 @@ export async function POST(req: NextRequest) {
           })
 
           if (patient?.phone) {
+            // Normalize phone for WhatsApp (strip Mexican "1" after country code)
+            const phoneToSend = channel === 'whatsapp' ? normalizePhoneForWhatsApp(patient.phone) : patient.phone
             // Try MetaConnection first (new source of truth for all channels)
             const channelConfig = await getClinicMetaConnection(clinicId, channel)
 
             if (channelConfig) {
               const metaClient = MetaClient.createForChannel(channel, channelConfig)
-              const sendResult = await metaClient.sendTextMessage(patient.phone, aiResponse)
+              const sendResult = await metaClient.sendTextMessage(phoneToSend, aiResponse)
               channelMessageId = sendResult.messageId
             } else if (channel === 'whatsapp') {
               // Fallback: legacy Clinic table for WhatsApp only
               const metaConfig = await getClinicMetaConfig(clinicId)
               if (metaConfig) {
                 const metaClient = new MetaClient(metaConfig)
-                const sendResult = await metaClient.sendTextMessage(patient.phone, aiResponse)
+                const sendResult = await metaClient.sendTextMessage(phoneToSend, aiResponse)
                 channelMessageId = sendResult.messageId
               }
             }

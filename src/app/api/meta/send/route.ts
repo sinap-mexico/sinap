@@ -7,6 +7,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { MetaClient, getClinicMetaConfig, getClinicMetaConnection, type MetaChannel } from '@/lib/meta-client'
 
+// ─── Normalize Mexican phone numbers for WhatsApp API ───────
+// WhatsApp Cloud API requires format: 52 + 10 digits (without the "1" after 52)
+// But incoming webhooks may store numbers as 521 + 10 digits (old Mexican format)
+// Examples:
+//   DB: 5216624618691 → API: 526624618691
+//   DB: 5215512345678 → API: 5215512345678 (11-digit local, keep as-is)
+function normalizePhoneForWhatsApp(phone: string): string {
+  // If starts with 521 and has 13 digits total (521 + 10), strip the "1"
+  // Mexican mobile: +52 1 XXX XXX XXXX → WhatsApp wants 52XXXXXXXXXX
+  if (/^521\d{10}$/.test(phone)) {
+    return phone.replace(/^521/, '52')
+  }
+  return phone
+}
+
 export async function POST(req: NextRequest) {
   try {
     if (!db) {
@@ -38,7 +53,8 @@ export async function POST(req: NextRequest) {
     }
 
     const targetChannel = (channel || conversation.channel) as MetaChannel
-    const patientPhone = conversation.patient?.phone
+    const rawPhone = conversation.patient?.phone || ''
+    const patientPhone = targetChannel === 'whatsapp' ? normalizePhoneForWhatsApp(rawPhone) : rawPhone
 
     if (!patientPhone) {
       return NextResponse.json({ error: 'Paciente sin telefono' }, { status: 400 })
