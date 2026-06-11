@@ -1,19 +1,27 @@
 import ZAI from 'z-ai-web-dev-sdk'
 
 /**
- * Create an AI client — supports multiple providers.
+ * Sinap AI Client — Multi-provider support.
  *
  * Resolution order:
- * 1. If OPENAI_API_KEY is set → use OpenAI API (works everywhere including Vercel)
+ * 1. If OPENAI_API_KEY is set → use OpenAI-compatible API (Groq, OpenAI, Together, etc.)
  * 2. Try ZAI SDK directly (ZAI.create()) — works in Z.ai infra and local dev
  * 3. Try SDK with explicit config (baseUrl + token)
- * 4. Fall back to proxy (last resort, likely won't work from Vercel)
  *
- * For Vercel deployments, set OPENAI_API_KEY (and optionally OPENAI_BASE_URL
- * for OpenAI-compatible APIs like Groq, Together, etc.)
+ * ─── RECOMENDACIÓN PARA SINAP ───
+ * Usar Groq (gratis, rápido, excelente español):
+ *   OPENAI_API_KEY=gsk_tu_key
+ *   OPENAI_BASE_URL=https://api.groq.com/openai/v1
+ *   OPENAI_MODEL=llama-3.3-70b-versatile
+ *
+ * El modelo llama-3.3-70b-versatile en Groq:
+ *   - Gratis (1,000 requests/día, 100K tokens/día)
+ *   - Súper rápido (~400 tokens/segundo)
+ *   - Excelente español
+ *   - Perfecto para respuestas de recepción dental
  */
 
-// Platform credentials — Z-AI platform JWT (no expiration)
+// Platform credentials — Z-AI platform JWT (no expiration, internal only)
 const DEFAULT_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiM2I0OGUwZjAtN2I2NC00MzY3LTk3ZDYtNGMxYzQ1NWM2MzA4IiwiY2hhdF9pZCI6ImNoYXQtN2JlMGRhZDUtMWE4Ny00ZjFlLThhZTItMzE2ZWRmZmZkNjJiIiwicGxhdGZvcm0iOiJ6YWkifQ.a_1wytk_upNlP_i9DHsGUkqlLFQM_qm-c2bX7-3iDGI'
 const DEFAULT_USER_ID = '3b48e0f0-7b64-4367-97d6-4c1c455c6308'
 const DEFAULT_BASE_URL = 'https://internal-api.z.ai/v1'
@@ -35,19 +43,25 @@ export interface ZAIClient {
 
 /**
  * Create an OpenAI-compatible client using the openai SDK.
+ * Works with: Groq, OpenAI, Together AI, any OpenAI-compatible API.
  */
-async function createOpenAIClient(): Promise<ZAIClient | null> {
+async function createOpenAICompatibleClient(): Promise<ZAIClient | null> {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) return null
 
   try {
     const OpenAI = (await import('openai')).default
-    const baseURL = process.env.OPENAI_BASE_URL || undefined // undefined = use OpenAI default
-    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini' // Cost-effective default
+    const baseURL = process.env.OPENAI_BASE_URL || undefined // undefined = OpenAI default
+    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
 
     const openai = new OpenAI({ apiKey, baseURL })
 
-    console.log(`[ZAI] Using OpenAI provider (model: ${model}, baseURL: ${baseURL || 'default'})`)
+    const provider = baseURL?.includes('groq') ? 'Groq'
+      : baseURL?.includes('together') ? 'Together'
+      : baseURL?.includes('openrouter') ? 'OpenRouter'
+      : 'OpenAI'
+
+    console.log(`[Sinap AI] Using ${provider} provider (model: ${model})`)
 
     return {
       chat: {
@@ -60,7 +74,7 @@ async function createOpenAIClient(): Promise<ZAIClient | null> {
               max_tokens: body.max_tokens ?? 500,
             })
 
-            // Normalize response to match ZAI interface
+            // Normalize response to match our interface
             return {
               choices: (completion.choices || []).map(choice => ({
                 message: {
@@ -73,28 +87,29 @@ async function createOpenAIClient(): Promise<ZAIClient | null> {
       },
     }
   } catch (error) {
-    console.warn('[ZAI] OpenAI client creation failed:', error instanceof Error ? error.message : error)
+    console.warn('[Sinap AI] OpenAI-compatible client failed:', error instanceof Error ? error.message : error)
     return null
   }
 }
 
 /**
- * Create a ZAI client — try OpenAI first, then ZAI SDK, then proxy.
+ * Create a ZAI client — try OpenAI-compatible first, then ZAI SDK.
  */
 export async function createZAI(): Promise<ZAIClient> {
-  // 1. Try OpenAI API (works from anywhere including Vercel)
-  const openaiClient = await createOpenAIClient()
+  // 1. OpenAI-compatible API (Groq, OpenAI, Together, etc.)
+  // This is the PRIMARY provider for Vercel deployments.
+  const openaiClient = await createOpenAICompatibleClient()
   if (openaiClient) return openaiClient
 
-  // 2. Try ZAI SDK directly — this works in Z.ai infra and local dev
+  // 2. Try ZAI SDK directly — works in Z.ai infrastructure and local dev
   try {
     const sdk = await ZAI.create()
     if (sdk?.chat?.completions?.create) {
-      console.log('[ZAI] Using ZAI SDK directly (ZAI.create())')
+      console.log('[Sinap AI] Using ZAI SDK directly')
       return sdk as ZAIClient
     }
   } catch (sdkError) {
-    console.warn('[ZAI] ZAI.create() failed:', sdkError instanceof Error ? sdkError.message : sdkError)
+    console.warn('[Sinap AI] ZAI.create() failed:', sdkError instanceof Error ? sdkError.message : sdkError)
   }
 
   // 3. Try SDK with explicit config
@@ -106,48 +121,15 @@ export async function createZAI(): Promise<ZAIClient> {
       userId: process.env.ZAI_USER_ID || DEFAULT_USER_ID,
     }
     const sdk = new (ZAI as unknown as { new(cfg: unknown): unknown })(config) as ZAIClient
-    console.log('[ZAI] Using ZAI SDK with explicit config')
+    console.log('[Sinap AI] Using ZAI SDK with explicit config')
     return sdk
   } catch (configError) {
-    console.warn('[ZAI] SDK with explicit config failed:', configError instanceof Error ? configError.message : configError)
-  }
-
-  // 4. Explicit proxy URL (last resort)
-  const proxyUrl = process.env.ZAI_PROXY_URL
-  if (proxyUrl) {
-    console.log('[ZAI] Using explicit proxy:', proxyUrl)
-    return createProxyClient(proxyUrl)
+    console.warn('[Sinap AI] ZAI SDK explicit config failed:', configError instanceof Error ? configError.message : configError)
   }
 
   throw new Error(
-    'No AI provider available. Set OPENAI_API_KEY for Vercel deployment, ' +
-    'or ensure ZAI SDK is accessible from this environment.'
+    'Sinap AI: No hay proveedor de IA disponible. ' +
+    'Configura OPENAI_API_KEY en Vercel para usar Groq (gratis) u OpenAI. ' +
+    'Instrucciones: https://console.groq.com → crear API key → agregar a Vercel.'
   )
-}
-
-/**
- * Create a proxy-based client that uses native fetch.
- * Fallback for environments where the SDK can't connect directly.
- */
-function createProxyClient(proxyUrl: string): ZAIClient {
-  return {
-    chat: {
-      completions: {
-        create: async (body) => {
-          const response = await fetch(`${proxyUrl}/api/ai/proxy`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          })
-
-          if (!response.ok) {
-            const errorBody = await response.text().catch(() => 'Unknown error')
-            throw new Error(`Z-AI proxy error (${response.status}): ${errorBody}`)
-          }
-
-          return await response.json()
-        },
-      },
-    },
-  }
 }
