@@ -606,10 +606,22 @@ async function handleIncomingMessage(
         const normalizedRecipient = channel === 'whatsapp' ? normalizePhoneForWhatsApp(msg.from) : msg.from
         await sendAIResponse(aiResponse, clinic.id, channel, normalizedRecipient, conversation.id)
       } else {
-        console.warn('[Webhook] AI response was null — no response sent')
+        // AI returned null — send a fallback acknowledgement
+        console.warn('[Webhook] AI response was null — sending fallback acknowledgement')
+        const fallbackResponse = generateFallbackResponse(content)
+        const normalizedRecipient = channel === 'whatsapp' ? normalizePhoneForWhatsApp(msg.from) : msg.from
+        await sendAIResponse(fallbackResponse, clinic.id, channel, normalizedRecipient, conversation.id)
       }
     } catch (orchestratorError) {
       console.error('[Webhook] Orchestrator error:', orchestratorError)
+      // AI failed entirely — send a fallback acknowledgement
+      try {
+        const fallbackResponse = generateFallbackResponse(content)
+        const normalizedRecipient = channel === 'whatsapp' ? normalizePhoneForWhatsApp(msg.from) : msg.from
+        await sendAIResponse(fallbackResponse, clinic.id, channel, normalizedRecipient, conversation.id)
+      } catch (fallbackError) {
+        console.error('[Webhook] Fallback response also failed:', fallbackError)
+      }
     }
   } else {
     console.log(`[Webhook] Auto-reply disabled for clinic ${clinic.id} — message saved without AI response`)
@@ -635,6 +647,25 @@ function normalizePhoneForWhatsApp(phone: string): string {
     return phone.replace(/^521/, '52')
   }
   return phone
+}
+
+// ─── Generate fallback response when AI is unavailable ──────
+function generateFallbackResponse(userMessage: string): string {
+  const lower = userMessage.toLowerCase()
+
+  if (lower.includes('cita') || lower.includes('agendar') || lower.includes('horario')) {
+    return 'Gracias por su mensaje. Para agendar una cita, un miembro de nuestro equipo le atenderá en breve. Puede tambien indicarnos su fecha y hora preferida.'
+  }
+
+  if (lower.includes('precio') || lower.includes('costo') || lower.includes('cuanto')) {
+    return 'Gracias por su mensaje. Nuestro equipo le proporcionará la información de precios en breve.'
+  }
+
+  if (lower.includes('urgencia') || lower.includes('emergencia') || lower.includes('dolor')) {
+    return 'Entendemos su urgencia. Un miembro de nuestro equipo médico le contactará lo antes posible. Si es una emergencia, por favor acuda directamente a urgencias.'
+  }
+
+  return 'Gracias por su mensaje. Un miembro de nuestro equipo le atenderá en breve. Si necesita agendar una cita, indíquenos fecha y hora preferida.'
 }
 
 // ─── Send AI response via the correct channel ──────────────
