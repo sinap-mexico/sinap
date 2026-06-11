@@ -572,17 +572,38 @@ async function handleIncomingMessage(
     data: { lastMessageAt: new Date() },
   })
 
-  // 7. Trigger the orchestrator to generate AI response
+  // 7. Check if auto-reply is enabled for this clinic's Desk module
+  let autoReplyEnabled = false
   try {
-    const aiResponse = await generateAIResponse(content, clinic.id, conversation.id)
+    const autoReplyFlag = await db.featureFlag.findFirst({
+      where: {
+        clinicId: clinic.id,
+        module: 'desk',
+        feature: 'auto-reply',
+      },
+      select: { state: true },
+    })
+    autoReplyEnabled = autoReplyFlag?.state === 'on'
+    console.log(`[Webhook] Auto-reply flag for clinic ${clinic.id}: ${autoReplyFlag?.state || 'not found'} → autoReply=${autoReplyEnabled}`)
+  } catch (flagError) {
+    console.warn('[Webhook] Could not check auto-reply flag, defaulting to off:', flagError)
+  }
 
-    // 8. Send AI response back via the appropriate channel
-    if (aiResponse) {
-      const normalizedRecipient = channel === 'whatsapp' ? normalizePhoneForWhatsApp(msg.from) : msg.from
-      await sendAIResponse(aiResponse, clinic.id, channel, normalizedRecipient, conversation.id)
+  // 8. Trigger AI auto-response only if auto-reply is ON
+  if (autoReplyEnabled) {
+    try {
+      const aiResponse = await generateAIResponse(content, clinic.id, conversation.id)
+
+      // 9. Send AI response back via the appropriate channel
+      if (aiResponse) {
+        const normalizedRecipient = channel === 'whatsapp' ? normalizePhoneForWhatsApp(msg.from) : msg.from
+        await sendAIResponse(aiResponse, clinic.id, channel, normalizedRecipient, conversation.id)
+      }
+    } catch (orchestratorError) {
+      console.error('[Webhook] Orchestrator error:', orchestratorError)
     }
-  } catch (orchestratorError) {
-    console.error('[Webhook] Orchestrator error:', orchestratorError)
+  } else {
+    console.log(`[Webhook] Auto-reply disabled for clinic ${clinic.id} — message saved without AI response`)
   }
 
   // 9. Mark as read (all channels that support it)

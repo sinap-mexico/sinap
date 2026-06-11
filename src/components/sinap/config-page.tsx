@@ -1,5 +1,6 @@
 'use client'
 
+import React from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -72,8 +73,63 @@ function TriToggle({
 }
 
 export function ConfigPage() {
-  const { featureFlags, setFeatureFlag, clinicMode, setClinicMode, clinicName, setClinicName } =
+  const { featureFlags, setFeatureFlag, clinicMode, setClinicMode, clinicName, setClinicName, clinicId } =
     useSinapStore()
+
+  // Sync feature flag change to database
+  const handleFeatureFlagChange = async (flagId: string, state: FeatureFlagState) => {
+    // Update local store immediately for responsive UI
+    setFeatureFlag(flagId, state)
+
+    // Find the flag to get module/feature info
+    const flag = featureFlags.find(f => f.id === flagId)
+    if (!flag || !clinicId) return
+
+    // Extract feature name from id (e.g., "desk-auto-reply" → "auto-reply")
+    const featureName = flagId.includes('-') ? flagId.split('-').slice(1).join('-') : flagId
+
+    // Persist to database
+    try {
+      await fetch('/api/feature-flags', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clinicId,
+          module: flag.module,
+          feature: featureName,
+          state,
+        }),
+      })
+    } catch (err) {
+      console.error('Failed to persist feature flag:', err)
+    }
+  }
+
+  // Load feature flags from database on mount
+  React.useEffect(() => {
+    if (!clinicId) return
+    async function loadFlags() {
+      try {
+        const res = await fetch(`/api/feature-flags?clinicId=${clinicId}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.flags && Array.isArray(data.flags)) {
+            // Map DB flags back to store format
+            for (const dbFlag of data.flags) {
+              const storeId = `${dbFlag.module}-${dbFlag.feature}`
+              const existingFlag = featureFlags.find(f => f.id === storeId)
+              if (existingFlag && existingFlag.state !== dbFlag.state) {
+                setFeatureFlag(storeId, dbFlag.state as FeatureFlagState)
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load feature flags:', err)
+      }
+    }
+    loadFlags()
+  }, [clinicId])
 
   // Group flags by module
   const grouped = featureFlags.reduce(
@@ -139,7 +195,7 @@ export function ConfigPage() {
                         </div>
                         <TriToggle
                           state={flag.state}
-                          onStateChange={(s) => setFeatureFlag(flag.id, s)}
+                          onStateChange={(s) => handleFeatureFlagChange(flag.id, s)}
                         />
                       </div>
                     ))}
