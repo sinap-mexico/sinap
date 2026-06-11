@@ -13,6 +13,7 @@ export interface ClinicContext {
   clinicId: string
   clinicName: string
   personaName: string
+  specialty: string // "odontología" | "podología" | "medicina general" | etc.
   phone: string | null
   address: string | null
   city: string | null
@@ -96,10 +97,32 @@ export async function loadClinicContext(clinicId: string): Promise<ClinicContext
       orderBy: { name: 'asc' },
     })
 
+    // Infer clinic specialty from doctor specialties or service categories
+    let specialty = 'salud' // default
+    const allSpecialties = doctors.map(d => d.specialty).filter(Boolean).map(s => s!.toLowerCase())
+    if (allSpecialties.some(s => s.includes('odont') || s.includes('dental') || s.includes('dent'))) {
+      specialty = 'odontología'
+    } else if (allSpecialties.some(s => s.includes('podol'))) {
+      specialty = 'podología'
+    } else if (allSpecialties.some(s => s.includes('medi'))) {
+      specialty = 'medicina general'
+    } else if (allSpecialties.some(s => s.includes('derm'))) {
+      specialty = 'dermatología'
+    } else if (services.some(s => s.name.toLowerCase().includes('dental') || s.name.toLowerCase().includes('odont'))) {
+      specialty = 'odontología'
+    } else if (services.some(s => s.name.toLowerCase().includes('podol'))) {
+      specialty = 'podología'
+    } else if (clinic.name.toLowerCase().includes('podol')) {
+      specialty = 'podología'
+    } else if (clinic.name.toLowerCase().includes('odont') || clinic.name.toLowerCase().includes('dental')) {
+      specialty = 'odontología'
+    }
+
     return {
       clinicId: clinic.id,
       clinicName: clinic.name,
       personaName: clinic.personaName || clinic.name,
+      specialty,
       phone: clinic.phone,
       address: clinic.address,
       city: clinic.city,
@@ -166,10 +189,28 @@ function buildSystemPrompt(agent: AgentName, context: ClinicContext): string {
   const basePersonality = `
 IDENTIDAD:
 Eres ${agentName}, el asistente virtual de ${context.clinicName}.
-Eres una clínica dental (odontológica) en México.
+Eres una clínica de ${context.specialty} en México.
 Tu tono es cálido, profesional y NATURAL — como la chica de recepción que todos quieren.
 Hablas en español mexicano, de manera cercana pero profesional.
 NO suenes como un bot. NO listes información en exceso. Sé breve y conversacional.
+
+═══════════════════════════════════════════
+LÍMITES DE CONTEXTO — OBLIGATORIO:
+═══════════════════════════════════════════
+Eres el RECEPCIONISTA de ${context.clinicName}. SOLO puedes hablar de temas relacionados con la clínica de ${context.specialty}:
+- Agendar, confirmar, cancelar o reagendar citas
+- Información de servicios, precios, doctores y horarios
+- Ubicación y datos de contacto de la clínica
+- Pre-consulta y preguntas generales sobre los servicios
+- Facturación y pagos de la clínica
+
+🚫 NUNCA respondas temas fuera de contexto. Si el paciente pregunta sobre:
+- Programación, código, matemáticas, tareas, recetas de cocina, etc.
+- Cualquier tema que NO sea sobre la clínica dental
+→ Responde: "Disculpa, solo puedo ayudarte con temas de nuestra clínica de ${context.specialty}. ¿Necesitas agendar una cita o tienes alguna duda sobre nuestros servicios?"
+
+🚫 NUNCA generes código, programas, scripts, ni nada técnico.
+🚫 NUNCA actúes como asistente general. Eres EXCLUSIVAMENTE recepcionista de esta clínica.
 
 INFORMACIÓN DE LA CLÍNICA:
 - Nombre: ${context.clinicName}
@@ -197,6 +238,10 @@ REGLAS CRÍTICAS — INFRACCIÓN = FALLA TOTAL:
    - Si NO llamaste create_appointment, la cita NO existe. Decir que sí es MENTIRA y daña la confianza del paciente.
    - Si el tool devuelve error, informa al paciente y ofrece alternativas.
 
+🚫 NUNCA agendes una cita sin preguntar el NOMBRE del paciente primero. Es obligatorio.
+   - Si el paciente no ha dado su nombre, pregunta: "¿Cómo te llamas?" antes de agendar.
+   - Pasa el nombre completo en el parámetro patient_name de create_appointment.
+
 🚫 NUNCA listes todos los horarios disponibles como un menú robot. Eso suena a máquina, no a recepcionista.
    - Cuando uses check_availability, NO repitas la lista completa de slots al paciente.
    - En su lugar, resume: "Tenemos disponibilidad por la mañana y tarde" o "Hay espacio a las 11:00 y 3:00 pm".
@@ -206,13 +251,14 @@ REGLAS CRÍTICAS — INFRACCIÓN = FALLA TOTAL:
 FLUJO DE AGENDADO (SIGUE ESTE ORDEN):
 ═══════════════════════════════════════════
 
-1. Paciente quiere cita → USA check_availability para verificar disponibilidad.
-2. Pregunta al paciente: "¿Qué horario te queda mejor y con cuál doctor?"
+1. Paciente quiere cita → Pregunta su NOMBRE completo primero si no lo ha dado.
+2. USA check_availability para verificar disponibilidad.
+3. Pregunta al paciente: "¿Qué horario te queda mejor y con cuál doctor?"
    - NO listes todos los slots. Solo pregunta naturalmente.
-   - Si el paciente ya dijo fecha/hora/doctor, ve al paso 3.
-3. Cuando tengas fecha, hora, doctor Y servicio → USA create_appointment para agendar de verdad.
-4. Si create_appointment devuelve success → Confirma los detalles al paciente.
-5. Si devuelve error → Ofrece alternativas y vuelve al paso 2.
+   - Si el paciente ya dijo fecha/hora/doctor, ve al paso 4.
+4. Cuando tengas nombre, fecha, hora, doctor Y servicio → USA create_appointment para agendar de verdad. El parámetro patient_name es OBLIGATORIO.
+5. Si create_appointment devuelve success → Confirma los detalles al paciente.
+6. Si devuelve error → Ofrece alternativas y vuelve al paso 3.
 
 ═══════════════════════════════════════════
 REGLAS DE COMUNICACIÓN:
@@ -299,14 +345,14 @@ const deskTools: ToolDefinition[] = [
           },
           patient_name: {
             type: 'string',
-            description: 'Nombre del paciente (si lo proporcionó)',
+            description: 'Nombre completo del paciente. OBLIGATORIO — si no lo tienes, pregúntalo antes de llamar esta herramienta.',
           },
           notes: {
             type: 'string',
             description: 'Notas adicionales o motivo de la cita mencionado por el paciente',
           },
         },
-        required: ['date', 'start_time', 'doctor_id', 'service_id'],
+        required: ['date', 'start_time', 'doctor_id', 'service_id', 'patient_name'],
       },
     },
   },
@@ -545,6 +591,33 @@ async function handleCreateAppointment(
       })
     }
 
+    // Update patient name if provided and current name is generic
+    if (args.patient_name && patientId !== 'unknown') {
+      try {
+        const currentPatient = await db.patient.findUnique({
+          where: { id: patientId },
+          select: { firstName: true, fullName: true },
+        })
+
+        if (currentPatient && (currentPatient.firstName === 'Paciente' || currentPatient.fullName.startsWith('Paciente '))) {
+          const nameParts = args.patient_name.trim().split(/\s+/)
+          const firstName = nameParts[0] || 'Paciente'
+          const lastName = nameParts.slice(1).join(' ') || ''
+          const fullName = args.patient_name.trim()
+
+          await db.patient.update({
+            where: { id: patientId },
+            data: { firstName, lastName, fullName },
+          })
+
+          console.log(`[AI Orchestrator] Patient name updated: ${patientId} → ${fullName}`)
+        }
+      } catch (nameUpdateError) {
+        console.warn('[AI Orchestrator] Could not update patient name:', nameUpdateError)
+        // Non-critical — continue with appointment creation
+      }
+    }
+
     // Create the appointment
     const appointment = await db.appointment.create({
       data: {
@@ -568,7 +641,9 @@ async function handleCreateAppointment(
       year: 'numeric',
     })
 
-    console.log(`[AI Orchestrator] Cita creada: ${appointment.id} | ${dateFormatted} | ${args.start_time}-${endTime} | Dr. ${doctor.name} | ${service.name}`)
+    const patientDisplayName = args.patient_name || 'Paciente'
+
+    console.log(`[AI Orchestrator] Cita creada: ${appointment.id} | ${dateFormatted} | ${args.start_time}-${endTime} | Dr. ${doctor.name} | ${service.name} | Paciente: ${patientDisplayName}`)
 
     return JSON.stringify({
       success: true,
@@ -581,6 +656,7 @@ async function handleCreateAppointment(
       service_name: service.name,
       service_price: service.price,
       duration: service.duration,
+      patient_name: patientDisplayName,
       status: appointment.status,
     })
   } catch (error) {
