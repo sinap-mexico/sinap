@@ -184,6 +184,9 @@ export function DeskInbox() {
     messenger: false,
   })
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  // Ref to track selected conversation ID without causing re-renders in fetchConversations
+  const selectedConvIdRef = useRef<string | null>(null)
+  const isFirstLoadRef = useRef(true)
 
   // Resolve clinicId on mount if needed
   useEffect(() => {
@@ -233,8 +236,10 @@ export function DeskInbox() {
   // Fetch conversations from API
   const fetchConversations = useCallback(async () => {
     if (!clinicId) return
-    // Only show loading spinner on the first fetch (not during polling refreshes)
-    setIsLoading(prev => prev === true && convList.length === 0 ? true : false)
+    // Only show loading spinner on the first fetch
+    if (isFirstLoadRef.current) {
+      setIsLoading(true)
+    }
     try {
       const res = await fetch(`/api/conversations?clinicId=${clinicId}`)
       if (res.ok) {
@@ -242,21 +247,30 @@ export function DeskInbox() {
         const mapped = (data.conversations || []).map(mapApiConversation)
         setConvList(mapped)
         // If a conversation is selected, update it with the latest messages
-        if (selectedConversation) {
-          const updated = mapped.find(c => c.id === selectedConversation.id)
+        const currentSelectedId = selectedConvIdRef.current
+        if (currentSelectedId) {
+          const updated = mapped.find(c => c.id === currentSelectedId)
           if (updated) {
             setSelectedConversation(updated)
           }
         } else if (mapped.length > 0) {
           setSelectedConversation(mapped[0])
+          selectedConvIdRef.current = mapped[0].id
         }
       }
     } catch (err) {
       console.error('Failed to fetch conversations:', err)
     } finally {
       setIsLoading(false)
+      isFirstLoadRef.current = false
     }
-  }, [clinicId, convList.length, selectedConversation])
+  }, [clinicId])
+
+  // Keep the ref in sync when user selects a different conversation
+  const handleSelectConversation = useCallback((conv: Conversation) => {
+    selectedConvIdRef.current = conv.id
+    setSelectedConversation(conv)
+  }, [])
 
   useEffect(() => {
     fetchConversations()
@@ -351,6 +365,8 @@ export function DeskInbox() {
         if (!sendRes.ok) {
           console.error('[Desk] Failed to send message via channel')
         }
+        // Refresh from DB so the saved message (with wamid) appears correctly
+        await fetchConversations()
       } catch (err) {
         console.error('[Desk] Meta send error:', err)
       } finally {
@@ -551,7 +567,7 @@ export function DeskInbox() {
                 filteredConversations.map((conv, i) => (
                   <motion.button
                     key={conv.id}
-                    onClick={() => setSelectedConversation(conv)}
+                    onClick={() => handleSelectConversation(conv)}
                     className={`w-full text-left p-3 rounded-lg transition-all duration-200 ${
                       selectedConversation?.id === conv.id
                         ? 'bg-[#EEEDFE] border border-[#534AB7]/20'
