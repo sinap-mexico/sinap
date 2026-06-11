@@ -93,12 +93,14 @@ export async function POST(req: NextRequest) {
         })
       }
     } catch (sendError) {
-      console.error('[Meta Send] Failed to send via channel:', sendError)
+      const sendErrMsg = sendError instanceof Error ? sendError.message : String(sendError)
+      console.error('[Meta Send] Failed to send via channel:', sendErrMsg)
       // Message is already saved locally — the doctor's message persists even if channel send fails
       return NextResponse.json({
         message: savedMessage,
         sent: false,
         error: 'Mensaje guardado pero no enviado por el canal',
+        detail: sendErrMsg,
       })
     }
 
