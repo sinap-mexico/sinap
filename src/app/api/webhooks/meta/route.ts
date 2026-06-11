@@ -369,6 +369,24 @@ async function handleIncomingMessage(
 
   const channel = msg.channel || detectedChannel
 
+  // ── Guard: Skip echo messages from our own business phone number ──
+  // When Sinap sends an outbound message via the Meta API, Meta may echo
+  // it back via the webhook (if message_echoes is subscribed). We must
+  // detect and skip these to prevent infinite AI response loops.
+  if (channel === 'whatsapp' && msg.phoneNumberId) {
+    const envPhoneNumberId = process.env.META_WHATSAPP_PHONE_NUMBER_ID
+    // If the "from" matches our own phone number ID, this is an echo
+    if (envPhoneNumberId && msg.from === envPhoneNumberId) {
+      console.log('[Webhook] Skipping echo message from own phone number:', msg.from)
+      return
+    }
+    // Also check if the phoneNumberId in metadata matches (alternative echo detection)
+    if (envPhoneNumberId && msg.phoneNumberId === envPhoneNumberId && !msg.text) {
+      console.log('[Webhook] Skipping potential echo (metadata match):', msg.messageId)
+      return
+    }
+  }
+
   // 1. Find the clinic — use businessId and phoneNumberId from webhook
   const businessId = msg.clinicWabaId
   const clinic = await findClinicByChannel(channel, businessId, msg.phoneNumberId)

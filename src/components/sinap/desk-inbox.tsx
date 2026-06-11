@@ -233,14 +233,21 @@ export function DeskInbox() {
   // Fetch conversations from API
   const fetchConversations = useCallback(async () => {
     if (!clinicId) return
-    setIsLoading(true)
+    // Only show loading spinner on the first fetch (not during polling refreshes)
+    setIsLoading(prev => prev === true && convList.length === 0 ? true : false)
     try {
       const res = await fetch(`/api/conversations?clinicId=${clinicId}`)
       if (res.ok) {
         const data = await res.json()
         const mapped = (data.conversations || []).map(mapApiConversation)
         setConvList(mapped)
-        if (mapped.length > 0 && !selectedConversation) {
+        // If a conversation is selected, update it with the latest messages
+        if (selectedConversation) {
+          const updated = mapped.find(c => c.id === selectedConversation.id)
+          if (updated) {
+            setSelectedConversation(updated)
+          }
+        } else if (mapped.length > 0) {
           setSelectedConversation(mapped[0])
         }
       }
@@ -249,11 +256,20 @@ export function DeskInbox() {
     } finally {
       setIsLoading(false)
     }
-  }, [clinicId])
+  }, [clinicId, convList.length, selectedConversation])
 
   useEffect(() => {
     fetchConversations()
   }, [fetchConversations])
+
+  // Poll for new messages every 10 seconds so incoming WhatsApp messages appear in real-time
+  useEffect(() => {
+    if (!clinicId) return
+    const interval = setInterval(() => {
+      fetchConversations()
+    }, 10_000)
+    return () => clearInterval(interval)
+  }, [clinicId, fetchConversations])
 
   // Auto-seed demo data in demo mode when no conversations exist
   const handleSeedDemo = useCallback(async () => {
@@ -291,11 +307,15 @@ export function DeskInbox() {
   const handleSendMessage = async () => {
     if (!messageInput.trim() || isTyping || !selectedConversation) return
 
+    const msgText = messageInput.trim()
+    const msgTime = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+
+    // Doctor's message is always OUTBOUND (sent by the clinic staff)
     const userMsg: ConversationMessage = {
       id: `m${Date.now()}`,
-      direction: 'inbound',
-      text: messageInput.trim(),
-      time: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+      direction: 'outbound',
+      text: msgText,
+      time: msgTime,
     }
 
     const updatedConv = {
@@ -308,61 +328,39 @@ export function DeskInbox() {
     setConvList(prev => prev.map(c => c.id === updatedConv.id ? updatedConv : c))
     setSelectedConversation(updatedConv)
     setMessageInput('')
-    setIsTyping(true)
 
-    // Persist the doctor's inbound message (fire and forget)
-    fetch('/api/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        conversationId: selectedConversation.id,
-        clinicId: clinicId || 'demo',
-        direction: 'inbound',
-        content: userMsg.text,
-        senderType: 'doctor',
-        channel: selectedConversation.channel,
-      }),
-    }).catch(() => {
-      // Silently handle persistence errors — UI already updated
-    })
+    // Check if the channel is connected (real WhatsApp/Instagram/Messenger)
+    const channelKey = selectedConversation.channel === 'facebook' ? 'messenger' : selectedConversation.channel
+    const isChannelConnected = channelConnections[channelKey]
 
-    try {
-      const response = await fetch('/api/orchestrator', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: userMsg.text,
-          clinicId: clinicId || 'demo',
-          conversationId: selectedConversation.id,
-          conversationHistory: selectedConversation.messages.map(m => ({
-            direction: m.direction,
-            text: m.text,
-          })),
-        }),
-      })
+    if (isChannelConnected) {
+      // ── Real mode: Send the doctor's message directly via the connected channel ──
+      setIsTyping(true)
+      try {
+        const sendRes = await fetch('/api/meta/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clinicId: clinicId || 'demo',
+            conversationId: selectedConversation.id,
+            content: msgText,
+            channel: selectedConversation.channel,
+          }),
+        })
 
-      const data = await response.json()
-
-      const aiMsg: ConversationMessage = {
-        id: `m${Date.now() + 1}`,
-        direction: 'outbound',
-        text: data.response || 'Disculpe, no pude procesar su mensaje. Un miembro del personal le atendera pronto.',
-        time: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
-        agent: data.agent || 'Sinap Desk',
-        isAI: true,
+        if (!sendRes.ok) {
+          console.error('[Desk] Failed to send message via channel')
+        }
+      } catch (err) {
+        console.error('[Desk] Meta send error:', err)
+      } finally {
+        setIsTyping(false)
       }
+    } else {
+      // ── Simulation mode: Use orchestrator for AI auto-response (demo/simulation) ──
+      setIsTyping(true)
 
-      const finalConv = {
-        ...updatedConv,
-        messages: [...updatedConv.messages, aiMsg],
-        lastMessage: aiMsg.text,
-        lastTime: aiMsg.time,
-      }
-
-      setConvList(prev => prev.map(c => c.id === finalConv.id ? finalConv : c))
-      setSelectedConversation(finalConv)
-
-      // Persist the AI response message (fire and forget)
+      // Persist the doctor's outbound message (fire and forget)
       fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -370,62 +368,115 @@ export function DeskInbox() {
           conversationId: selectedConversation.id,
           clinicId: clinicId || 'demo',
           direction: 'outbound',
-          content: aiMsg.text,
-          senderType: 'agent',
-          agentName: data.agent || 'Sinap Desk',
-          aiGenerated: true,
+          content: msgText,
+          senderType: 'doctor',
           channel: selectedConversation.channel,
         }),
       }).catch(() => {
         // Silently handle persistence errors — UI already updated
       })
 
-      eventBus.emit(
-        'demo',
-        'conversacion_atendida',
-        'desk',
-        'os',
-        JSON.stringify({
-          patientId: selectedConversation.patientId,
-          patientName: selectedConversation.patientName,
-          agent: data.routedAgent || 'desk',
+      try {
+        const response = await fetch('/api/orchestrator', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: msgText,
+            clinicId: clinicId || 'demo',
+            conversationId: selectedConversation.id,
+            conversationHistory: selectedConversation.messages.map(m => ({
+              direction: m.direction,
+              text: m.text,
+            })),
+          }),
         })
-      )
 
-      const lowerMsg = userMsg.text.toLowerCase()
-      if (lowerMsg.includes('cita') || lowerMsg.includes('agendar') || lowerMsg.includes('horario')) {
+        const data = await response.json()
+
+        const aiMsg: ConversationMessage = {
+          id: `m${Date.now() + 1}`,
+          direction: 'outbound',
+          text: data.response || 'Disculpe, no pude procesar su mensaje. Un miembro del personal le atendera pronto.',
+          time: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+          agent: data.agent || 'Sinap Desk',
+          isAI: true,
+        }
+
+        const finalConv = {
+          ...updatedConv,
+          messages: [...updatedConv.messages, aiMsg],
+          lastMessage: aiMsg.text,
+          lastTime: aiMsg.time,
+        }
+
+        setConvList(prev => prev.map(c => c.id === finalConv.id ? finalConv : c))
+        setSelectedConversation(finalConv)
+
+        // Persist the AI response message (fire and forget)
+        fetch('/api/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            conversationId: selectedConversation.id,
+            clinicId: clinicId || 'demo',
+            direction: 'outbound',
+            content: aiMsg.text,
+            senderType: 'agent',
+            agentName: data.agent || 'Sinap Desk',
+            aiGenerated: true,
+            channel: selectedConversation.channel,
+          }),
+        }).catch(() => {
+          // Silently handle persistence errors — UI already updated
+        })
+
         eventBus.emit(
           'demo',
-          'cita_agendada',
+          'conversacion_atendida',
           'desk',
-          'flow',
+          'os',
           JSON.stringify({
             patientId: selectedConversation.patientId,
             patientName: selectedConversation.patientName,
+            agent: data.routedAgent || 'desk',
           })
         )
-      }
-    } catch {
-      const errorMsg: ConversationMessage = {
-        id: `m${Date.now() + 1}`,
-        direction: 'outbound',
-        text: 'Disculpe, hay un problema temporal de conexion. Por favor intente de nuevo en un momento.',
-        time: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
-        agent: 'Sinap Desk',
-        isAI: true,
-      }
 
-      const finalConv = {
-        ...updatedConv,
-        messages: [...updatedConv.messages, errorMsg],
-        lastMessage: errorMsg.text,
-        lastTime: errorMsg.time,
-      }
+        const lowerMsg = msgText.toLowerCase()
+        if (lowerMsg.includes('cita') || lowerMsg.includes('agendar') || lowerMsg.includes('horario')) {
+          eventBus.emit(
+            'demo',
+            'cita_agendada',
+            'desk',
+            'flow',
+            JSON.stringify({
+              patientId: selectedConversation.patientId,
+              patientName: selectedConversation.patientName,
+            })
+          )
+        }
+      } catch {
+        const errorMsg: ConversationMessage = {
+          id: `m${Date.now() + 1}`,
+          direction: 'outbound',
+          text: 'Disculpe, hay un problema temporal de conexion. Por favor intente de nuevo en un momento.',
+          time: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+          agent: 'Sinap Desk',
+          isAI: true,
+        }
 
-      setConvList(prev => prev.map(c => c.id === finalConv.id ? finalConv : c))
-      setSelectedConversation(finalConv)
-    } finally {
-      setIsTyping(false)
+        const finalConv = {
+          ...updatedConv,
+          messages: [...updatedConv.messages, errorMsg],
+          lastMessage: errorMsg.text,
+          lastTime: errorMsg.time,
+        }
+
+        setConvList(prev => prev.map(c => c.id === finalConv.id ? finalConv : c))
+        setSelectedConversation(finalConv)
+      } finally {
+        setIsTyping(false)
+      }
     }
   }
 
