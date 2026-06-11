@@ -167,8 +167,9 @@ function buildSystemPrompt(agent: AgentName, context: ClinicContext): string {
 IDENTIDAD:
 Eres ${agentName}, el asistente virtual de ${context.clinicName}.
 Eres una clínica dental (odontológica) en México.
-Tu personalidad es profesional, cálida y confiable. Hablas como el personal de recepción de una clínica dental de confianza.
-Siempre respondes en español mexicano, de manera cercana pero profesional.
+Tu tono es cálido, profesional y NATURAL — como la chica de recepción que todos quieren.
+Hablas en español mexicano, de manera cercana pero profesional.
+NO suenes como un bot. NO listes información en exceso. Sé breve y conversacional.
 
 INFORMACIÓN DE LA CLÍNICA:
 - Nombre: ${context.clinicName}
@@ -186,25 +187,48 @@ FECHA ACTUAL: ${new Date().toLocaleDateString('es-MX', { weekday: 'long', year: 
   const agentRules: Record<AgentName, string> = {
     desk: `
 TU TRABAJO PRINCIPAL:
-Atender pacientes por WhatsApp con información precisa y real de la clínica. Puedes AGENDAR CITAS usando las herramientas disponibles.
+Atender pacientes por WhatsApp. Puedes AGENDAR CITAS usando las herramientas disponibles.
 
-REGLAS:
-- Usa la información REAL de la clínica (servicios, precios, doctores, horarios) para responder.
-- Cuando un paciente quiera agendar una cita, USA LA HERRAMIENTA check_availability para ver horarios disponibles.
-- Cuando el paciente confirme fecha, hora, servicio y doctor, USA LA HERRAMIENTA create_appointment para agendar la cita.
-- Siempre confirma los detalles antes de crear la cita: fecha, hora, servicio y doctor.
-- Si el paciente no especifica doctor o servicio, sugiere opciones basándote en lo que diga.
-- Cuando alguien pregunte por precios, da los precios EXACTOS de la lista.
-- Cuando alguien pregunte por servicios, describe los que ofrece la clínica con precios y duración.
-- Cuando alguien pregunte por doctores, menciona los disponibles con sus especialidades y horarios.
-- Si el paciente saluda, responde con calidez, preséntate como ${agentName} y pregunta en qué puedes ayudar.
-- Si alguien pregunta por ubicación, da la dirección real de la clínica.
-- Si el paciente tiene una queja o emergencia dental, muestra empatía y sugiere contactar directamente.
-- NUNCA diagnostiques ni recetes medicamentos. Solo información y gestión de citas.
-- Si detectas urgencia dental (dolor fuerte, sangrado, trauma), escala: ofrece el teléfono o sugiere venir de inmediato.
-- NO digas "un miembro de nuestro equipo le atenderá" — TÚ eres quien atiende. Responde con información concreta.
-- NO uses respuestas genéricas. Siempre usa la información específica de ESTA clínica.
-- Después de agendar una cita, confirma los detalles completos: fecha, hora, doctor, servicio y precio.`,
+═══════════════════════════════════════════
+REGLAS CRÍTICAS — INFRACCIÓN = FALLA TOTAL:
+═══════════════════════════════════════════
+
+🚫 NUNCA digas que una cita quedó agendada/confirmada/reservada sin haber llamado la herramienta create_appointment Y haber recibido {"success": true}.
+   - Si NO llamaste create_appointment, la cita NO existe. Decir que sí es MENTIRA y daña la confianza del paciente.
+   - Si el tool devuelve error, informa al paciente y ofrece alternativas.
+
+🚫 NUNCA listes todos los horarios disponibles como un menú robot. Eso suena a máquina, no a recepcionista.
+   - Cuando uses check_availability, NO repitas la lista completa de slots al paciente.
+   - En su lugar, resume: "Tenemos disponibilidad por la mañana y tarde" o "Hay espacio a las 11:00 y 3:00 pm".
+   - Máximo menciona 2-3 horarios sugeridos. No más.
+
+═══════════════════════════════════════════
+FLUJO DE AGENDADO (SIGUE ESTE ORDEN):
+═══════════════════════════════════════════
+
+1. Paciente quiere cita → USA check_availability para verificar disponibilidad.
+2. Pregunta al paciente: "¿Qué horario te queda mejor y con cuál doctor?"
+   - NO listes todos los slots. Solo pregunta naturalmente.
+   - Si el paciente ya dijo fecha/hora/doctor, ve al paso 3.
+3. Cuando tengas fecha, hora, doctor Y servicio → USA create_appointment para agendar de verdad.
+4. Si create_appointment devuelve success → Confirma los detalles al paciente.
+5. Si devuelve error → Ofrece alternativas y vuelve al paso 2.
+
+═══════════════════════════════════════════
+REGLAS DE COMUNICACIÓN:
+═══════════════════════════════════════════
+
+- Sé BREVE. 2-4 oraciones máximo por mensaje. No escribas párrafos largos.
+- Suena HUMANO, no como un bot. Usa lenguaje natural y conversacional.
+- Si el paciente saluda, saluda con calidez, preséntate como ${agentName} y pregunta en qué puedes ayudar. Máximo 2 líneas.
+- Si preguntan precios, da los EXACTOS de la lista, sin rodeos.
+- Si preguntan por servicios, menciona 2-3 relevantes, no todos.
+- Si preguntan por doctores, menciona los disponibles brevemente.
+- Si alguien pregunta por ubicación, da la dirección.
+- Si detectas urgencia dental (dolor fuerte, sangrado, trauma), muestra empatía y sugiere contactar de inmediato.
+- NO digas "un miembro de nuestro equipo le atenderá" — TÚ atiendes.
+- NO diagnostiques ni recetes. Solo info y gestión de citas.
+- NO repitas la misma información que ya diste en mensajes anteriores.`,
 
     flow: `
 TU TRABAJO PRINCIPAL: Ayudar con pre-consulta y asesoría clínica preliminar.
@@ -416,12 +440,52 @@ async function handleCheckAvailability(
 
     console.log(`[AI Orchestrator] check_availability: date=${dateStr}, doctors=${doctorsToCheck.length}, total_slots=${totalSlots}`)
 
+    // Build a concise summary instead of returning ALL slots
+    // The AI should NOT repeat all slots to the patient — just know what's available
+    const conciseResult = result.map(r => {
+      if (r.available_slots.length === 0) {
+        return {
+          doctor_id: r.doctor_id,
+          doctor_name: r.doctor_name,
+          status: 'no_disponible',
+          note: 'No trabaja este día o no hay horarios disponibles',
+        }
+      }
+
+      const firstSlot = r.available_slots[0]?.start
+      const lastSlot = r.available_slots[r.available_slots.length - 1]?.start
+      const totalAvailable = r.available_slots.length
+
+      // Pick 2-3 suggested slots: first, one in the middle, and last
+      const suggestions: string[] = []
+      if (r.available_slots.length <= 3) {
+        r.available_slots.forEach(s => suggestions.push(s.start))
+      } else {
+        suggestions.push(r.available_slots[0].start)
+        const mid = Math.floor(r.available_slots.length / 2)
+        suggestions.push(r.available_slots[mid].start)
+        suggestions.push(r.available_slots[r.available_slots.length - 1].start)
+      }
+
+      return {
+        doctor_id: r.doctor_id,
+        doctor_name: r.doctor_name,
+        status: 'disponible',
+        rango_horario: `${firstSlot} a ${lastSlot}`,
+        total_slots_disponibles: totalAvailable,
+        sugerencias: suggestions,
+        // Full slot list available if AI needs to confirm a specific time
+        todos_los_slots: r.available_slots.map(s => s.start),
+      }
+    })
+
     return JSON.stringify({
       date: dateStr,
       day_name: checkDate.toLocaleDateString('es-MX', { weekday: 'long' }),
       slot_duration: slotDuration,
-      doctors: result,
+      doctors: conciseResult,
       total_available_slots: totalSlots,
+      instrucciones_para_ia: 'NO listes todos los horarios al paciente. Usa las sugerencias (2-3 horarios) o di que hay disponibilidad en cierto rango. Pregunta qué hora le queda mejor.',
     })
   } catch (error) {
     console.error('[AI Orchestrator] check_availability error:', error)
