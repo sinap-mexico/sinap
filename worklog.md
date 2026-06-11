@@ -1,34 +1,26 @@
 ---
-Task ID: 1
+Task ID: 2
 Agent: Super Z (main)
-Task: Fix AI auto-response to be context-aware with real clinic data
+Task: Implement AI function calling for appointment booking
 
 Work Log:
-- Created src/lib/ai-orchestrator.ts: shared module with full clinic context
-  - Loads clinic name, persona name, phone, address, city, state
-  - Loads services with prices and duration from DB
-  - Loads doctors with specialties and work schedules from DB
-  - Loads conversation history (last 15 messages)
-  - Builds rich system prompts with real business data
-  - Routes to specialized agents (desk/flow/bill/grow)
-- Updated webhook route to use new orchestrator
-  - Removed inline generateAIResponse (was generic, no context)
-  - Removed generateFallbackResponse (generic hardcoded responses)
-  - Uses generateContextualResponse with full clinic context
-  - Emergency fallback uses clinic name instead of generic text
-- Updated orchestrator API route to use shared module
-  - No more duplicated agent routing logic
-  - Full clinic context in all AI responses
-- Added OpenAI provider support for Vercel deployment
-  - Z-AI SDK (internal-api.z.ai) is NOT reachable from Vercel servers
-  - Added OpenAI as primary AI provider when OPENAI_API_KEY is set
-  - Supports any OpenAI-compatible API via OPENAI_BASE_URL (Groq, Together, etc.)
-  - Default model: gpt-4o-mini (cost-effective for dental clinic chat)
+- Updated zai.ts with function calling support
+  - Added ToolCall, ChatMessage, ToolDefinition, ChatCompletionResponse types
+  - OpenAI-compatible client now passes tools and returns tool_calls
+  - Handles ChatCompletionMessageToolCall union type properly
+- Rewrote ai-orchestrator.ts with complete tool calling support
+  - check_availability tool: queries doctor schedules, finds open time slots
+  - create_appointment tool: creates real appointments in the database
+  - Multi-step LLM flow: AI calls tool → gets result → generates natural response
+  - Checks for scheduling conflicts before creating appointments
+  - Includes doctor IDs and service IDs in system prompt
+  - Adds current date to system prompt for accurate scheduling
+  - timeToMinutes/minutesToTime helpers for slot generation
+- Updated webhook route to pass patient.id to generateContextualResponse
 
 Stage Summary:
-- AI orchestrator now has full clinic context (services, prices, doctors, schedules)
-- The Z-AI SDK only works within Z.ai infrastructure, not from Vercel
-- OpenAI integration added but needs OPENAI_API_KEY env var on Vercel
-- Emergency fallback now uses real clinic name and context
-- Clinic data confirmed: CENPOD CENTRO PODOLOGICO, 3 services, 2 doctors
-- BLOCKING: Need user to add OPENAI_API_KEY to Vercel environment variables
+- AI can now check doctor availability and create appointments
+- Function calling works with Groq's llama-3.3-70b-versatile model
+- Deploy is live and working: aiTest returns "OK" with Groq provider
+- Clinic data includes service IDs and doctor IDs for tool use
+- Next: User tests end-to-end with real WhatsApp message
