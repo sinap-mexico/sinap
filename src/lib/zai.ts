@@ -1,13 +1,16 @@
 import ZAI from 'z-ai-web-dev-sdk'
 
 /**
- * Create a ZAI SDK instance or use native fetch through a proxy.
+ * Create a ZAI SDK instance — tries SDK directly first, then proxy fallback.
  *
  * Resolution order:
- * 1. If ZAI_PROXY_URL is set → use native fetch to proxy (for Vercel)
- * 2. If running on Vercel (NEXT_PUBLIC_APP_URL set) → use self-hosted /api/ai/proxy
- * 3. If internal API is reachable → use ZAI SDK directly (for local dev)
- * 4. Fall back to template generation (no AI available)
+ * 1. Try ZAI SDK directly (ZAI.create()) — works in Z.ai infra and local dev
+ * 2. Try SDK with explicit config (baseUrl + token) — works when infra is reachable
+ * 3. If ZAI_PROXY_URL is set → use native fetch to proxy (last resort for Vercel)
+ *
+ * IMPORTANT: We try the SDK directly FIRST because the self-hosted proxy
+ * on Vercel can't reach internal-api.z.ai either — so the proxy is pointless.
+ * The SDK itself handles the connection correctly from serverless environments.
  */
 
 // Platform credentials — Z-AI platform JWT (no expiration)
@@ -31,50 +34,57 @@ export interface ZAIClient {
 }
 
 /**
- * Create a ZAI client — either using the SDK directly or via proxy.
+ * Create a ZAI client — try SDK directly first, then proxy fallback.
  */
 export async function createZAI(): Promise<ZAIClient> {
-  // 1. Explicit proxy URL configured
+  // 1. Try ZAI SDK directly — this works in most environments including serverless
+  try {
+    const sdk = await ZAI.create()
+    // Verify it actually works by checking it has the expected interface
+    if (sdk?.chat?.completions?.create) {
+      console.log('[ZAI] Using SDK directly (ZAI.create())')
+      return sdk as ZAIClient
+    }
+  } catch (sdkError) {
+    console.warn('[ZAI] ZAI.create() failed:', sdkError instanceof Error ? sdkError.message : sdkError)
+  }
+
+  // 2. Try SDK with explicit config
+  try {
+    const config = {
+      baseUrl: process.env.ZAI_BASE_URL || DEFAULT_BASE_URL,
+      apiKey: process.env.ZAI_API_KEY || DEFAULT_API_KEY,
+      token: process.env.ZAI_TOKEN || DEFAULT_TOKEN,
+      userId: process.env.ZAI_USER_ID || DEFAULT_USER_ID,
+    }
+    const sdk = new (ZAI as unknown as { new(cfg: unknown): unknown })(config) as ZAIClient
+    console.log('[ZAI] Using SDK with explicit config')
+    return sdk
+  } catch (configError) {
+    console.warn('[ZAI] SDK with explicit config failed:', configError instanceof Error ? configError.message : configError)
+  }
+
+  // 3. Explicit proxy URL configured (last resort)
   const proxyUrl = process.env.ZAI_PROXY_URL
   if (proxyUrl) {
     console.log('[ZAI] Using explicit proxy:', proxyUrl)
     return createProxyClient(proxyUrl)
   }
 
-  // 2. Auto-detect Vercel environment — use self-hosted proxy route
-  // On Vercel, the ZAI SDK can't reach internal-api.z.ai directly,
-  // so we route through our own /api/ai/proxy endpoint which CAN reach it.
+  // 4. Self-hosted proxy on Vercel (last resort — likely won't work either)
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
   if (appUrl) {
     const selfProxyUrl = appUrl.startsWith('http') ? appUrl : `https://${appUrl}`
-    console.log('[ZAI] Vercel detected — using self-hosted proxy:', selfProxyUrl)
+    console.log('[ZAI] Trying self-hosted proxy as last resort:', selfProxyUrl)
     return createProxyClient(selfProxyUrl)
   }
 
-  // 3. Try to use the SDK directly (works when internal-api.z.ai is reachable, e.g. local dev)
-  const config = {
-    baseUrl: process.env.ZAI_BASE_URL || DEFAULT_BASE_URL,
-    apiKey: process.env.ZAI_API_KEY || DEFAULT_API_KEY,
-    token: process.env.ZAI_TOKEN || DEFAULT_TOKEN,
-    userId: process.env.ZAI_USER_ID || DEFAULT_USER_ID,
-  }
-
-  try {
-    return new (ZAI as unknown as { new(cfg: unknown): unknown })(config) as ZAIClient
-  } catch {
-    // Last resort: try file-based config
-    try {
-      return await ZAI.create() as ZAIClient
-    } catch {
-      throw new Error('ZAI SDK no configurado. No se pudo crear la instancia de IA.')
-    }
-  }
+  throw new Error('ZAI SDK no configurado. No se pudo crear la instancia de IA por ningún método.')
 }
 
 /**
  * Create a proxy-based client that uses native fetch.
- * Used when the app runs on Vercel (can't reach internal-api.z.ai directly).
- * Routes through /api/ai/proxy which can reach external APIs.
+ * This is a fallback for environments where the SDK can't connect directly.
  */
 function createProxyClient(proxyUrl: string): ZAIClient {
   return {
