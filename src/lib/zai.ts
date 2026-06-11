@@ -5,8 +5,9 @@ import ZAI from 'z-ai-web-dev-sdk'
  *
  * Resolution order:
  * 1. If ZAI_PROXY_URL is set → use native fetch to proxy (for Vercel)
- * 2. If internal API is reachable → use ZAI SDK directly (for local dev)
- * 3. Fall back to template generation (no AI available)
+ * 2. If running on Vercel (NEXT_PUBLIC_APP_URL set) → use self-hosted /api/ai/proxy
+ * 3. If internal API is reachable → use ZAI SDK directly (for local dev)
+ * 4. Fall back to template generation (no AI available)
  */
 
 // Platform credentials — Z-AI platform JWT (no expiration)
@@ -33,14 +34,24 @@ export interface ZAIClient {
  * Create a ZAI client — either using the SDK directly or via proxy.
  */
 export async function createZAI(): Promise<ZAIClient> {
+  // 1. Explicit proxy URL configured
   const proxyUrl = process.env.ZAI_PROXY_URL
-
-  // If a proxy URL is configured (for Vercel), use native fetch through proxy
   if (proxyUrl) {
+    console.log('[ZAI] Using explicit proxy:', proxyUrl)
     return createProxyClient(proxyUrl)
   }
 
-  // Try to use the SDK directly (works when internal-api.z.ai is reachable)
+  // 2. Auto-detect Vercel environment — use self-hosted proxy route
+  // On Vercel, the ZAI SDK can't reach internal-api.z.ai directly,
+  // so we route through our own /api/ai/proxy endpoint which CAN reach it.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
+  if (appUrl) {
+    const selfProxyUrl = appUrl.startsWith('http') ? appUrl : `https://${appUrl}`
+    console.log('[ZAI] Vercel detected — using self-hosted proxy:', selfProxyUrl)
+    return createProxyClient(selfProxyUrl)
+  }
+
+  // 3. Try to use the SDK directly (works when internal-api.z.ai is reachable, e.g. local dev)
   const config = {
     baseUrl: process.env.ZAI_BASE_URL || DEFAULT_BASE_URL,
     apiKey: process.env.ZAI_API_KEY || DEFAULT_API_KEY,
@@ -49,8 +60,7 @@ export async function createZAI(): Promise<ZAIClient> {
   }
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return new (ZAI as any)(config) as ZAIClient
+    return new (ZAI as unknown as { new(cfg: unknown): unknown })(config) as ZAIClient
   } catch {
     // Last resort: try file-based config
     try {
@@ -64,23 +74,18 @@ export async function createZAI(): Promise<ZAIClient> {
 /**
  * Create a proxy-based client that uses native fetch.
  * Used when the app runs on Vercel (can't reach internal-api.z.ai directly).
+ * Routes through /api/ai/proxy which can reach external APIs.
  */
 function createProxyClient(proxyUrl: string): ZAIClient {
-  const token = process.env.ZAI_TOKEN || DEFAULT_TOKEN
-  const userId = process.env.ZAI_USER_ID || DEFAULT_USER_ID
-
   return {
     chat: {
       completions: {
         create: async (body) => {
-          const response = await fetch(`${proxyUrl}/v1/chat/completions`, {
+          // Use our self-hosted proxy endpoint at /api/ai/proxy
+          const response = await fetch(`${proxyUrl}/api/ai/proxy`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${process.env.ZAI_API_KEY || DEFAULT_API_KEY}`,
-              'X-Z-AI-From': 'Z',
-              'X-Token': token,
-              'X-User-Id': userId,
             },
             body: JSON.stringify(body),
           })
