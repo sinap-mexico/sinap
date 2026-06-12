@@ -151,12 +151,16 @@ export async function GET(req: NextRequest) {
   try {
     const now = new Date()
 
-    // Calculate the 24h window: appointments whose start time is between
-    // 22h and 26h from now. We use a wider 4-hour window because:
-    //   - The cron runs every hour, so a 4h window ensures overlap
-    //   - Timezone offsets may shift the exact boundary
-    const windowStart = new Date(now.getTime() + 22 * 60 * 60 * 1000)
-    const windowEnd = new Date(now.getTime() + 26 * 60 * 60 * 1000)
+    // Calculate the reminder window:
+    // - UPPER bound: appointments up to 30h from now (to catch edge cases / timezone shifts)
+    // - LOWER bound: appointments at least 4h from now (don't remind if less than 4h away — too late)
+    // This wide window ensures we catch appointments even if:
+    //   - The cron was down for a few hours
+    //   - Timezone offsets shift the exact boundary
+    //   - Previous runs had bugs (like the old UTC bug)
+    // reminder24hSent prevents duplicate sends, so a wider window is safe.
+    const windowStart = new Date(now.getTime() + 4 * 60 * 60 * 1000)   // 4h from now
+    const windowEnd = new Date(now.getTime() + 30 * 60 * 60 * 1000)    // 30h from now
 
     // For the date query: find appointments for today and tomorrow
     // We search both days because timezone offsets can shift the boundary.
