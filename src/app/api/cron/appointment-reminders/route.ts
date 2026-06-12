@@ -150,16 +150,28 @@ interface ClinicCache {
 }
 
 // ─── Check if patient has a recent WhatsApp message (within 24h) ──
+// Message model doesn't have patientId, so we query through Conversation
 async function hasRecentPatientMessage(clinicId: string, patientId: string): Promise<boolean> {
   if (!db) return false
 
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
 
-  const recentMessage = await db.message.findFirst({
+  // Find an active WhatsApp conversation for this patient
+  const conversation = await db.conversation.findFirst({
     where: {
       clinicId,
       patientId,
       channel: 'whatsapp',
+    },
+    select: { id: true },
+  })
+
+  if (!conversation) return false
+
+  // Check if there's an inbound message within the last 24h
+  const recentMessage = await db.message.findFirst({
+    where: {
+      conversationId: conversation.id,
       direction: 'inbound',
       createdAt: { gte: twentyFourHoursAgo },
     },
