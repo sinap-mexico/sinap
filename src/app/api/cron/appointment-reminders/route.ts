@@ -313,16 +313,20 @@ export async function GET(req: NextRequest) {
 
   try {
     const now = new Date()
+    const url = new URL(req.url)
+    const testMode = url.searchParams.get('test') === 'true'
+    const forceMode = url.searchParams.get('force') === 'true'
+    const targetClinicId = url.searchParams.get('clinicId')
 
     // Calculate the reminder window:
-    // - UPPER bound: appointments up to 30h from now (to catch edge cases / timezone shifts)
-    // - LOWER bound: appointments at least 4h from now (don't remind if less than 4h away)
-    // This wide window ensures we catch appointments even if:
-    //   - The cron was down for a few hours
-    //   - Timezone offsets shift the exact boundary
-    // reminder24hSent prevents duplicate sends, so a wider window is safe.
-    const windowStart = new Date(now.getTime() + 4 * 60 * 60 * 1000)
-    const windowEnd = new Date(now.getTime() + 30 * 60 * 60 * 1000)
+    // In test/force mode: use a VERY wide window (past 48h to future 72h) to catch any appointment
+    // In normal mode: 4h to 30h from now
+    const windowStart = (testMode || forceMode)
+      ? new Date(now.getTime() - 48 * 60 * 60 * 1000)  // 48h ago
+      : new Date(now.getTime() + 4 * 60 * 60 * 1000)   // 4h from now
+    const windowEnd = (testMode || forceMode)
+      ? new Date(now.getTime() + 72 * 60 * 60 * 1000)  // 72h from now
+      : new Date(now.getTime() + 30 * 60 * 60 * 1000)  // 30h from now
 
     // For the date query: find appointments for today through 3 days out
     const todayDate = new Date(now)
@@ -331,19 +335,28 @@ export async function GET(req: NextRequest) {
     const dayAfterTomorrow = new Date(todayDate)
     dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 3)
 
-    // Find appointments that:
-    // - Are scheduled or confirmed
-    // - Haven't had a 24h reminder sent yet
-    // - Are for today through 3 days out (wide range, filtered in JS by time window)
-    const appointments = await db.appointment.findMany({
-      where: {
-        status: { in: ['scheduled', 'confirmed'] },
-        reminder24hSent: false,
-        date: {
-          gte: todayDate,
-          lt: dayAfterTomorrow,
-        },
+    // Build where clause
+    const whereClause: Record<string, unknown> = {
+      status: { in: ['scheduled', 'confirmed'] },
+      date: {
+        gte: todayDate,
+        lt: dayAfterTomorrow,
       },
+    }
+
+    // In force mode, don't filter by reminder24hSent (allow re-sending)
+    if (!forceMode) {
+      whereClause.reminder24hSent = false
+    }
+
+    // Filter by clinicId if specified
+    if (targetClinicId) {
+      whereClause.clinicId = targetClinicId
+    }
+
+    // Find appointments that match criteria
+    const appointments = await db.appointment.findMany({
+      where: whereClause,
       select: {
         id: true,
         clinicId: true,
@@ -382,8 +395,8 @@ export async function GET(req: NextRequest) {
 
         console.log(`[Cron/Reminders] Appt ${appointment.id}: local=${hours}:${minutes} → UTC=${appointmentDateTime.toISOString()}, window=${windowStart.toISOString()}-${windowEnd.toISOString()}`)
 
-        // Check if appointment is within the reminder window
-        if (appointmentDateTime < windowStart || appointmentDateTime > windowEnd) {
+        // Check if appointment is within the reminder window (skip in test/force mode)
+        if (!testMode && !forceMode && (appointmentDateTime < windowStart || appointmentDateTime > windowEnd)) {
           console.log(`[Cron/Reminders] Appt ${appointment.id} outside window, skipping`)
           continue
         }
@@ -632,6 +645,7 @@ export async function GET(req: NextRequest) {
       success: true,
       timestamp: now.toISOString(),
       timezone: DEFAULT_TIMEZONE,
+      mode: testMode ? 'test' : forceMode ? 'force' : 'cron',
       windowStart: windowStart.toISOString(),
       windowEnd: windowEnd.toISOString(),
       candidates: appointments.length,
