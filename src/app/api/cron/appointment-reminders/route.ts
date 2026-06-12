@@ -3,6 +3,11 @@
 // Finds appointments ~24 hours from now that haven't had a reminder sent,
 // and sends a WhatsApp reminder message to the patient.
 //
+// SEND STRATEGY:
+//   1. If patient has messaged in the last 24h → send free-form text (within conversation window)
+//   2. If no recent conversation → try WhatsApp template message (requires approved template)
+//   3. If template not available → try free-form text as last resort (may fail if Meta requires template)
+//
 // Security: Requires CRON_SECRET authorization header (Vercel injects this).
 // Feature flag: desk-reminders (must be "on" for the clinic)
 
@@ -13,32 +18,20 @@ import { MetaClient, getClinicMetaConfig, getClinicMetaConnection } from '@/lib/
 const CRON_SECRET = process.env.CRON_SECRET
 
 // ─── Default timezone for Mexican clinics ───────────────────────
-// startTime in the DB is local time (e.g. "09:00" = 9 AM Mexico).
-// Vercel servers run in UTC, so we must convert local → UTC.
 const DEFAULT_TIMEZONE = 'America/Hermosillo' // UTC-7 (Sonora, no DST)
 
-// ─── Convert local time + date to UTC ─────────────────────────
-// startTime is stored as local time (e.g. "09:00" = 9 AM in the clinic's timezone).
-// Vercel servers run in UTC, so we need to convert to UTC for accurate comparison.
-// This function creates a Date in the specified timezone, then converts to UTC.
-function localTimeToUTC(dateFromDB: Date, hours: number, minutes: number, timezone: string): Date {
-  // Get the date components from the DB date (ignoring its time portion)
-  const year = dateFromDB.getUTCFullYear()
-  const month = dateFromDB.getUTCMonth()
-  const day = dateFromDB.getUTCDate()
+// ─── Template configuration ─────────────────────────────────────
+const REMINDER_TEMPLATE_NAME = 'appointment_reminder'
+const REMINDER_TEMPLATE_LANGUAGE = 'es_MX'
 
-  // Create a formatted date string in the clinic's local timezone
-  // to extract the correct calendar date (timezone-safe)
-  const localDateStr = dateFromDB.toLocaleDateString('en-CA', { timeZone: timezone }) // "2026-06-13"
+// ─── Convert local time + date to UTC ─────────────────────────
+function localTimeToUTC(dateFromDB: Date, hours: number, minutes: number, timezone: string): Date {
+  const localDateStr = dateFromDB.toLocaleDateString('en-CA', { timeZone: timezone })
   const [localYear, localMonth, localDay] = localDateStr.split('-').map(Number)
 
-  // Build an ISO string representing the local time, then parse it as if it were UTC
-  // This effectively creates: "2026-06-13T09:00:00" in the clinic's timezone
   const localISO = `${localYear}-${String(localMonth).padStart(2, '0')}-${String(localDay).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
 
-  // Use Intl.DateTimeFormat to get the offset for the specific timezone at that moment
-  // This handles DST correctly
-  const tempDate = new Date(localISO + 'Z') // Treat as UTC initially
+  const tempDate = new Date(localISO + 'Z')
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -46,22 +39,16 @@ function localTimeToUTC(dateFromDB: Date, hours: number, minutes: number, timezo
     hour12: false,
   })
 
-  // Get the offset by comparing what the timezone thinks vs UTC
   const parts = formatter.formatToParts(tempDate)
   const getPart = (type: string) => parts.find(p => p.type === type)?.value || '0'
   const tzHour = parseInt(getPart('hour'))
   const tzMinute = parseInt(getPart('minute'))
 
-  // The offset is the difference between what UTC time produces in the target timezone
-  // and the actual UTC time
   const utcHour = tempDate.getUTCHours()
   const utcMinute = tempDate.getUTCMinutes()
   const offsetMinutes = (utcHour * 60 + utcMinute) - (tzHour * 60 + tzMinute)
 
-  // Adjust: subtract the offset to get the real UTC time
-  // If timezone is UTC-7, offsetMinutes = -420, so we subtract (-420) = add 420 min = +7h
   const realUTC = new Date(tempDate.getTime() - offsetMinutes * 60 * 1000)
-
   return realUTC
 }
 
@@ -92,7 +79,7 @@ function formatTime12h(time24: string): string {
   return `${h}:${m.toString().padStart(2, '0')} am`
 }
 
-// ─── Build reminder message ────────────────────────────────────
+// ─── Build free-form reminder message ──────────────────────────
 function buildReminderMessage(data: {
   patientName: string
   personaName: string
@@ -103,7 +90,7 @@ function buildReminderMessage(data: {
   clinicPhone: string | null
 }): string {
   const parts = [
-    `Hola ${data.patientName}! Te recordamos que tienes cita manana:`,
+    `Hola ${data.patientName}! Te recordamos que tienes cita mañana:`,
     ``,
     `Fecha: ${data.dateFormatted}`,
     `Hora: ${data.startTime12h}`,
@@ -113,7 +100,7 @@ function buildReminderMessage(data: {
   ]
 
   if (data.clinicPhone) {
-    parts.push(`Si necesitas cancelar o reagendar, responde a este mensaje o llamanos al ${data.clinicPhone}.`)
+    parts.push(`Si necesitas cancelar o reagendar, responde a este mensaje o llámanos al ${data.clinicPhone}.`)
   } else {
     parts.push(`Si necesitas cancelar o reagendar, simplemente responde a este mensaje.`)
   }
@@ -123,6 +110,34 @@ function buildReminderMessage(data: {
   return parts.join('\n')
 }
 
+// ─── Build template components for WhatsApp template ────────────
+// Template body: "Hola {{1}}, te recordamos que tienes cita programada para mañana.\n\nFecha: {{2}}\nHora: {{3}}\nDoctor: {{4}}\nServicio: {{5}}\n\nPara cancelar o reagendar, responde a este mensaje o llama al {{6}}.\n\nSaludos del equipo de {{7}}."
+function buildTemplateComponents(data: {
+  patientName: string
+  dateFormatted: string
+  startTime12h: string
+  doctorName: string
+  serviceName: string
+  clinicPhone: string
+  personaName: string
+}): Array<{ type: string; sub_type?: string; parameters: Array<{ type: string; text: string }> }> {
+  return [
+    {
+      type: 'body',
+      sub_type: 'cursor',
+      parameters: [
+        { type: 'text', text: data.patientName },          // {{1}}
+        { type: 'text', text: data.dateFormatted },        // {{2}}
+        { type: 'text', text: data.startTime12h },         // {{3}}
+        { type: 'text', text: data.doctorName },           // {{4}}
+        { type: 'text', text: data.serviceName },          // {{5}}
+        { type: 'text', text: data.clinicPhone },          // {{6}}
+        { type: 'text', text: data.personaName },          // {{7}}
+      ],
+    },
+  ]
+}
+
 // ─── Cache for clinic-level data (avoid repeated queries) ──────
 interface ClinicCache {
   name: string
@@ -130,6 +145,154 @@ interface ClinicCache {
   phone: string | null
   remindersEnabled: boolean
   hasWhatsApp: boolean
+  metaClient: MetaClient
+  templateAvailable: boolean
+}
+
+// ─── Check if patient has a recent WhatsApp message (within 24h) ──
+async function hasRecentPatientMessage(clinicId: string, patientId: string): Promise<boolean> {
+  if (!db) return false
+
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+
+  const recentMessage = await db.message.findFirst({
+    where: {
+      clinicId,
+      patientId,
+      channel: 'whatsapp',
+      direction: 'inbound',
+      createdAt: { gte: twentyFourHoursAgo },
+    },
+    select: { id: true },
+  })
+
+  return !!recentMessage
+}
+
+// ─── Fetch approved templates from Meta API ─────────────────────
+async function fetchApprovedTemplates(metaClient: MetaClient): Promise<string[]> {
+  try {
+    // We can't use the MetaClient directly for this, but we can use the config
+    const wabaId = metaClient['config']?.wabaId
+    const accessToken = metaClient['config']?.accessToken
+    if (!wabaId || !accessToken) return []
+
+    const url = `https://graph.facebook.com/v21.0/${wabaId}/message_templates?status=APPROVED&access_token=${encodeURIComponent(accessToken)}`
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) })
+
+    if (!res.ok) return []
+
+    const data = await res.json()
+    const templateNames: string[] = (data.data || [])
+      .filter((t: Record<string, unknown>) => (t.status as string) === 'APPROVED')
+      .map((t: Record<string, unknown>) => t.name as string)
+
+    return templateNames
+  } catch {
+    return []
+  }
+}
+
+// ─── Send reminder via best available method ───────────────────
+type SendResult = {
+  success: boolean
+  method: 'free_text' | 'template' | 'failed'
+  messageId?: string
+  whatsappId?: string
+  error?: string
+  metaApiResponse?: string
+}
+
+async function sendReminder(
+  metaClient: MetaClient,
+  phone: string,
+  templateAvailable: boolean,
+  hasRecentConversation: boolean,
+  messageData: {
+    patientName: string
+    personaName: string
+    dateFormatted: string
+    startTime12h: string
+    doctorName: string
+    serviceName: string
+    clinicPhone: string | null
+  }
+): Promise<SendResult> {
+  const normalizedPhone = normalizePhoneForWhatsApp(phone)
+  const freeText = buildReminderMessage(messageData)
+
+  // STRATEGY 1: If patient has recent conversation (within 24h), send free-form text
+  // This always works — no template needed within the 24h conversation window
+  if (hasRecentConversation) {
+    try {
+      const result = await metaClient.sendTextMessage(normalizedPhone, freeText)
+      console.log(`[Cron/Reminders] Sent via free-text (24h window open) to ${normalizedPhone}`)
+      return {
+        success: true,
+        method: 'free_text',
+        messageId: result.messageId,
+        whatsappId: result.whatsappId,
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      console.error(`[Cron/Reminders] Free-text failed even with 24h window: ${errorMsg}`)
+      return { success: false, method: 'failed', error: errorMsg }
+    }
+  }
+
+  // STRATEGY 2: No recent conversation — try template message first
+  if (templateAvailable) {
+    try {
+      const templateComponents = buildTemplateComponents({
+        patientName: messageData.patientName,
+        dateFormatted: messageData.dateFormatted,
+        startTime12h: messageData.startTime12h,
+        doctorName: messageData.doctorName,
+        serviceName: messageData.serviceName,
+        clinicPhone: messageData.clinicPhone || 'N/A',
+        personaName: messageData.personaName,
+      })
+
+      const result = await metaClient.sendTemplateMessage(
+        normalizedPhone,
+        REMINDER_TEMPLATE_NAME,
+        REMINDER_TEMPLATE_LANGUAGE,
+        templateComponents
+      )
+      console.log(`[Cron/Reminders] Sent via template to ${normalizedPhone}`)
+      return {
+        success: true,
+        method: 'template',
+        messageId: result.messageId,
+        whatsappId: result.whatsappId,
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      console.warn(`[Cron/Reminders] Template send failed, falling back to free-text: ${errorMsg}`)
+      // Fall through to Strategy 3
+    }
+  }
+
+  // STRATEGY 3: Last resort — try free-form text even without 24h window
+  // This MAY work for test accounts or if Meta's restrictions are relaxed
+  try {
+    const result = await metaClient.sendTextMessage(normalizedPhone, freeText)
+    console.log(`[Cron/Reminders] Sent via free-text (no 24h window, last resort) to ${normalizedPhone}`)
+    return {
+      success: true,
+      method: 'free_text',
+      messageId: result.messageId,
+      whatsappId: result.whatsappId,
+    }
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err)
+    console.error(`[Cron/Reminders] All send methods failed for ${normalizedPhone}: ${errorMsg}`)
+    return {
+      success: false,
+      method: 'failed',
+      error: errorMsg,
+    }
+  }
 }
 
 // ─── GET handler (Vercel Cron calls GET) ───────────────────────
@@ -153,19 +316,15 @@ export async function GET(req: NextRequest) {
 
     // Calculate the reminder window:
     // - UPPER bound: appointments up to 30h from now (to catch edge cases / timezone shifts)
-    // - LOWER bound: appointments at least 4h from now (don't remind if less than 4h away — too late)
+    // - LOWER bound: appointments at least 4h from now (don't remind if less than 4h away)
     // This wide window ensures we catch appointments even if:
     //   - The cron was down for a few hours
     //   - Timezone offsets shift the exact boundary
-    //   - Previous runs had bugs (like the old UTC bug)
     // reminder24hSent prevents duplicate sends, so a wider window is safe.
-    const windowStart = new Date(now.getTime() + 4 * 60 * 60 * 1000)   // 4h from now
-    const windowEnd = new Date(now.getTime() + 30 * 60 * 60 * 1000)    // 30h from now
+    const windowStart = new Date(now.getTime() + 4 * 60 * 60 * 1000)
+    const windowEnd = new Date(now.getTime() + 30 * 60 * 60 * 1000)
 
-    // For the date query: find appointments for today and tomorrow
-    // We search both days because timezone offsets can shift the boundary.
-    // E.g., an appointment at 9 AM Hermosillo (4 PM UTC) tomorrow
-    // could fall into today's UTC date or tomorrow's, depending on the time.
+    // For the date query: find appointments for today through 3 days out
     const todayDate = new Date(now)
     todayDate.setHours(0, 0, 0, 0)
 
@@ -175,7 +334,7 @@ export async function GET(req: NextRequest) {
     // Find appointments that:
     // - Are scheduled or confirmed
     // - Haven't had a 24h reminder sent yet
-    // - Are for today, tomorrow, or the day after (wide range, filtered in JS)
+    // - Are for today through 3 days out (wide range, filtered in JS by time window)
     const appointments = await db.appointment.findMany({
       where: {
         status: { in: ['scheduled', 'confirmed'] },
@@ -206,44 +365,75 @@ export async function GET(req: NextRequest) {
     let remindersSent = 0
     let remindersSkipped = 0
     let errors = 0
+    const details: Array<{
+      appointmentId: string
+      patientName?: string
+      status: 'sent' | 'skipped' | 'error'
+      method?: string
+      reason?: string
+      error?: string
+    }> = []
 
     for (const appointment of appointments) {
       try {
         // Convert appointment local time → UTC for comparison
-        // startTime is local time (e.g. "09:00" = 9 AM Mexico)
-        // We must convert to UTC because Vercel runs in UTC.
         const [hours, minutes] = appointment.startTime.split(':').map(Number)
         const appointmentDateTime = localTimeToUTC(appointment.date, hours, minutes, DEFAULT_TIMEZONE)
 
-        console.log(`[Cron/Reminders] Appointment ${appointment.id}: local=${hours}:${minutes} ${DEFAULT_TIMEZONE} → UTC=${appointmentDateTime.toISOString()}, window=${windowStart.toISOString()}-${windowEnd.toISOString()}`)
+        console.log(`[Cron/Reminders] Appt ${appointment.id}: local=${hours}:${minutes} → UTC=${appointmentDateTime.toISOString()}, window=${windowStart.toISOString()}-${windowEnd.toISOString()}`)
 
+        // Check if appointment is within the reminder window
         if (appointmentDateTime < windowStart || appointmentDateTime > windowEnd) {
+          console.log(`[Cron/Reminders] Appt ${appointment.id} outside window, skipping`)
           continue
         }
 
         // Get or populate clinic cache
         let clinicData = clinicCache.get(appointment.clinicId)
         if (!clinicData) {
-          const [clinic, remindersFlag, metaConnection, metaConfig] = await Promise.all([
-            db.clinic.findUnique({
-              where: { id: appointment.clinicId },
-              select: { id: true, name: true, personaName: true, phone: true },
-            }),
-            db.featureFlag.findFirst({
-              where: { clinicId: appointment.clinicId, module: 'desk', feature: 'reminders' },
-              select: { state: true },
-            }),
-            getClinicMetaConnection(appointment.clinicId, 'whatsapp'),
-            getClinicMetaConfig(appointment.clinicId),
-          ])
+          const clinic = await db.clinic.findUnique({
+            where: { id: appointment.clinicId },
+            select: { id: true, name: true, personaName: true, phone: true },
+          })
 
-          const hasWhatsApp = !!(metaConnection || metaConfig)
+          const remindersFlag = await db.featureFlag.findFirst({
+            where: { clinicId: appointment.clinicId, module: 'desk', feature: 'reminders' },
+            select: { state: true },
+          })
+
+          const channelConfig = await getClinicMetaConnection(appointment.clinicId, 'whatsapp')
+          const metaConfig = await getClinicMetaConfig(appointment.clinicId)
+
+          const hasWhatsApp = !!(channelConfig || metaConfig)
+          let metaClient: MetaClient
+
+          if (channelConfig) {
+            metaClient = MetaClient.createForChannel('whatsapp', channelConfig)
+          } else if (metaConfig) {
+            metaClient = new MetaClient(metaConfig)
+          } else {
+            metaClient = null as unknown as MetaClient
+          }
+
+          // Check if template is available (only check once per clinic)
+          let templateAvailable = false
+          if (hasWhatsApp) {
+            const approvedTemplates = await fetchApprovedTemplates(metaClient)
+            templateAvailable = approvedTemplates.includes(REMINDER_TEMPLATE_NAME)
+            console.log(`[Cron/Reminders] Clinic ${appointment.clinicId}: ${approvedTemplates.length} approved templates, reminder template available: ${templateAvailable}`)
+            if (!templateAvailable && approvedTemplates.length > 0) {
+              console.log(`[Cron/Reminders] Available templates: ${approvedTemplates.join(', ')}`)
+            }
+          }
+
           clinicData = {
             name: clinic?.name || 'Clínica',
             personaName: clinic?.personaName || clinic?.name || 'Sinap',
             phone: clinic?.phone || null,
             remindersEnabled: remindersFlag?.state === 'on',
             hasWhatsApp,
+            metaClient,
+            templateAvailable,
           }
           clinicCache.set(appointment.clinicId, clinicData)
         }
@@ -251,12 +441,14 @@ export async function GET(req: NextRequest) {
         // Skip if reminders not enabled for this clinic
         if (!clinicData.remindersEnabled) {
           remindersSkipped++
+          details.push({ appointmentId: appointment.id, status: 'skipped', reason: 'reminders disabled' })
           continue
         }
 
         // Skip if no WhatsApp connection
         if (!clinicData.hasWhatsApp) {
           remindersSkipped++
+          details.push({ appointmentId: appointment.id, status: 'skipped', reason: 'no WhatsApp connection' })
           continue
         }
 
@@ -269,6 +461,7 @@ export async function GET(req: NextRequest) {
         if (!patient) {
           console.log(`[Cron/Reminders] Skipping — patient not found: ${appointment.patientId}`)
           remindersSkipped++
+          details.push({ appointmentId: appointment.id, status: 'skipped', reason: 'patient not found' })
           continue
         }
 
@@ -276,6 +469,7 @@ export async function GET(req: NextRequest) {
         if (patient.doNotContact) {
           console.log(`[Cron/Reminders] Skipping — patient ${patient.fullName} has doNotContact=true`)
           remindersSkipped++
+          details.push({ appointmentId: appointment.id, patientName: patient.fullName, status: 'skipped', reason: 'doNotContact' })
           continue
         }
 
@@ -283,6 +477,7 @@ export async function GET(req: NextRequest) {
         if (!patient.phone) {
           console.log(`[Cron/Reminders] Skipping — patient ${patient.fullName} has no phone number`)
           remindersSkipped++
+          details.push({ appointmentId: appointment.id, patientName: patient.fullName, status: 'skipped', reason: 'no phone' })
           continue
         }
 
@@ -300,27 +495,16 @@ export async function GET(req: NextRequest) {
             : Promise.resolve(null),
         ])
 
-        // Create Meta client
-        const channelConfig = await getClinicMetaConnection(appointment.clinicId, 'whatsapp')
-        let metaClient: MetaClient
+        // Check if patient has a recent WhatsApp conversation (within 24h)
+        const hasRecentConversation = await hasRecentPatientMessage(appointment.clinicId, patient.id)
+        console.log(`[Cron/Reminders] Patient ${patient.fullName}: recent conversation = ${hasRecentConversation}, template available = ${clinicData.templateAvailable}`)
 
-        if (channelConfig) {
-          metaClient = MetaClient.createForChannel('whatsapp', channelConfig)
-        } else {
-          const metaConfig = await getClinicMetaConfig(appointment.clinicId)
-          if (!metaConfig) {
-            remindersSkipped++
-            continue
-          }
-          metaClient = new MetaClient(metaConfig)
-        }
-
-        // Build the reminder message
+        // Build message data
         const patientDisplayName = patient.firstName !== 'Paciente'
           ? patient.firstName
           : patient.fullName
 
-        const reminderMessage = buildReminderMessage({
+        const messageData = {
           patientName: patientDisplayName,
           personaName: clinicData.personaName,
           dateFormatted: formatDateSpanish(appointment.date),
@@ -328,11 +512,29 @@ export async function GET(req: NextRequest) {
           doctorName: doctor?.name || 'Doctor',
           serviceName: service?.name || 'Consulta',
           clinicPhone: clinicData.phone,
-        })
+        }
 
-        // Normalize phone and send the message
-        const normalizedPhone = normalizePhoneForWhatsApp(patient.phone)
-        const sendResult = await metaClient.sendTextMessage(normalizedPhone, reminderMessage)
+        // Send the reminder using the best available method
+        const sendResult = await sendReminder(
+          clinicData.metaClient,
+          patient.phone,
+          clinicData.templateAvailable,
+          hasRecentConversation,
+          messageData
+        )
+
+        if (!sendResult.success) {
+          errors++
+          details.push({
+            appointmentId: appointment.id,
+            patientName: patient.fullName,
+            status: 'error',
+            method: sendResult.method,
+            error: sendResult.error,
+          })
+          console.error(`[Cron/Reminders] Failed to send to ${patient.fullName}: ${sendResult.error}`)
+          continue
+        }
 
         // Mark reminder as sent
         await db.appointment.update({
@@ -365,6 +567,7 @@ export async function GET(req: NextRequest) {
           })
         }
 
+        const reminderContent = buildReminderMessage(messageData)
         await db.message.create({
           data: {
             clinicId: appointment.clinicId,
@@ -372,7 +575,9 @@ export async function GET(req: NextRequest) {
             direction: 'outbound',
             channel: 'whatsapp',
             senderType: 'system',
-            content: reminderMessage,
+            content: sendResult.method === 'template'
+              ? `[Template: ${REMINDER_TEMPLATE_NAME}] ${reminderContent}`
+              : reminderContent,
             messageType: 'text',
             agentName: 'Sinap Reminders',
             aiGenerated: false,
@@ -400,32 +605,43 @@ export async function GET(req: NextRequest) {
               doctorName: doctor?.name,
               date: appointment.date.toISOString(),
               startTime: appointment.startTime,
+              sendMethod: sendResult.method,
             }),
             status: 'pending',
           },
         })
 
         remindersSent++
-        console.log(`[Cron/Reminders] Reminder sent to ${patient.fullName} (${normalizedPhone}) for appointment ${appointment.id}`)
+        details.push({
+          appointmentId: appointment.id,
+          patientName: patient.fullName,
+          status: 'sent',
+          method: sendResult.method,
+        })
+        console.log(`[Cron/Reminders] Reminder sent to ${patient.fullName} via ${sendResult.method}`)
 
       } catch (appointmentError) {
         errors++
-        console.error(`[Cron/Reminders] Error processing appointment ${appointment.id}:`, appointmentError)
+        const errMsg = appointmentError instanceof Error ? appointmentError.message : String(appointmentError)
+        console.error(`[Cron/Reminders] Error processing appointment ${appointment.id}:`, errMsg)
+        details.push({ appointmentId: appointment.id, status: 'error', error: errMsg })
       }
     }
 
     const summary = {
       success: true,
       timestamp: now.toISOString(),
+      timezone: DEFAULT_TIMEZONE,
       windowStart: windowStart.toISOString(),
       windowEnd: windowEnd.toISOString(),
       candidates: appointments.length,
       sent: remindersSent,
       skipped: remindersSkipped,
       errors,
+      details,
     }
 
-    console.log('[Cron/Reminders] Job complete:', summary)
+    console.log('[Cron/Reminders] Job complete:', { sent: remindersSent, skipped: remindersSkipped, errors })
     return NextResponse.json(summary)
 
   } catch (error) {
