@@ -12,6 +12,59 @@ import { MetaClient, getClinicMetaConfig, getClinicMetaConnection } from '@/lib/
 
 const CRON_SECRET = process.env.CRON_SECRET
 
+// ─── Default timezone for Mexican clinics ───────────────────────
+// startTime in the DB is local time (e.g. "09:00" = 9 AM Mexico).
+// Vercel servers run in UTC, so we must convert local → UTC.
+const DEFAULT_TIMEZONE = 'America/Hermosillo' // UTC-7 (Sonora, no DST)
+
+// ─── Convert local time + date to UTC ─────────────────────────
+// startTime is stored as local time (e.g. "09:00" = 9 AM in the clinic's timezone).
+// Vercel servers run in UTC, so we need to convert to UTC for accurate comparison.
+// This function creates a Date in the specified timezone, then converts to UTC.
+function localTimeToUTC(dateFromDB: Date, hours: number, minutes: number, timezone: string): Date {
+  // Get the date components from the DB date (ignoring its time portion)
+  const year = dateFromDB.getUTCFullYear()
+  const month = dateFromDB.getUTCMonth()
+  const day = dateFromDB.getUTCDate()
+
+  // Create a formatted date string in the clinic's local timezone
+  // to extract the correct calendar date (timezone-safe)
+  const localDateStr = dateFromDB.toLocaleDateString('en-CA', { timeZone: timezone }) // "2026-06-13"
+  const [localYear, localMonth, localDay] = localDateStr.split('-').map(Number)
+
+  // Build an ISO string representing the local time, then parse it as if it were UTC
+  // This effectively creates: "2026-06-13T09:00:00" in the clinic's timezone
+  const localISO = `${localYear}-${String(localMonth).padStart(2, '0')}-${String(localDay).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
+
+  // Use Intl.DateTimeFormat to get the offset for the specific timezone at that moment
+  // This handles DST correctly
+  const tempDate = new Date(localISO + 'Z') // Treat as UTC initially
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  })
+
+  // Get the offset by comparing what the timezone thinks vs UTC
+  const parts = formatter.formatToParts(tempDate)
+  const getPart = (type: string) => parts.find(p => p.type === type)?.value || '0'
+  const tzHour = parseInt(getPart('hour'))
+  const tzMinute = parseInt(getPart('minute'))
+
+  // The offset is the difference between what UTC time produces in the target timezone
+  // and the actual UTC time
+  const utcHour = tempDate.getUTCHours()
+  const utcMinute = tempDate.getUTCMinutes()
+  const offsetMinutes = (utcHour * 60 + utcMinute) - (tzHour * 60 + tzMinute)
+
+  // Adjust: subtract the offset to get the real UTC time
+  // If timezone is UTC-7, offsetMinutes = -420, so we subtract (-420) = add 420 min = +7h
+  const realUTC = new Date(tempDate.getTime() - offsetMinutes * 60 * 1000)
+
+  return realUTC
+}
+
 // ─── Normalize Mexican phone numbers for WhatsApp API ──────────
 function normalizePhoneForWhatsApp(phone: string): string {
   if (/^521\d{10}$/.test(phone)) {
@@ -99,32 +152,33 @@ export async function GET(req: NextRequest) {
     const now = new Date()
 
     // Calculate the 24h window: appointments whose start time is between
-    // 23h and 25h from now. This gives us a 2-hour window so that if the
-    // cron runs late or skips an hour, we still catch the appointments.
-    const windowStart = new Date(now.getTime() + 23 * 60 * 60 * 1000)
-    const windowEnd = new Date(now.getTime() + 25 * 60 * 60 * 1000)
+    // 22h and 26h from now. We use a wider 4-hour window because:
+    //   - The cron runs every hour, so a 4h window ensures overlap
+    //   - Timezone offsets may shift the exact boundary
+    const windowStart = new Date(now.getTime() + 22 * 60 * 60 * 1000)
+    const windowEnd = new Date(now.getTime() + 26 * 60 * 60 * 1000)
 
-    // For the date query: we need to find appointments where
-    // date + startTime falls within the 24h window
-    // Since startTime is a string, we query by date range and filter in JS
-    const tomorrowDate = new Date(now)
-    tomorrowDate.setDate(tomorrowDate.getDate() + 1)
-    tomorrowDate.setHours(0, 0, 0, 0)
+    // For the date query: find appointments for today and tomorrow
+    // We search both days because timezone offsets can shift the boundary.
+    // E.g., an appointment at 9 AM Hermosillo (4 PM UTC) tomorrow
+    // could fall into today's UTC date or tomorrow's, depending on the time.
+    const todayDate = new Date(now)
+    todayDate.setHours(0, 0, 0, 0)
 
-    const dayAfter = new Date(tomorrowDate)
-    dayAfter.setDate(dayAfter.getDate() + 1)
+    const dayAfterTomorrow = new Date(todayDate)
+    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 3)
 
     // Find appointments that:
     // - Are scheduled or confirmed
     // - Haven't had a 24h reminder sent yet
-    // - Are for tomorrow (date range)
+    // - Are for today, tomorrow, or the day after (wide range, filtered in JS)
     const appointments = await db.appointment.findMany({
       where: {
         status: { in: ['scheduled', 'confirmed'] },
         reminder24hSent: false,
         date: {
-          gte: tomorrowDate,
-          lt: dayAfter,
+          gte: todayDate,
+          lt: dayAfterTomorrow,
         },
       },
       select: {
@@ -151,10 +205,13 @@ export async function GET(req: NextRequest) {
 
     for (const appointment of appointments) {
       try {
-        // Check if appointment time falls within the 24h window
+        // Convert appointment local time → UTC for comparison
+        // startTime is local time (e.g. "09:00" = 9 AM Mexico)
+        // We must convert to UTC because Vercel runs in UTC.
         const [hours, minutes] = appointment.startTime.split(':').map(Number)
-        const appointmentDateTime = new Date(appointment.date)
-        appointmentDateTime.setHours(hours, minutes, 0, 0)
+        const appointmentDateTime = localTimeToUTC(appointment.date, hours, minutes, DEFAULT_TIMEZONE)
+
+        console.log(`[Cron/Reminders] Appointment ${appointment.id}: local=${hours}:${minutes} ${DEFAULT_TIMEZONE} → UTC=${appointmentDateTime.toISOString()}, window=${windowStart.toISOString()}-${windowEnd.toISOString()}`)
 
         if (appointmentDateTime < windowStart || appointmentDateTime > windowEnd) {
           continue
