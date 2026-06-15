@@ -23,6 +23,8 @@ const DEFAULT_TIMEZONE = 'America/Hermosillo' // UTC-7 (Sonora, no DST)
 // ─── Template configuration ─────────────────────────────────────
 const REMINDER_TEMPLATE_NAME = 'appointment_reminder'
 const REMINDER_TEMPLATE_LANGUAGE = 'es_MX'
+const FALLBACK_TEMPLATE_NAME = 'hello_world'  // Default Meta template, always approved
+const FALLBACK_TEMPLATE_LANGUAGE = 'en_US'
 
 // ─── Convert local time + date to UTC ─────────────────────────
 function localTimeToUTC(dateFromDB: Date, hours: number, minutes: number, timezone: string): Date {
@@ -146,7 +148,7 @@ interface ClinicCache {
   remindersEnabled: boolean
   hasWhatsApp: boolean
   metaClient: MetaClient
-  templateAvailable: boolean
+  approvedTemplates: string[]
 }
 
 // ─── Check if patient has a recent WhatsApp message (within 24h) ──
@@ -208,7 +210,7 @@ async function fetchApprovedTemplates(metaClient: MetaClient): Promise<string[]>
 // ─── Send reminder via best available method ───────────────────
 type SendResult = {
   success: boolean
-  method: 'free_text' | 'template' | 'failed'
+  method: 'free_text' | 'template' | 'template_fallback' | 'failed'
   messageId?: string
   whatsappId?: string
   error?: string
@@ -218,7 +220,7 @@ type SendResult = {
 async function sendReminder(
   metaClient: MetaClient,
   phone: string,
-  templateAvailable: boolean,
+  approvedTemplates: string[],
   hasRecentConversation: boolean,
   messageData: {
     patientName: string
@@ -232,6 +234,8 @@ async function sendReminder(
 ): Promise<SendResult> {
   const normalizedPhone = normalizePhoneForWhatsApp(phone)
   const freeText = buildReminderMessage(messageData)
+  const hasReminderTemplate = approvedTemplates.includes(REMINDER_TEMPLATE_NAME)
+  const hasFallbackTemplate = approvedTemplates.includes(FALLBACK_TEMPLATE_NAME)
 
   // STRATEGY 1: If patient has recent conversation (within 24h), send free-form text
   // This always works — no template needed within the 24h conversation window
@@ -252,8 +256,12 @@ async function sendReminder(
     }
   }
 
-  // STRATEGY 2: No recent conversation — try template message first
-  if (templateAvailable) {
+  // ─── 24h window is CLOSED — must use template ──────────────────
+  // Free-form text outside the 24h window will be accepted by Meta
+  // but NOT delivered to the patient. We MUST use an approved template.
+
+  // STRATEGY 2: Use appointment_reminder template (es_MX) if approved
+  if (hasReminderTemplate) {
     try {
       const templateComponents = buildTemplateComponents({
         patientName: messageData.patientName,
@@ -271,7 +279,7 @@ async function sendReminder(
         REMINDER_TEMPLATE_LANGUAGE,
         templateComponents
       )
-      console.log(`[Cron/Reminders] Sent via template to ${normalizedPhone}`)
+      console.log(`[Cron/Reminders] Sent via appointment_reminder template to ${normalizedPhone}`)
       return {
         success: true,
         method: 'template',
@@ -280,30 +288,45 @@ async function sendReminder(
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
-      console.warn(`[Cron/Reminders] Template send failed, falling back to free-text: ${errorMsg}`)
+      console.warn(`[Cron/Reminders] appointment_reminder template failed: ${errorMsg}`)
       // Fall through to Strategy 3
     }
   }
 
-  // STRATEGY 3: Last resort — try free-form text even without 24h window
-  // This MAY work for test accounts or if Meta's restrictions are relaxed
-  try {
-    const result = await metaClient.sendTextMessage(normalizedPhone, freeText)
-    console.log(`[Cron/Reminders] Sent via free-text (no 24h window, last resort) to ${normalizedPhone}`)
-    return {
-      success: true,
-      method: 'free_text',
-      messageId: result.messageId,
-      whatsappId: result.whatsappId,
+  // STRATEGY 3: Use hello_world fallback template (always approved by Meta)
+  // This is a generic template but it WILL be delivered outside the 24h window.
+  // The message is in English but at least the reminder gets through.
+  if (hasFallbackTemplate) {
+    try {
+      const result = await metaClient.sendTemplateMessage(
+        normalizedPhone,
+        FALLBACK_TEMPLATE_NAME,
+        FALLBACK_TEMPLATE_LANGUAGE
+      )
+      console.log(`[Cron/Reminders] Sent via hello_world fallback template to ${normalizedPhone}`)
+      return {
+        success: true,
+        method: 'template_fallback',
+        messageId: result.messageId,
+        whatsappId: result.whatsappId,
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      console.error(`[Cron/Reminders] Even hello_world template failed: ${errorMsg}`)
+      return {
+        success: false,
+        method: 'failed',
+        error: `Cannot send reminder — 24h window closed and no approved template available. Error: ${errorMsg}`,
+      }
     }
-  } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err)
-    console.error(`[Cron/Reminders] All send methods failed for ${normalizedPhone}: ${errorMsg}`)
-    return {
-      success: false,
-      method: 'failed',
-      error: errorMsg,
-    }
+  }
+
+  // STRATEGY 4: No template available at all — cannot send outside 24h window
+  console.error(`[Cron/Reminders] Cannot send to ${normalizedPhone} — 24h window closed and no approved templates`)
+  return {
+    success: false,
+    method: 'failed',
+    error: 'Cannot send reminder: 24h conversation window is closed and no approved WhatsApp template is available. Either the patient needs to message first (opening the 24h window) or an approved template must be created in Meta Business Suite.',
   }
 }
 
@@ -440,15 +463,11 @@ export async function GET(req: NextRequest) {
             metaClient = null as unknown as MetaClient
           }
 
-          // Check if template is available (only check once per clinic)
-          let templateAvailable = false
+          // Fetch approved templates (only check once per clinic)
+          let approvedTemplates: string[] = []
           if (hasWhatsApp) {
-            const approvedTemplates = await fetchApprovedTemplates(metaClient)
-            templateAvailable = approvedTemplates.includes(REMINDER_TEMPLATE_NAME)
-            console.log(`[Cron/Reminders] Clinic ${appointment.clinicId}: ${approvedTemplates.length} approved templates, reminder template available: ${templateAvailable}`)
-            if (!templateAvailable && approvedTemplates.length > 0) {
-              console.log(`[Cron/Reminders] Available templates: ${approvedTemplates.join(', ')}`)
-            }
+            approvedTemplates = await fetchApprovedTemplates(metaClient)
+            console.log(`[Cron/Reminders] Clinic ${appointment.clinicId}: ${approvedTemplates.length} approved templates: ${approvedTemplates.join(', ')}`)
           }
 
           clinicData = {
@@ -458,7 +477,7 @@ export async function GET(req: NextRequest) {
             remindersEnabled: remindersFlag?.state === 'on',
             hasWhatsApp,
             metaClient,
-            templateAvailable,
+            approvedTemplates,
           }
           clinicCache.set(appointment.clinicId, clinicData)
         }
@@ -522,7 +541,7 @@ export async function GET(req: NextRequest) {
 
         // Check if patient has a recent WhatsApp conversation (within 24h)
         const hasRecentConversation = await hasRecentPatientMessage(appointment.clinicId, patient.id)
-        console.log(`[Cron/Reminders] Patient ${patient.fullName}: recent conversation = ${hasRecentConversation}, template available = ${clinicData.templateAvailable}`)
+        console.log(`[Cron/Reminders] Patient ${patient.fullName}: recent conversation = ${hasRecentConversation}, approved templates = [${clinicData.approvedTemplates.join(', ')}]`)
 
         // Build message data
         const patientDisplayName = patient.firstName !== 'Paciente'
@@ -543,7 +562,7 @@ export async function GET(req: NextRequest) {
         const sendResult = await sendReminder(
           clinicData.metaClient,
           patient.phone,
-          clinicData.templateAvailable,
+          clinicData.approvedTemplates,
           hasRecentConversation,
           messageData
         )
